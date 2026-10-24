@@ -9,8 +9,8 @@ export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
 }
 // Session cookie is HttpOnly. CSRF values live only in React memory, never browser storage.
-export async function api<T>(path: string, method = 'GET', body?: unknown, csrfToken?: string): Promise<T> {
-  const response = await fetch(`/api/v1/${path}`, { method, credentials: 'same-origin', signal: AbortSignal.timeout(15000),
+export async function api<T>(path: string, method = 'GET', body?: unknown, csrfToken?: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`/api/v1/${path}`, { method, credentials: 'same-origin', cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
     headers: { Accept: 'application/json', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });

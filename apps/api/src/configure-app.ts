@@ -21,7 +21,7 @@ export function configureApp(app: INestApplication): void {
   app.enableCors({
     origin: (origin: string | undefined, callback: (error: Error | null, allowed: boolean) => void) =>
       callback(null, Boolean(origin && origins.includes(origin))),
-    methods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept', 'X-CSRF-Token'],
     credentials: true,
     maxAge: 600,

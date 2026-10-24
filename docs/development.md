@@ -1,8 +1,206 @@
 # Development setup
 
-Step 1.4 adds mandatory tenant transactions and FORCE RLS to the authenticated
-API. Server patient/clinical workflows remain unimplemented.
-Use fictional data only; the authenticated browser workflows still use local demos.
+Step 1.5 adds persistent administrative patients to the existing authenticated
+tenant/RLS boundary. The Arabic patient directory/register/profile now use the API.
+Appointments, queue, invoices and dashboard remain explicitly local demos. Use
+fictional data only; clinical records and production operational controls are deferred.
+
+## Step 1.5 patient setup and verification
+
+Use the existing private root `.env`; **no new variable, password, dependency or
+system privilege** is needed. Keep runtime and migration URLs separate. From root:
+
+```bash
+npm run db:generate
+npm run db:validate
+npm run db:migrate:test
+npm run test:db
+npm run db:migrate
+npm run db:grant
+npm run db:status
+npm run db:status:test
+npm run check:boundaries
+npm run build
+npm test
+npm run test:db
+```
+
+Migration `20261024000400_patients` is additive. Preserve the prior three migration
+files/checksums. It adds administrative tables, constraints/indexes, immutable
+identity/counter triggers, ENABLE/FORCE RLS and restricted runtime grants atomically.
+The SQL pattern indexes/checks/RLS/triggers are intentional: review generated SQL
+when extending the Prisma schema, rather than replacing these controls with ORM
+schema push/reset. Runtime Patient/PatientCounter access is SELECT/INSERT/UPDATE
+only; migration-owner cleanup is restricted to tracked fictional test fixtures.
+No seed/import of browser patients occurs. Existing clinic seed remains idempotent.
+
+In two terminals, run `npm run dev` and `npm run dev:api`. Provision a local account
+with `npm run auth:provision` (interactive supplied secret; no default password),
+then log in at `http://localhost:5173`, choose a clinic, open **المرضى**, and select
+**مريض جديد**. Owner/admin/receptionist can register; doctor can read/edit; accountant
+cannot read patients. Fields: name required, phone/email/birth date/self-reported
+gender optional. No notes/photos/treatment fields. Status changes in the profile
+keep the file available through inactive/all filters and direct authorized lookup.
+Only use fictional information. See [architecture.md](architecture.md#step-15-administrative-patients)
+for exact field contracts and the existing permission matrix.
+
+API under `/api/v1/clinics/:clinicId/patients`:
+
+- GET list: `q` max 60; `status=ACTIVE` default (`INACTIVE`/`ALL` also accepted),
+  `pageSize=20` default/max 50, optional `cursor` UUID. Response is
+  `{items,pageSize,hasMore,nextCursor}`. No unbounded export/count.
+- GET `/:patientId`: projected record, including inactive identities.
+- POST: `{fullName,phone?,email?,dateOfBirth?,gender?}`; creates ACTIVE/version 1.
+- PATCH `/:patientId`: editable fields plus required numeric `expectedVersion`.
+- PATCH `/:patientId/status`: `{status:"ACTIVE"|"INACTIVE",expectedVersion}` only.
+
+Mutations need the existing HttpOnly session and `X-CSRF-Token` with an allowed
+Origin. Select the clinic through `/auth/clinic` before accessing it. The URL ID is
+never authorization. Unknown fields are rejected; general edits cannot set status,
+clinicId, number, id, timestamps or version. Optional nulls clear values. A stale
+version returns 409; reopen/reload before resubmitting. Missing/foreign patient IDs
+return the same 404. Rate/secret/session behavior is unchanged.
+
+`P-000001` numbering is unique per clinic, allocated in the same row-locked
+transaction as insertion. Never reset/delete counters, manually renumber patients,
+or infer identity across clinics from a number/name/phone. Prefix search folds
+Arabic variants/marks in the internal key only; names preserve their spelling.
+Phone formatting/Arabic digits normalize, but country codes are not guessed.
+Duplicates are allowed. Search is not fuzzy/substring or identity matching.
+No automatic POST retries exist: search after an uncertain network result before
+explicitly trying registration again.
+
+Browser API data lives only in memory. Switching clinics aborts requests and
+invalidates pending results, then fetches the new clinic. Do not add patient data
+to storage, analytics, URL navigation, query persistence or service-worker caches.
+Production proxies/observability must redact search queries and bodies, which may
+contain identifiers. The old `lamssa-clinic-demo-v1` key remains untouched by API
+activity, with no import or rewrite of existing JSON. Demo operations may still
+save their own deliberate changes; their patient IDs never become API references.
+
+Optional reproducible Chrome regression:
+
+```bash
+npm run test:browser
+```
+
+Requires installed Chrome (`CHROME_BIN` may override `/usr/bin/google-chrome`),
+PostgreSQL and both test URLs. It builds both apps, compiles tests, starts temporary
+API/preview servers on loopback ephemeral ports using **test runtime** credentials,
+provisions UUID-tracked fictional test clinics/users with random in-memory passwords,
+and uses a fresh temporary browser profile. It never uses your normal browser or
+localStorage. Cleanup removes only its tracked fixtures/profile and stops its own
+processes. Screenshots contain fictional data in `/tmp/lamssa-step15-browser`.
+The default `npm test` also runs three dependency-free frontend request-race tests.
+
+### Troubleshooting patients
+
+- 401: session expired/revoked/privileges changed; sign in again. 403: permission,
+  selection or CSRF mismatch; refresh/reselect, never widen grants to resolve it.
+- 404: patient is not available in the selected clinic; do not query another tenant
+  through a maintenance connection to serve a request.
+- 409: stale edit or identifier conflict. Reload/review; do not auto-overwrite.
+  An unexpected allocator conflict needs controlled investigation, not counter reset.
+- Empty list: ACTIVE filter is default; check inactive/all and prefix search.
+  Existing browser demo patients are deliberately not imported; use **مرضى العرض القديم**.
+- Missing relation/permission error: apply all migrations in the correct environment
+  and `npm run db:grant`; keep runtime non-owner/NOBYPASSRLS.
+- On a database outage or uncertain registration result, search when service recovers
+  before trying again; no automatic retry can guarantee deduplication yet.
+
+### Executed Step 1.5 checks (2026-10-24)
+
+| Command / check | Actual result |
+| --- | --- |
+| `npm run db:validate` | Prisma schema valid |
+| `npm run db:generate` | Prisma Client 7.10.1 generated |
+| `npm run db:migrate:test` then `npm run db:migrate` | `20261024000400_patients` applied in both, without resetting records |
+| `npm run db:grant` | Explicit restricted grants applied in both; patient/counter DELETE absent |
+| `npm run db:status` / `npm run db:status:test` | Four applied migrations; both schemas up to date |
+| `npm run check:boundaries` | Passed; temporary negative feature import was correctly rejected and removed |
+| `npm run build` | Both workspaces passed (also repeated by the browser command) |
+| `npm test` | 15 API + 3 frontend tests passed; zero failed/skipped |
+| `npm run test:db` | 59 passed, zero failed/skipped: prior 39 plus 20 patient API/runtime RLS cases |
+| `npm run test:browser` | Real Chrome journey passed; zero runtime exceptions; temporary test processes/fixtures/profile cleaned |
+| Development compiled API probe | health 200 `{status:"ok"}`, ready 200 `{status:"ready"}`; Ward/Nour public branding 200; unauthenticated patients 401 |
+| Catalog/record audit with both real runtime roles | Both non-owner, NOSUPERUSER/NOBYPASSRLS; six FORCE-RLS tables; Patient/PatientCounter SELECT/INSERT/UPDATE only |
+| Post-test maintenance counts | No Patient/PatientCounter rows or patient-test users left in either database; development Ward/Nour branding unchanged |
+| `git diff --check` and ignored-file checks | Clean whitespace; `.env`, generated clients and build artifacts ignored; only `.env.example` tracked |
+
+Database cases include registration/read/edit/status, optional contacts/duplicates,
+Arabic and literal-wildcard prefix search, stable pagination, ten simultaneous
+first-clinic allocations, competing edits (one 200, one 409), failed allocation
+rollback, foreign IDs with identical 404s, roles, suspended contexts, malformed/
+extra/oversized inputs and POST/PATCH CSRF. Native runtime SQL exercises missing/
+invalid context, foreign reads/inserts/updates, immutable identities, counter rewind,
+denied DELETE and RLS/policy privileges; concurrent transactions and pooled reuse
+cannot expose another clinic's rows. Existing session/login/public tests still pass.
+
+The browser check registers/reloads/edits/activates/deactivates a fictional patient,
+checks Arabic validation, loading/empty/offline/error recovery, a second clinic's
+branding/patients, doctor create-button denial, and a deliberately delayed old-clinic
+response whose transport ignores abort. Existing pretty-printed localStorage stays
+**byte-identical** throughout API activity; later deliberate appointment/queue/
+invoice demo changes still persist, without any API patient ID/name or secret in
+storage. Desktop/mobile screenshots are fictional artifacts under `/tmp`.
+
+Initial TypeScript annotation/conditional errors were corrected before final
+checks. A parallel Prisma-generation/compilation attempt conflicted on generated
+files; the final successful commands ran sequentially. **Do not run Prisma-generating
+build/test commands concurrently in one checkout**: they replace the same generated
+client. This is tooling ordering, not a database migration failure.
+
+No new dependencies, environment changes, administrator passwords, real patient
+records, database reset/drop, browser migration or commit/push were introduced.
+PostgreSQL remains running. Security/change audit, retention, durable create
+idempotency, deployment hardening, backup restore, MFA and medical privacy review
+remain required before real use.
+
+### Step 1.5 file inventory
+
+Added:
+
+```text
+apps/api/prisma/migrations/20261024000400_patients/migration.sql
+apps/api/src/patients/patient-input.ts
+apps/api/src/patients/patient.controller.ts
+apps/api/src/prisma/patient.repository.ts
+apps/api/test/patient-input.test.ts
+apps/api/test/patients.integration.test.ts
+apps/web/src/features/patients/PatientDirectory.tsx
+apps/web/src/features/patients/patient-api.ts
+apps/web/src/features/patients/patients.css
+apps/web/src/features/patients/request-scope.ts
+apps/web/test/request-scope.test.mjs
+scripts/patients-browser-smoke.mjs
+```
+
+Changed:
+
+```text
+README.md
+package.json
+apps/api/package.json
+apps/api/prisma/schema.prisma
+apps/api/src/app.module.ts
+apps/api/src/configure-app.ts
+apps/api/src/prisma/prisma.module.ts
+apps/api/src/prisma/prisma.service.ts
+apps/api/src/prisma/tenant-database.service.ts
+apps/api/test/rls.integration.test.ts
+apps/web/package.json
+apps/web/src/App.tsx
+apps/web/src/components/ui.tsx
+apps/web/src/features/auth/AuthShell.tsx
+apps/web/src/features/auth/api.ts
+scripts/grant-database-access.mjs
+docs/architecture.md
+docs/implementation-roadmap.md
+docs/development.md
+```
+
+`package-lock.json`, existing migrations, legacy demo models/forms/storage key and
+all environment secrets remain unchanged.
 
 ## Requirements and versions
 
@@ -55,7 +253,8 @@ No server values belong in `apps/web` or `VITE_*` variables.
 The four roles have no superuser, create-database, create-role, replication or
 RLS-bypass privileges. Runtime roles own no database/schema, cannot create tables,
 and receive scoped SELECT on Clinic/ClinicMembership, auth SELECT on User, and
-DML on ClinicBranding/ClinicDomain/Session/LoginBucket, excluding `_prisma_migrations`.
+DML on ClinicBranding/ClinicDomain/Session/LoginBucket, SELECT/INSERT/UPDATE on
+Patient/PatientCounter (no runtime delete), excluding `_prisma_migrations`.
 PUBLIC has no access to either application database/schema; development and test
 runtime logins cannot connect to each other's database. Database-level privilege
 separation alone does not enforce per-clinic authorization. Step 1.3 adds server

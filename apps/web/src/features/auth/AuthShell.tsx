@@ -42,6 +42,7 @@ export default function AuthShell() {
         const current=await api<SessionInfo>('auth/me');
         if(active && generation.current===started){
           if(current.user.id!==session.user.id){clear();setMessage('تغيّر الحساب في نافذة أخرى. يرجى تسجيل الدخول مجددًا.');}
+          else if(current.selectedClinicId!==session.selectedClinicId){setClinic(null);setSession(current);setMessage('تغيّر اختيار العيادة في نافذة أخرى. اختر عيادتك مجددًا.');}
           else setSession(current);
         }
       }catch(error){if(active && generation.current===started){clear();setMessage(error instanceof ApiError && error.status===401?'انتهت الجلسة أو تغيّرت صلاحياتك. يرجى تسجيل الدخول مجددًا.':'تعذّر التحقق من الجلسة. سجّل الدخول بعد استعادة الاتصال.');}}finally{checking=false;}
@@ -49,7 +50,7 @@ export default function AuthShell() {
     const timer=window.setInterval(()=>void check(),60000);
     const focus=()=>void check();window.addEventListener('focus',focus);
     return()=>{active=false;clearInterval(timer);window.removeEventListener('focus',focus);};
-  },[session?.user.id]);
+  },[session?.user.id,session?.selectedClinicId]);
   async function login(event:FormEvent) {
     event.preventDefault();setBusy(true);mutating.current=true;generation.current++;setMessage('');
     try{
@@ -84,8 +85,8 @@ export default function AuthShell() {
   if(!session)return <main className="auth-page" dir="rtl"><aside className="auth-story">{brand}<div><span className="auth-kicker">إدارة عيادتك تبدأ من هنا</span><h2>اهتمام بالتفاصيل.<br/>ومساحة لكل عيادة.</h2><p>سجّل الدخول إلى حسابك للوصول إلى العيادات المرتبطة بك، واختيار مساحة عملك.</p><div className="auth-ornament">✧</div></div><small>نسخة تطوير · استخدم بيانات وهمية فقط</small></aside><section className="auth-card">{brand}<span className="auth-kicker">أهلًا بعودتك</span><h1>تسجيل الدخول</h1><p>أدخل بيانات حسابك الذي أعدّه مسؤول التطوير.</p>{message&&<div className="auth-message" role="alert">{message}</div>}{unavailable?<button className="primary-btn" onClick={()=>void restore()}>إعادة الاتصال</button>:<form onSubmit={login}><label htmlFor="auth-email">البريد الإلكتروني</label><input id="auth-email" type="email" dir="ltr" autoComplete="username" required maxLength={254} value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com" disabled={busy}/><label htmlFor="auth-password">كلمة المرور</label><input id="auth-password" type="password" dir="ltr" autoComplete="current-password" required maxLength={128} value={password} onChange={e=>setPassword(e.target.value)} disabled={busy}/><button className="primary-btn" type="submit" disabled={busy}>{busy?'جارٍ تسجيل الدخول…':'دخول إلى مساحة العمل ←'}</button></form>}<p className="auth-footnote">الحسابات تُنشأ بإجراء تطوير مقيّد. تواصل مع مسؤول التطوير إذا لم يكن لديك حساب.</p></section></main>;
   if(!clinic)return <main className="auth-page auth-selection" dir="rtl"><section className="auth-card clinic-picker">{brand}<span className="auth-kicker">مرحبًا {session.user.name}</span><h1>اختر عيادتك</h1><p>تظهر هنا العيادات النشطة التي لديك عضوية نشطة فيها.</p>{message&&<div className="auth-message" role="alert">{message}</div>}<div className="clinic-options">{clinics.map(item=><button className="clinic-option" key={item.clinicId} onClick={()=>void select(item)} disabled={busy} style={{'--clinic-color':item.branding?.primaryColor??'#7854D9'} as CSSProperties}><span className="clinic-option-symbol">✦</span><span><b>{item.displayName}</b><small>{roleNames[item.role]??'عضو العيادة'}</small></span><span className="clinic-option-arrow">←</span></button>)}</div>{clinics.length===0&&<div className="auth-message">لا توجد عضوية نشطة في عيادة متاحة. تواصل مع مسؤول العيادة.</div>}<p className="auth-footnote">سجلات العرض التجريبي محفوظة في هذا المتصفح ومشتركة بين اختيارات العيادات. لا تُدخل بيانات مرضى حقيقية.</p><button className="auth-text-button" onClick={()=>void logout()} disabled={busy}>تسجيل الخروج</button></section></main>;
   return <div className="authenticated-app" style={{'--clinic-primary':clinic.branding?.primaryColor??'#7854D9','--clinic-secondary':clinic.branding?.secondaryColor??'#F6F8FC'} as CSSProperties}>
-    <div className="session-strip"><span><b>بيانات عرض تجريبي فقط</b> · محفوظة محليًا ومشتركة بين العيادات في هذا المتصفح؛ ليست سجلات طبية آمنة.</span><button onClick={()=>void settings()} disabled={busy}>إعدادات العيادة</button></div>
+    <div className="session-strip"><span><b>نسخة تطوير · بيانات وهمية فقط</b> · سجل المرضى محفوظ لكل عيادة؛ المواعيد والطابور والفواتير عرض تجريبي محلي.</span><button onClick={()=>void settings()} disabled={busy}>إعدادات العيادة</button></div>
     {message&&<div className="session-message" role="alert">{message}<button aria-label="إغلاق التنبيه" onClick={()=>setMessage('')}>×</button></div>}
-    <App clinic={clinic} userName={session.user.name} busy={busy} onSwitch={()=>{setClinic(null);setMessage('');}} onLogout={()=>void logout()}/>
+    <App key={clinic.clinicId} csrfToken={session.csrfToken} onAuthError={failure} clinic={clinic} userName={session.user.name} busy={busy} onSwitch={()=>{setClinic(null);setMessage('');}} onLogout={()=>void logout()}/>
   </div>;
 }

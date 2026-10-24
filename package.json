@@ -20,7 +20,7 @@
     "build:api": "npm run build --workspace @lamssa/api --",
     "preview": "npm run preview --workspace @lamssa/web --",
     "start:api": "npm run start --workspace @lamssa/api --",
-    "test": "npm run test --workspace @lamssa/api --",
+    "test": "npm run test --workspaces",
     "test:db": "npm run test:db --workspace @lamssa/api --",
     "db:generate": "npm run db:generate --workspace @lamssa/api --",
     "db:validate": "npm run db:validate --workspace @lamssa/api --",
@@ -35,7 +35,9 @@
     "db:status:test": "node scripts/test-database-command.mjs status",
     "db:grant": "node scripts/grant-database-access.mjs",
     "auth:provision": "npm run auth:provision --workspace @lamssa/api --",
-    "check:boundaries": "node scripts/check-database-boundaries.mjs"
+    "check:boundaries": "node scripts/check-database-boundaries.mjs",
+    "test:web": "npm run test --workspace @lamssa/web --",
+    "test:browser": "npm run build && npm run test:compile --workspace @lamssa/api && node scripts/patients-browser-smoke.mjs"
   },
   "allowScripts": {
     "@prisma/engines@7.10.1": true,

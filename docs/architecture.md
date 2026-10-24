@@ -1,11 +1,156 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.4 — current implementation, 2026-10-24.
+Phase 1, Steps 1.1–1.5 — current implementation, 2026-10-24.
 
-**Current status:** tenant repositories and PostgreSQL FORCE RLS protect implemented
-clinic resources. Authentication/session/RBAC and public branding remain available.
-Arabic RTL workflow records remain local, shared demo data. No patient/invoice CRUD
-or clinical records have been introduced. This remains a development foundation.
+**Current status:** authenticated administrative patients now persist per clinic through
+mandatory tenant transactions, RBAC and PostgreSQL FORCE RLS. Arabic RTL directory,
+registration and profile/edit/status screens use the API. Appointments, queue,
+invoices and dashboard metrics still use the original browser demo data. No
+clinical records, photographs or automatic demo import are implemented. Use only
+fictional data until production privacy and operational controls are reviewed.
+
+## Step 1.5: administrative patients
+
+### Stored fields and ownership
+
+| Field | Purpose / rules |
+| --- | --- |
+| id | Server-generated UUID; immutable primary identity |
+| clinicId | Required RESTRICT FK to Clinic; immutable tenant ownership |
+| patientNumber | Server-issued `P-000001`, minimum six digits, grows to ten; unique **within** clinic |
+| fullName | Required, 2–150 characters, NFC, trimmed/collapsed whitespace; preserves Arabic spelling and accents |
+| searchName | Internal derived search key, bounded to 150 UTF-16 units; never returned or browser-writable |
+| phone | Optional nullable contact; Arabic/Persian digits normalized, formatting removed, leading `00` becomes `+`; 7–15 digits, no country inferred |
+| email | Optional nullable administrative contact; validated, trimmed/lowercased, max 254 |
+| dateOfBirth | Optional PostgreSQL DATE, exact valid `YYYY-MM-DD`, no future dates; identification when supplied, not a timestamp |
+| gender | Optional self-reported FEMALE/MALE/OTHER/UNDISCLOSED; null means unspecified; no inferred gender/clinical sex |
+| status | ACTIVE/INACTIVE; created ACTIVE; dedicated authorized status workflow |
+| version | Positive optimistic-lock integer, starts at 1; required expectedVersion for edits/status |
+| createdAt / updatedAt | Server-managed UTC instants |
+
+No address, national ID, administrative free text, clinical notes, diagnoses,
+treatment, photos, allergies or history is stored. The legacy demo's notes remain
+browser-only. Optional birth date/gender are never required to register; collect
+only when justified. Names/phones/emails are not globally or clinic-uniquely
+identifying; duplicates are accepted. The same number in different clinics does
+not link people. Clinic has many Patients and at most one PatientCounter. Composite
+`(clinicId,id)` uniqueness is ready for future **same-clinic compound foreign keys**.
+Indexes cover clinic/status/createdAt/id pagination and name/phone/number prefixes.
+Extra SQL pattern-operator indexes and check/trigger/RLS definitions must be retained
+when reviewing Prisma-generated migrations.
+
+`PatientCounter(clinicId PK/FK, lastNumber)` is tenant-owned infrastructure, never
+an API resource. Registration upserts/increments its row and inserts the patient in
+one `TenantDatabaseService.withClinicContext` interactive transaction. PostgreSQL
+locks the unique counter row until commit, including concurrent first registrations;
+a rollback undoes allocation and insertion together. It is not `MAX()+1`, a browser
+counter or a global sequence. Runtime cannot delete/rewind/reassign a counter;
+updates must advance by exactly one. The Int allocator fails closed at exhaustion
+(2,147,483,647); it never wraps/reuses numbers. Owner maintenance is privileged and
+must not manually renumber/reseed operational patients.
+
+### API contracts and access
+
+All paths below are under `/api/v1/clinics/:clinicId` and require a verified cookie
+session, selected clinic, active user/clinic/membership and server permissions.
+The guard checks access; PatientRepository repeats authorization in its tenant
+transaction. No unrestricted Prisma client is exposed to the patient controller.
+
+| Method / path | Permission | Contract |
+| --- | --- | --- |
+| GET patients | patients.read | `q` (max 60), `status=ACTIVE/INACTIVE/ALL` (default ACTIVE), `pageSize` (default 20, max 50), optional UUID `cursor` |
+| GET patients/:patientId | patients.read | Includes inactive records; foreign/missing patient IDs have identical safe 404 responses |
+| POST patients | patients.create | fullName plus optional phone/email/dateOfBirth/gender; 201 with projected record |
+| PATCH patients/:patientId | patients.update | At least one of the five editable fields plus numeric expectedVersion |
+| PATCH patients/:patientId/status | patients.update | Only status and expectedVersion; preserves historical identity; no hard deletion |
+
+Create/update DTOs reject unknown fields: clinicId, ID, patientNumber, timestamps,
+version, roles, notes and general-update status are not writable. Explicit null
+clears optional fields; blank phone/email also become null. fullName cannot be null.
+Every response projects only id, patientNumber, fullName, phone, email, dateOfBirth,
+gender, status, version, createdAt and updatedAt. Internal clinicId/searchName/counter
+are omitted. Lists return `{items,pageSize,hasMore,nextCursor}`, without unbounded
+results or global counts. Ordering is stable `(createdAt DESC,id DESC)` with a
+clinic-scoped cursor anchor. Concurrent new inserts appear when refreshing page one;
+this is seek pagination, not a frozen snapshot. Query/status changes reset pagination.
+
+Search is a **literal prefix**, not substring/fuzzy matching: name, patient number
+(case-insensitive ASCII prefix), or normalized phone prefix. Search keys use NFKC,
+lowercase, Arabic/Persian digits, remove tatweel/Arabic combining marks and fold
+Alef variants and alef maqsura; displayed NFC names retain these distinctions.
+SQL LIKE `%`, `_` and backslash are escaped; no raw request SQL is built. A phone
+without country code is not silently made equivalent to an international number.
+Searches may match multiple people; this is not deduplication. Only matching
+clinic rows within the bounded page are returned.
+
+PATCH atomically matches `(clinicId,id,version)`, increments version and returns a
+fresh projection. Stale edits/status return safe 409; the form requires reload/review
+rather than silently replacing another operator's changes. Patient numbers remain
+unique; duplicate-identifier errors are sanitized to 409. The client disables
+concurrent submissions, but POST has no durable idempotency key yet. After an
+ambiguous network failure, search before explicitly retrying; there is no automatic
+POST retry. Durable idempotency/change auditing remain follow-up work.
+
+The existing least-privilege matrix is unchanged: owner/admin/receptionist read,
+create, update; doctor read/update; accountant has no patient permissions. These
+permissions cover administrative identity/contact only, not future clinical data.
+Status changes use patients.update. No staff/invoice/clinical CRUD was introduced.
+All mutations retain exact-Origin + session-CSRF enforcement; CORS now allows PATCH.
+
+### Patient RLS and trusted access
+
+Additive migration `20261024000400_patients` creates Patient and PatientCounter,
+enables **and forces** RLS, installs explicit command policies and grants only
+SELECT/INSERT/UPDATE to existing restricted runtime grantees. DELETE policy is false
+and DELETE/TRUNCATE are not granted. SELECT/INSERT/UPDATE use the existing
+`context_allows(clinicId)` selected-live-session/active-membership predicate, including
+UPDATE USING and WITH CHECK. Missing/invalid/foreign context denies access. Counter
+INSERT additionally requires lastNumber=1. Invoker triggers prevent changes to
+patient id/clinicId/patientNumber and prevent counter rewind/reassignment.
+
+Both tables have the explicit maintenance-owner policy needed for controlled
+migrations/fictional fixture cleanup. No new SECURITY DEFINER function is added;
+the existing three fixed identity/branding/policy helpers are unchanged. Two new
+invoker trigger functions have fixed search_path and no PUBLIC execution. Runtime
+owner/admin misconfiguration checks now include the new tables. The grant allowlist
+is explicit; no access to future tables is implied. Tests exercise real runtime
+credentials, not only maintenance access.
+
+RLS enforces tenant rows, **not application permissions, field validation or audit**.
+Only the server can issue recognized principals and decide repository permissions.
+Custom GUCs remain noncryptographic. Compromised trusted code/runtime SQL or leaked
+maintenance credentials remain outside the containment claim; earlier residual
+risks below still apply. Future module repositories must use this same boundary
+and require same-clinic references (especially appointments → Patient).
+
+### Frontend and demo separation
+
+PatientDirectory holds API data only in component memory and uses the cookie client
+with no-store, session CSRF, per-request AbortSignal/timeouts and a generation gate.
+Clinic change unmounts the keyed App, aborts all patient operations and discards
+state; a late response is ignored even if the transport ignores abort. Profile,
+mutation and directory requests have independent cancellation gates. Cross-tab
+session checks lock the app if the account/selected clinic changes. UI permission
+hiding is advisory; the API always reauthorizes.
+
+Arabic RTL labels, branded colors, loading/empty/error/conflict states, profile
+editing and active/inactive filters remain responsive. Dialogs trap keyboard focus,
+close with Escape and restore focus. The old browser patient form/directory is
+explicitly labeled **legacy demo** and remains accessible for the old workflows.
+Appointments, queue, invoices and dashboard show a demo-only banner; they reference
+only original demo patient IDs. Registering an API patient never changes those
+arrays, imports records or writes identifiable API data into localStorage or
+sessionStorage. Existing stored JSON is not even reformatted on an API-only visit;
+only deliberate legacy demo operations save demo changes. Use the same browser
+origin to retain prior browser records.
+
+See [development.md](development.md#step-15-patient-setup-and-verification) for
+commands and executed verification. Number allocation follows [PostgreSQL ON CONFLICT
+atomicity](https://www.postgresql.org/docs/16/sql-insert.html); all work remains in
+[Prisma interactive transactions](https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions).
+
+The following sections preserve earlier-step context. The Step 1.5 description
+above supersedes historical statements that all workflows are browser-only.
 
 ## Step 1.4: mandatory tenant database boundary
 

@@ -1,3 +1,4 @@
+import { PatientController } from './patients/patient.controller.js';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { resolve } from 'node:path';
@@ -20,7 +21,7 @@ import { ClinicContextController } from './clinics/clinic-context.controller.js'
     PrismaModule,
     AuthModule,
   ],
-  controllers: [HealthController, PublicBrandingController, ClinicContextController],
+  controllers: [PatientController,HealthController, PublicBrandingController, ClinicContextController],
   providers: [PublicBrandingService],
 })
 export class AppModule {}

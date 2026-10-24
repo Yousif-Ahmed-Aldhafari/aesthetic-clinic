@@ -1,6 +1,6 @@
 # Lamssa implementation roadmap
 
-Updated after Step 1.4, 2026-10-24. The user's current scope
+Updated after Step 1.5, 2026-10-24. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All
 production use remains gated on authentication, isolation and operational controls.
 
@@ -52,17 +52,21 @@ production use remains gated on authentication, isolation and operational contro
    Runtime-role isolation, concurrency, rollback/reuse, auth/public/browser and
    record-preservation checks are recorded in development.md. No patient API yet.
 
-5. **1.5 — Patient Management Backend.**
-   Add clinic-scoped administrative patient create/list/detail/update, chart numbers,
-   bounded search/pagination, name/phone/note validation and permitted response
-   fields. Preserve Arabic input; shared family phones are not unique identities.
-   Introduce explicit demo/API mode and loading/error/empty states, with sensitive
-   access/change audit. No automatic import from localStorage.
-   Acceptance: clinic isolation and validation tests pass and existing demo flows
-   remain usable. Clinical notes/photos are deferred.
+5. **1.5 — Administrative Patient Management (implemented).**
+   Added tenant-owned Patient/PatientCounter, clinic-local transactional numbers,
+   FORCE RLS, immutable identifiers, restricted runtime grants and explicit status
+   changes. Administrative-only DTOs, literal Arabic-normalized prefix search,
+   bounded cursor pagination, optimistic versions and safe projections use the
+   existing verified tenant boundary. Arabic RTL directory/register/profile/edit
+   now persist through the authenticated API; old demos remain separate and intact.
+   Runtime database tests and isolated browser journeys cover permissions, CSRF,
+   two clinics, concurrency/rollback, stale-response switching and legacy flows.
+   No clinical/free-text notes/photos, hard deletion or automatic demo import.
+   Change/access audit, durable create idempotency, retention and production
+   operational/privacy review remain separate gates before real patient data.
 
 6. **1.6 — Appointments and clinic resources.**
-   Add services, clinicians, rooms and availability; replace free-text references
+   Use persisted Patient via compound (clinicId,patientId) FK and explicit active-patient booking policy. Add services, clinicians, rooms and availability; replace free-text references
    with same-clinic resource IDs. Use duration, UTC instants and clinic timezone;
    support rescheduling/cancellation and conditional status/version changes.
    Prevent interval overlaps with reviewed database exclusion rules or serialized

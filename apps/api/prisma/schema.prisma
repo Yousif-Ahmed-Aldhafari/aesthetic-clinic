@@ -47,19 +47,21 @@ enum MembershipStatus {
 
 // Tenant root: scoped private SELECT; fixed public/identity bootstrap functions.
 model Clinic {
-  id          String       @id @default(uuid()) @db.Uuid
-  legalName   String       @db.VarChar(200)
-  displayName String       @db.VarChar(150)
-  slug        String       @unique @db.VarChar(63)
-  status      ClinicStatus @default(ACTIVE)
-  timezone    String       @default("UTC") @db.VarChar(100)
-  currency    String       @db.Char(3)
-  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
-  branding    ClinicBranding?
-  domains     ClinicDomain[]
-  memberships ClinicMembership[]
-  sessions    Session[]
+  id             String             @id @default(uuid()) @db.Uuid
+  legalName      String             @db.VarChar(200)
+  displayName    String             @db.VarChar(150)
+  slug           String             @unique @db.VarChar(63)
+  status         ClinicStatus       @default(ACTIVE)
+  timezone       String             @default("UTC") @db.VarChar(100)
+  currency       String             @db.Char(3)
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
+  branding       ClinicBranding?
+  domains        ClinicDomain[]
+  memberships    ClinicMembership[]
+  sessions       Session[]
+  patients       Patient[]
+  patientCounter PatientCounter?
 
   @@index([status, createdAt])
 }
@@ -151,4 +153,49 @@ model LoginBucket {
   expiresAt DateTime @db.Timestamptz(3)
 
   @@index([expiresAt])
+}
+
+enum PatientStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// Optional, self-reported administrative gender, never inferred or clinical sex.
+enum PatientGender {
+  FEMALE
+  MALE
+  OTHER
+  UNDISCLOSED
+}
+
+// Administrative identity/contact only. No clinical/free-text notes or media.
+model Patient {
+  id            String         @id @default(uuid()) @db.Uuid
+  clinicId      String         @db.Uuid
+  patientNumber String         @db.VarChar(20)
+  fullName      String         @db.VarChar(150)
+  searchName    String         @db.VarChar(150)
+  phone         String?        @db.VarChar(16)
+  email         String?        @db.VarChar(254)
+  dateOfBirth   DateTime?      @db.Date
+  gender        PatientGender?
+  status        PatientStatus  @default(ACTIVE)
+  version       Int            @default(1)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(3)
+  clinic        Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, patientNumber])
+  @@index([clinicId, createdAt, id])
+  @@index([clinicId, status, createdAt, id])
+  @@index([clinicId, searchName])
+  @@index([clinicId, phone])
+}
+
+// Row-locked transactional allocator; runtime cannot delete or decrement it.
+model PatientCounter {
+  clinicId   String @id @db.Uuid
+  lastNumber Int
+  clinic     Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }
