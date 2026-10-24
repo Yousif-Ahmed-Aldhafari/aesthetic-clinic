@@ -6,8 +6,9 @@ endpoints, RLS and clinical workflows are not implemented. Use fictional data on
 ## Requirements and versions
 
 - Node 24 LTS (`>=24.11 <25`), npm 11; `.nvmrc` selects Node 24.
-- PostgreSQL 17 (development Compose pins `postgres:17.11-alpine`) or a compatible
-  local service. Docker Compose v2 is optional if PostgreSQL is already installed.
+- Native PostgreSQL **16** from Linux Mint 22.3 / Ubuntu 24.04 repositories is the
+  preferred local setup (candidate 16.15 at inspection). Optional Docker Compose
+  uses PostgreSQL 17; both use the existing PostgreSQL schema and pg adapter.
 - NestJS core/common/platform-express/testing **12.2.0**, config **12.0.1**, CLI
   **12.0.10**; Prisma CLI/client/adapter-pg **7.10.1**; pg **8.23.1**; TS **5.9.3**.
   Versions are pinned and recorded in the single root npm lockfile. The Prisma
@@ -31,17 +32,32 @@ Run all commands below from the repository root unless stated otherwise:
 ```bash
 nvm use
 npm ci
-cp .env.example .env
+npm run db:env:native
 ```
 
 npm 11's `allowScripts` list in the root manifest permits only the pinned Prisma
 and esbuild setup scripts. Review that list when updating those versions.
 
-Edit `.env`. Set a private `POSTGRES_PASSWORD` and matching `DATABASE_URL` using
-your own credentials; URL-encode special characters in the URL. The example
-password is deliberately empty and the URL contains an unusable placeholder.
-Neither value is an application login. Do not commit `.env` or copy server values
-into `apps/web`/`VITE_*` configuration.
+`db:env:native` creates a root `.env` with cryptographically random, distinct
+credentials and mode `0600`. It refuses to overwrite any existing `.env`. Existing
+setups must add only missing settings deliberately; never replace existing secrets.
+Do not print the file, put passwords in shell history/arguments, or commit it.
+No server values belong in `apps/web` or `VITE_*` variables.
+
+| Variable | Native role / purpose |
+| --- | --- |
+| DATABASE_URL | lamssa_dev_app: runtime DML in lamssa_dev |
+| MIGRATION_DATABASE_URL | lamssa_dev_migrator: owns only the development database/schema |
+| TEST_DATABASE_URL | lamssa_test_app: integration-test DML in lamssa_test |
+| TEST_MIGRATION_DATABASE_URL | lamssa_test_migrator: owns only the test database/schema |
+
+The four roles have no superuser, create-database, create-role, replication or
+RLS-bypass privileges. Runtime roles own no database/schema, cannot create tables,
+and receive CRUD only on the five identity tables, excluding `_prisma_migrations`.
+PUBLIC has no access to either application database/schema; development and test
+runtime logins cannot connect to each other's database. Database-level privilege
+separation does not enforce per-clinic authorization; Authentication/RBAC and RLS
+are still future work.
 
 API configuration and Prisma CLI both load the root `.env`; shell environment
 variables take precedence. Vite stays rooted in `apps/web` and does not consume
@@ -50,37 +66,70 @@ the root server configuration. `DATABASE_URL` and a comma-separated list of exac
 are rejected. Production mode requires HTTPS origins. The defaults bind the API
 to `127.0.0.1:3000`; use `API_HOST`/`API_PORT` to change it explicitly.
 
-## Start PostgreSQL
+## Native PostgreSQL on Linux Mint (preferred)
+
+Inspection found only `libpq5`, no server/client packages, no PostgreSQL service,
+and no port-5432 listener. Mint 22.3 uses Ubuntu's `noble` repositories; its native
+PostgreSQL 16 package is sufficient. No PGDG repository or Docker is required.
+See the [official Ubuntu installation guidance](https://www.postgresql.org/download/linux/ubuntu/).
+
+Installation, service changes and initial role/database creation require explicit
+user approval. These are the exact commands for this machine, run in an interactive
+terminal if sudo needs a password:
+
+```bash
+sudo apt-get update
+sudo apt-get install --yes --no-install-recommends postgresql-16 postgresql-client-16
+sudo systemctl start postgresql@16-main
+node scripts/native-postgres-setup.mjs
+```
+
+The package normally initializes the standard `16/main` cluster. The setup script
+executes `sudo -n -u postgres psql --no-psqlrc --set ON_ERROR_STOP=1 --dbname postgres`,
+sending private credentials through stdin only. It checks loopback listening and
+refuses if any reserved role/database already exists, before issuing DDL. It creates
+only new Lamssa databases/roles and never resets databases or rotates existing
+passwords. Existing setups require an explicit administrator review instead of
+rerunning first-time provisioning. A partial setup failure may leave newly created
+objects; inspect them rather than dropping or altering them blindly.
+
+```bash
+pg_lsclusters
+pg_isready -h 127.0.0.1 -p 5432
+systemctl status postgresql@16-main --no-pager
+```
+
+Normal service control, when explicitly authorized:
+
+```bash
+sudo systemctl start postgresql@16-main
+sudo systemctl stop postgresql@16-main
+```
+
+Stopping the cluster affects every database in it; coordinate with other local
+users/services. Do not change `listen_addresses` to `*`, open firewall ports, or
+replace `pg_hba.conf` with trust authentication. Default Ubuntu loopback TCP/SCRAM
+and local postgres peer authentication are sufficient. No system-startup policy
+or authentication rules are changed by the repository scripts.
+
+## Optional Docker alternative
+
+Do not start Docker PostgreSQL and the native cluster on the same port. The native
+`.env` does not contain Docker initialization credentials. For a separate Docker
+setup, configure the example POSTGRES_* values privately and matching runtime/
+migration URLs before using:
 
 ```bash
 npm run db:up
 docker compose ps
-```
-
-Compose requires credentials via environment interpolation. It binds PostgreSQL
-to **127.0.0.1 only**, uses a named `postgres_data` volume, and checks readiness
-with `pg_isready`. It is development-only; the image's initialization user is
-privileged and must not be reused as a production application role. Before a real
-deployment provision separate migration and restricted request roles.
-
-```bash
 npm run db:down
 ```
 
-Normal shutdown preserves the named volume. Do not remove volumes or run database
-reset/force-push commands against an existing database. Changing `.env` credentials
-does not rewrite credentials in an already initialized volume; coordinate an
-explicit credential rotation instead. Avoid printing resolved Compose config
-because it includes credentials.
-
-Without Docker, install/start PostgreSQL 17 through your operating system's
-normal tooling. Create a dedicated development login and empty `lamssa_dev`
-database, using interactive password entry (for example `createuser --pwprompt`
-and `createdb --owner` from an authorized local database administrator session).
-Keep `listen_addresses` and host access rules local. Point `DATABASE_URL` at that
-service and skip `db:up`/`db:down`. Do not change or reset another application's
-database. PostgreSQL tooling was not installed in the implementation environment;
-the verification record describes which database steps could actually run.
+Compose binds to 127.0.0.1 only and retains its named `postgres_data` volume on
+normal shutdown. Its initialization user is privileged; separate runtime roles
+are required before using the least-privilege database tests. Changing environment
+values does not rotate an already initialized volume's credentials. Never remove
+volumes or run reset/force-push commands to fix configuration problems.
 
 ## Generate and apply migrations
 
@@ -89,13 +138,29 @@ npm run db:generate
 npm run db:validate
 npm run db:migrate
 npm run db:status
+npm run db:migrate:test
+npm run db:status:test
+npm run db:grant
 npm run db:seed  # Optional: two fictional clinic identities; no users/passwords
 ```
 
 Generation and validation do not need a live database or a configured URL.
 `db:migrate` runs `prisma migrate deploy` to apply the checked-in initial migration
-without resetting data. Review the target URL before applying migrations; use a
-new dedicated development database for first setup. `db:migrate:dev -- --name ...`
+without resetting data. Prisma CLI prefers MIGRATION_DATABASE_URL, falling back
+to DATABASE_URL for older setups. The runtime Prisma adapter and seed continue
+using DATABASE_URL. The test migration/status wrapper selects the test URLs in
+child-process environment without printing them. No shadow database, directUrl or
+additional Prisma URL is needed for migrate deploy.
+
+After migrating both databases, `db:grant` connects as each migration owner and
+grants its runtime role CRUD on the five named tables only. It grants no DDL,
+role membership, grant option or migration-history access. Run this again when
+explicitly adding authorized tables in later steps; do not grant all future tables
+by default. Native test permissions follow [PostgreSQL GRANT](https://www.postgresql.org/docs/16/sql-grant.html)
+and [restricted role attributes](https://www.postgresql.org/docs/16/sql-createrole.html).
+
+Review the target database before applying migrations; use a new dedicated
+local database for first setup. `db:migrate:dev -- --name ...`
 is reserved for creating reviewed future migrations on a disposable development
 database (it can require shadow-database privileges); decline any reset prompt
 when a database contains data that must be retained. There is no reset/push script.
@@ -164,18 +229,77 @@ npm test            # Configuration and real HTTP tests with a mocked database
 npm run test:db     # Live PostgreSQL constraints; skips explicitly without TEST_DATABASE_URL
 ```
 
-For live database tests, create a **separate empty test database**, apply the same
-checked-in migrations to it by supplying its URL as `DATABASE_URL` for the migration
-command, and set `TEST_DATABASE_URL` in `.env`. Never use a production URL. The test
+Native setup creates the separate test database and credentials. Apply its
+migration with `db:migrate:test`, then run `db:grant` before `test:db`. Existing
+setups must explicitly configure both test URLs. Never use a production URL. The test
 requires it to differ from the normal application URL and wraps synthetic inserts
 and constraint probes in one transaction that is rolled back. It tests scoped
 memberships, independent branding, global slug/email/domain uniqueness, foreign
 keys, restricted deletion, color/identity checks and verified-primary-domain rules.
-It does not establish authenticated tenant isolation. No lint script exists yet.
+The test also verifies non-administrative/non-owner role attributes, denied DDL,
+denied mutation of migration history, and explicitly clinic-scoped reads/updates.
+It does not establish authenticated tenant isolation or prevent arbitrary unscoped
+queries before RLS/auth exist. No lint script exists yet.
 
 Authentication, secure sessions, permissions, membership-derived tenant context,
 RLS, audit, backups and production deployment remain release gates. See
 [architecture.md](architecture.md) and [implementation-roadmap.md](implementation-roadmap.md).
+
+## Native troubleshooting
+
+- **sudo requires a password:** run the approved installation/service/setup commands
+  in your local interactive terminal. The agent uses `sudo -n` and cannot enter
+  your password. Do not send passwords through chat. The setup helper should run
+  immediately after an interactive sudo command so its sudo authentication is cached.
+- **Connection refused:** inspect `pg_lsclusters`, `pg_isready -h 127.0.0.1 -p 5432`
+  and `systemctl status postgresql@16-main --no-pager`. Start the approved cluster
+  with `sudo systemctl start postgresql@16-main`; do not initialize another cluster
+  over an existing data directory. The generated native URLs expect port 5432.
+- **Peer authentication failure:** administration uses the operating-system postgres
+  account (`sudo -u postgres psql`). Application roles use TCP to 127.0.0.1 with
+  SCRAM passwords. Do not change local authentication to trust or use the postgres
+  account as an application login.
+- **Password authentication failure:** check that the local role/database targets
+  match the private settings. Preserve existing secrets and inspect shell-variable
+  overrides without printing values. Do not rerun the environment generator to
+  replace passwords; it intentionally refuses an existing file.
+- **Reserved names already exist:** first-time setup aborts without rotating any
+  credentials. Have the local administrator inspect those roles/databases and
+  establish provenance. Never drop an existing database merely to unblock setup.
+- **Permission denied for a schema/table:** use migration-owner URLs for migrations,
+  apply both databases' migrations, then run `npm run db:grant`. Runtime URLs must
+  remain non-owner credentials. Do not grant superuser, database/schema ownership,
+  public CREATE, or access to `_prisma_migrations` to make the application run.
+- **Prisma reports a nonempty or divergent database:** stop and review the target
+  and migration history. No reset, schema push, baseline or force command is part
+  of this setup. `migrate deploy` requires no shadow database or CREATEDB privilege.
+- **Tests fail the role/permission assertions:** ensure TEST_DATABASE_URL is the
+  restricted test runtime role, not its owner or an initialization administrator.
+  All fixture inserts/constraint probes roll back and do not seed test accounts.
+- **Readiness is 503:** first verify TCP/database permissions; `/health` is liveness
+  only. Readiness does not prove migrations are current, so also run both migration
+  status commands. Inspect server logs locally without sharing credentials or SQL
+  containing secrets.
+
+## Step 1.2.1 verification progress (2026-10-24)
+
+The user approved native package installation, service startup and first-time
+database/role provisioning. The tool's `sudo -n apt-get update` attempt exited 1
+with `sudo: a password is required`; the chained install/start commands did not
+execute. No package, service, database or existing password was changed by that
+failed command. Subsequent inspection found the native PostgreSQL 16/main cluster
+online on port 5432, and `pg_isready` reported accepting connections. All four
+configured Lamssa logins still failed with PostgreSQL authentication code 28P01;
+first-time role/database provisioning has not yet been verified. Do not replace
+passwords or assume the existing roles/databases are safe to overwrite.
+
+A new private root `.env` was created only because none existed, using exclusive
+creation and mode 0600; its four passwords were not printed. Existing secrets are
+never replaced. Native helper syntax, Prisma generation/validation, both application
+builds and all nine configuration/HTTP tests pass. The frontend sources remain
+byte-identical, and all 13 desktop/mobile/form snapshots and the existing demo
+workflow checks match the previous baseline. Live migrations, seed, integration tests and healthy readiness must
+be recorded after the local terminal setup completes; they are not yet claimed.
 
 ## Step 1.2 verification record (2026-10-24)
 

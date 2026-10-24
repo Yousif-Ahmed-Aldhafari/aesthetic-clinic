@@ -29,7 +29,11 @@
     "db:status": "npm run db:status --workspace @lamssa/api --",
     "db:seed": "npm run db:seed --workspace @lamssa/api --",
     "db:up": "docker compose up -d postgres",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "db:env:native": "node scripts/native-postgres-env.mjs",
+    "db:migrate:test": "node scripts/test-database-command.mjs migrate",
+    "db:status:test": "node scripts/test-database-command.mjs status",
+    "db:grant": "node scripts/grant-database-access.mjs"
   },
   "allowScripts": {
     "@prisma/engines@7.10.1": true,

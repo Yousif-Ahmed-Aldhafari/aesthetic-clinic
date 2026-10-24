@@ -11,10 +11,20 @@ const url = process.env.TEST_DATABASE_URL;
 // Explicit opt-in only. All rows are rolled back; deletion probes use fixture IDs only.
 test('live PostgreSQL identity, membership and tenant constraints', { skip: !url }, async () => {
   assert.notEqual(url, process.env.DATABASE_URL, 'Use a dedicated TEST_DATABASE_URL');
+  if (process.env.DATABASE_URL) {
+    const identity = (value: string) => {
+      const target = new URL(value);
+      return `${target.hostname}:${target.port || '5432'}${target.pathname}`;
+    };
+    assert.notEqual(identity(url!), identity(process.env.DATABASE_URL), 'Test and development must be different databases, even with different credentials');
+  }
   const client = new Client({ connectionString: url, connectionTimeoutMillis: 3000 });
   await client.connect();
   try {
     await client.query('BEGIN');
+    const role = (await client.query('SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0];
+    assert.deepEqual(role, { rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false });
+    assert.equal((await client.query('SELECT pg_get_userbyid(datdba) = current_user AS owns_database FROM pg_database WHERE datname=current_database()')).rows[0].owns_database, false);
     const a = randomUUID(), b = randomUUID(), user = randomUUID();
     const suffix = randomUUID();
     for (const [id, slug] of [[a, `test-a-${suffix}`], [b, `test-b-${suffix}`]]) {
@@ -30,6 +40,10 @@ test('live PostgreSQL identity, membership and tenant constraints', { skip: !url
     }
     const colors = await client.query('SELECT "primaryColor" FROM "ClinicBranding" WHERE "clinicId" IN ($1,$2)', [a, b]);
     assert.equal(new Set(colors.rows.map(row => row.primaryColor)).size, 2);
+    assert.equal((await client.query('SELECT "role" FROM "ClinicMembership" WHERE "clinicId"=$1 AND "userId"=$2', [a, user])).rows[0].role, 'CLINIC_OWNER');
+    assert.equal((await client.query('SELECT "role" FROM "ClinicMembership" WHERE "clinicId"=$1 AND "userId"=$2', [b, user])).rows[0].role, 'ACCOUNTANT');
+    // A mismatched clinic condition cannot update the other clinic's branding.
+    assert.equal((await client.query('UPDATE "ClinicBranding" SET "primaryColor"=$1 WHERE "clinicId"=$2 AND "clinicId"=$3', ['#000000', a, b])).rowCount, 0);
 
     const rejected = async (sql: string, values: unknown[], expectedCode: string) => {
       await client.query('SAVEPOINT constraint_case');
@@ -43,6 +57,8 @@ test('live PostgreSQL identity, membership and tenant constraints', { skip: !url
         await client.query('RELEASE SAVEPOINT constraint_case');
       }
     };
+    await rejected('CREATE TABLE public."LamssaPermissionProbe" (id integer)', [], '42501');
+    await rejected('UPDATE public._prisma_migrations SET migration_name=migration_name WHERE false', [], '42501');
     await rejected('UPDATE "Clinic" SET "slug"=(SELECT "slug" FROM "Clinic" WHERE "id"=$1) WHERE "id"=$2', [a, b], '23505');
     await rejected('INSERT INTO "User" ("id","name","email","updatedAt") VALUES ($1,$2,$3,NOW())', [randomUUID(), 'مستخدم مكرر', `${suffix}@example.invalid`], '23505');
     await rejected('INSERT INTO "ClinicMembership" ("id","clinicId","userId","role","updatedAt") VALUES ($1,$2,$3,$4,NOW())', [randomUUID(), a, user, 'DOCTOR'], '23505');
