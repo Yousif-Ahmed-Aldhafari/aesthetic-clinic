@@ -1,146 +1,112 @@
 # Lamssa implementation roadmap
 
-Phase 1 planning baseline, 2026-10-24. Only Step 1.1 is implemented here. All
-subsequent steps require separately scoped implementation; no backend, database,
-authentication or production security capability is implied by these documents.
+Updated after the expanded Step 1.2 request, 2026-10-24. The user's current scope
+supersedes the original separation of workspace/API/database foundation. All
+production use remains gated on authentication, isolation and operational controls.
 
-Use [architecture.md](architecture.md) for ownership, relationships, roles,
-constraints and security decisions. Keep the existing Arabic RTL prototype usable
-after every step and use synthetic data throughout development.
+1. **1.1 — Inspect and establish architecture (completed).**
+   Recorded the actual frontend state and risks, extracted existing definitions,
+   preserved Arabic RTL behavior and demo storage. Committed as `dbb529c`.
 
-1. **1.1 — Inspect and establish architecture (this change).**
-   Inspect every source/configuration file and Git state; record actual flows and
-   limitations. Extract existing types, demo helpers, common components and forms
-   without changing behavior. Add architecture/roadmap documentation and README.
-   Acceptance: unchanged storage key/shape and Arabic UI, successful build, no new
-   dependencies/backend scaffold, documented verification and remaining risks.
+2. **1.2 — Workspace, backend, PostgreSQL and clinic identity (current change).**
+   Move the frontend intact to `apps/web`; add `apps/api` using NestJS and a single
+   npm workspace lockfile. Validate environment/input, constrain CORS, sanitize API
+   errors and expose versioned liveness/readiness plus public branding by slug.
+   Add development PostgreSQL Compose, Prisma 7 with its pg adapter, initial
+   identity migration, optional idempotent fictional clinic seed and tests.
+   Entities: Clinic, ClinicBranding, ClinicDomain, User and ClinicMembership.
+   Global platform authority is separate from per-clinic roles. No frontend/API
+   data integration, authentication, private clinic routes or medical models yet.
+   Acceptance: unchanged frontend/storage, build and HTTP checks, Prisma validation
+   and migration artifact. Report live migration/test status separately when the
+   environment lacks PostgreSQL/Docker. See [development.md](development.md).
 
-2. **1.2 — Establish the workspace while preserving the frontend.**
-   Introduce npm workspaces and move existing web files to `apps/web` as a dedicated
-   mechanical change. Retain familiar root `npm run dev`, `build`, and `preview`
-   commands; keep one lockfile and review TS/Vite/HTML paths. Establish the location
-   and dependency rules for `packages/shared` without publishing demo models as API
-   contracts. Record a supported Node version for the eventual API/toolchain.
-   Acceptance: clean install in a disposable checkout, root dev/production build
-   and preview work, all five sections/forms retain Arabic RTL appearance, and
-   same-origin demo data still loads. No automatic storage import or deletion.
+3. **1.3 — Authentication and role-based access control.**
+   Implement credential provisioning without default passwords, strong password
+   hashing, login/logout, secure sessions, expiry/rotation/revocation, CSRF for
+   cookie-authenticated writes, rate limits and recovery/invitation flows. An
+   invited/null-password user cannot authenticate. Resolve current active user,
+   clinic and membership into immutable request context; check server permissions
+   for CLINIC_OWNER, CLINIC_ADMIN, DOCTOR, RECEPTIONIST and ACCOUNTANT. Keep global
+   PLATFORM_ADMIN out of clinic authorization unless an explicit, scoped and audited
+   support-access policy is approved. Add a protected identity/membership endpoint;
+   keep only documented health/branding routes intentionally public.
+   Acceptance: unauthenticated/forbidden/expired/revoked sessions are tested over
+   HTTP; role changes and suspended clinics/memberships take effect promptly;
+   credentials and tokens never enter localStorage, logs or public branding.
 
-3. **1.3 — Backend foundation.**
-   Create `apps/api` using NestJS with modular configuration and a proposed
-   `/api/v1` REST namespace. Add configuration validation, health/readiness policy,
-   structured redacted logs/request IDs, stable errors, global request validation,
-   graceful shutdown and API documentation. Add shared transport types/runtime
-   validation contracts with a clear build boundary. Select exact supported
-   versions/dependencies at implementation time. Keep the browser in demo mode.
-   Acceptance: API boots with valid configuration, fails clearly with invalid
-   configuration, exposes only an intentionally public non-sensitive health route,
-   and has initial CI type/build checks. Domain endpoints stay closed until auth
-   and isolation are implemented.
+4. **1.4 — Enforce clinic isolation before patient API rollout.**
+   Require validated tenant context in every private repository and transaction.
+   Apply clinicId to detail/list/count/search/export, nested relations and bulk
+   writes; prevent tenant reassignment and unscoped object-ID access. Add PostgreSQL
+   RLS, transaction-local context and separate request/migration credentials before
+   a real clinic pilot. Scope caches, jobs, storage and audit as introduced.
+   Acceptance: two-clinic tests cover valid foreign-clinic IDs, users in one/both
+   clinics with different roles, missing context, changed clinic selectors/hosts,
+   suspended memberships, nested writes and pooled-connection reuse. Ownership
+   constraints alone are not authorization. Custom hostnames identify, never grant
+   access. No patient endpoint opens before this gate.
 
-4. **1.4 — PostgreSQL and Prisma data foundation.**
-   Design and review Clinic, User, ClinicMembership, Patient and resource models,
-   then add operational models alongside their feature slices. Introduce migration
-   history, disposable local/test databases, server-only credentials and separate
-   least-privileged application/migration roles. Use UUIDs, clinic-owned compound
-   foreign keys, scoped uniqueness/indexes, timestamps and version fields. Specify
-   UTC instants, clinic business dates, and exact money/currency representation.
-   Acceptance: migrations apply to an empty database; a repeatable synthetic seed
-   creates two unrelated clinics; constraints reject cross-clinic links; migration
-   review and recovery procedures are documented. Never seed from localStorage.
+5. **1.5 — Clinic identity administration and white-label delivery.**
+   Add authorized clinic settings/branding changes, IANA timezone/currency policy,
+   safe logo handling and publishing rules. Connect the web to public branding
+   without mixing its demo data with operational records. Define ownership proof
+   before domain verification, subdomain/custom-domain routing and managed TLS.
+   Acceptance: themes remain Arabic RTL/accessibility compatible, suspended clinics
+   are not published, unique/verified-primary domain constraints hold, and changing
+   a host cannot grant private clinic access. Invoice/message branding is applied
+   only through each later feature's authorized clinic settings.
 
-5. **1.5 — Authentication and RBAC.**
-   Implement login/logout, session expiry/rotation/revocation, password hashing,
-   rate limits and recovery flow. Use the chosen secure cookie strategy with CSRF
-   protection and explicit origin policy. Add active clinic memberships and server
-   permission checks for clinic admin, receptionist, clinician and accountant;
-   platform administration is a separate permission boundary. Map API error codes
-   to Arabic UI messages. Store no session secrets in localStorage.
-   Acceptance: unauthenticated requests fail, role-denied actions fail, revoked
-   sessions/memberships stop working, cookies/CSRF behavior is tested, and hiding a
-   button is never the authorization mechanism.
+6. **1.6 — Patient management vertical slice.**
+   Add clinic-scoped administrative patient create/list/detail/update, chart numbers,
+   bounded search/pagination, name/phone/note validation and permitted response
+   fields. Preserve Arabic input; shared family phones are not unique identities.
+   Introduce explicit demo/API mode and loading/error/empty states, with sensitive
+   access/change audit. No automatic import from localStorage.
+   Acceptance: clinic isolation and validation tests pass and existing demo flows
+   remain usable. Clinical notes/photos are deferred.
 
-6. **1.6 — Enforce clinic isolation before patient API rollout.**
-   Resolve an authorized clinic selection into immutable request context. Require
-   it in every tenant repository method and transaction; prevent `clinicId` mass
-   assignment and unscoped ID access, including nested/bulk writes, search/counts,
-   exports and background work. Add PostgreSQL RLS with transaction-local context,
-   tested application-role permissions and a distinct migration role. Scope caches,
-   events, storage and audit records as those capabilities appear.
-   Acceptance: two-clinic integration tests cover read/create/update/delete,
-   relationship injection, swapped clinic selectors, guessed valid IDs, missing
-   context and pooled-connection reuse. A user who belongs to both clinics gets
-   only the selected clinic's data; a suspended membership is rejected. No real
-   clinic pilot proceeds before this gate.
+7. **1.7 — Appointments and clinic resources.**
+   Add services, clinicians, rooms and availability; replace free-text references
+   with same-clinic resource IDs. Use duration, UTC instants and clinic timezone;
+   support rescheduling/cancellation and conditional status/version changes.
+   Prevent interval overlaps with reviewed database exclusion rules or serialized
+   resource transactions. Acceptance: simultaneous conflicts cannot both succeed;
+   clinician/room conflicts, local day boundaries and Arabic errors are tested.
 
-7. **1.7 — Patient management vertical slice.**
-   Build clinic-scoped create/list/detail/update, bounded search/pagination and
-   chart-number allocation. Validate names/phones/administrative note lengths;
-   normalize searchable values while preserving original Arabic names and input.
-   Do not assume shared family phone numbers identify one patient. Introduce the
-   web transport boundary, loading/error/empty states and explicit demo/API mode.
-   Audit sensitive reads/changes and return only permitted fields.
-   Acceptance: current patient creation/search remains usable in Arabic RTL,
-   cross-clinic tests pass, browser and server validation agree, and demo records
-   are never uploaded automatically. Defer medical notes and images.
+8. **1.8 — Visits and queue consistency.**
+   Implement atomic check-in/visit creation, unique visit queue entries and ticket
+   counters per clinic/lane/business-date. Lock the lane for call-next, enforce one
+   serving patient across day boundaries, and complete visit/appointment together.
+   Add idempotency, bounded retries, version conflicts and a carry-over policy.
+   Acceptance: concurrent calls, duplicate check-ins, retries and midnight cases
+   produce no duplicate tickets or two patients in one room. Start with one lane
+   and polling; multi-room/clinician occupancy needs additional constraints.
 
-8. **1.8 — Appointment and resource management.**
-   Add clinic services, clinician profiles, rooms and availability. Replace free
-   text relationships with authorized resource IDs and preserve historical display
-   snapshots where required. Support booking/rescheduling/cancellation with
-   duration, `startsAt`/`endsAt`, valid transitions and optimistic version checks.
-   Choose database interval exclusion or resource locks for overlap prevention.
-   Acceptance: simultaneous conflicting bookings cannot both succeed; clinician
-   and room conflicts, clinic timezone/day boundaries, cancelled bookings and
-   Arabic validation errors are covered. The old demo flow still works in demo mode.
+9. **1.9 — Billing and payments.**
+   Add line snapshots, exact money/currency totals, immutable issued numbers unique
+   per clinic, auditable payments/partial settlement/reversals, and financial RBAC.
+   Define tax/discount/receipt rules for the operating market before implementation.
+   Acceptance: idempotent/concurrent payments cannot double-collect, searches never
+   change invoice identity, and cross-clinic references are rejected. Render clinic
+   branding from authorized settings; preserve historical issued document snapshots.
 
-9. **1.9 — Visit, check-in and queue consistency.**
-   Implement atomic appointment check-in/visit creation and one queue entry per
-   visit. Allocate tickets via a per-clinic/lane/business-date counter. Implement
-   lane-locked call-next and atomic visit completion with conditional status/version
-   changes, partial active-entry uniqueness and idempotent retries. Define carry-over
-   policy and authorize every queue action; start with one lane/room and polling.
-   Acceptance: concurrent duplicate check-ins, call-next requests and retries cause
-   no duplicate tickets, lost transitions or two active patients in one room;
-   finishing also updates the appointment. Include midnight/carry-over, empty
-   queues, stale clients and tenant isolation in integration tests. Add multiple
-   rooms/clinician occupancy only with explicit resource rules.
-
-10. **1.10 — Billing and payments.**
-    Add invoice lines, immutable issued numbers unique per clinic, currency and
-    exact totals. Replace `paid` mutation with auditable payments, partial payment
-    rules and reversal entries; define draft/issued/void and payment transitions.
-    Allocate invoice numbers transactionally, scope idempotency keys, restrict
-    financial permissions and preserve issued line snapshots. Configure taxes,
-    discounts and receipt requirements only after the operating market is defined.
-    Acceptance: totals and balances are server-derived, concurrent/retried payments
-    do not double-collect, searches never change invoice identity, cross-clinic
-    references fail, and Arabic amount/receipt formatting matches clinic settings.
-
-11. **1.11 — Testing, security and release gates.**
-    Build tests into each preceding step rather than postponing them here. Add
-    domain unit tests, disposable PostgreSQL integration tests, API contract tests,
-    two-clinic authorization tests, concurrency tests and browser coverage of the
-    complete patient → appointment → arrival → queue → invoice/payment journey.
-    Introduce appropriate lint/type/build/CI checks, Arabic RTL desktop/mobile and
-    accessibility checks, privacy-aware observability and dependency review.
-    Before any real data: demonstrate backup restore, least-privilege deployment,
-    redaction and sensitive-access audit, session/CSRF protection, retention and
-    incident handling. Resolve hosting jurisdiction, consent and medical-record
-    requirements with stakeholders; do not infer compliance from passing tests.
-    Acceptance: all gates are evidenced in a release checklist using synthetic
-    data; failures block clinic onboarding. Clinical notes/photos/consents require
-    their own reviewed design before implementation.
+10. **1.10 — Testing, security and release gates.**
+    Add tests throughout the steps above, not only here: domain unit tests, real
+    PostgreSQL constraints, API contracts, role/tenant negative cases, concurrency
+    and full Arabic RTL desktop/mobile browser journeys. Add lint/CI and privacy-
+    aware observability. Before real data, demonstrate backup restore, restricted
+    deployment roles, audit/redaction, retention, incident response and session/CSRF
+    controls. Resolve jurisdiction/hosting/consent requirements with stakeholders.
+    Clinical records, consent and protected media need their own reviewed scope.
 
 ## Migration discipline
 
-- Deliver one verified vertical slice at a time; avoid simultaneous rewrites of
-  screens, persistence and business rules.
-- Preserve root development commands and Arabic RTL presentation during moves.
-- Use explicit demo/API modes; never combine browser demo arrays and server records
-  into one operational state. Keep old demo data readable at the same origin.
-- Importing any external dataset later requires explicit clinic authorization,
-  validated mapping, provenance and rollback planning. No automatic localStorage
-  import, reset, clearing or deletion is part of this roadmap execution.
-- Record unresolved decisions before their implementation gate: operational region,
-  timezone/currency, membership policy, authentication/session details, appointment
-  durations, queue day rollover, invoice issuance rules and retention periods.
+- Preserve root development commands and the browser origin used for demo storage.
+- Use explicit demo/API modes and never merge local arrays into server records.
+- Never reset, clear or auto-import localStorage as part of infrastructure work.
+- Apply reviewed migrations; do not reset or force-push an existing database.
+- Test with fictional records. Imports later require clinic authorization, validated
+  mapping, provenance and rollback planning.
+- Document what was actually run, including skipped database tests and deployment
+  gates; a successful build does not establish production tenant security.

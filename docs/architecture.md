@@ -1,12 +1,123 @@
 # Lamssa architecture
 
-Phase 1, Step 1.1 — repository inspection and architecture baseline, 2026-10-24.
+Phase 1, Steps 1.1–1.2 — architecture and backend identity foundation, 2026-10-24.
 
-**Status:** only the browser prototype exists. Every backend module, database entity,
-API contract, and security control below marked as a target is a design decision,
-not an implemented capability. Prototype records are demo-only.
+**Current status:** npm workspaces contain the unchanged demo frontend in
+`apps/web` and a NestJS API in `apps/api`. PostgreSQL/Prisma configuration, an
+initial identity migration and an optional two-clinic seed exist. Authentication,
+RBAC, private clinic endpoints and RLS are **not implemented**; tenant isolation
+is not production-secure. Prototype records remain demo-only and are not uploaded.
 
-## 1. Actual repository findings
+## Step 1.2: implemented foundation
+
+The user's expanded Step 1.2 scope supersedes the original split between workspace,
+API and database steps. The next step is now **1.3 — Authentication and RBAC**.
+
+```text
+.
+├── package.json / package-lock.json     # One npm workspace install/lockfile
+├── .env.example / .nvmrc / compose.yaml
+├── apps/
+│   ├── web/                            # All previous web source/config, moved intact
+│   └── api/
+│       ├── src/{config,common,prisma,health,clinics}
+│       ├── prisma.config.ts
+│       ├── prisma/{schema.prisma,seed.ts,migrations}
+│       └── test/{config,http,database}.test.ts
+└── docs/
+```
+
+No `packages/shared` exists yet: there is no frontend/API contract consumer, and
+the browser does not depend on Prisma. Add a shared package when an authenticated
+feature actually crosses that boundary. Root dev/preview commands delegate to
+Vite; root build builds both apps. The web's dependencies are pinned to their
+previous lockfile versions so moving it does not upgrade its runtime.
+
+The API uses NestJS 12.2.0, configuration 12.0.1, Prisma 7.10.1 and pg 8.23.1 on
+Node 24 LTS. It compiles as native ESM with decorator metadata. Prisma generates
+TypeScript into an ignored server-only directory with `moduleFormat = "esm"`;
+its CLI URL is configured in `prisma.config.ts`, and runtime connections use
+`PrismaPg`. Configuration validates required database URL, exact CORS origins,
+host, port and mode without logging secret values. Request validation rejects
+unknown writable fields; a global exception filter returns generic Arabic errors
+and stable codes, without exception messages or stacks. Shutdown hooks disconnect
+the lazy database pool. Logging is intentionally minimal; audited and redacted
+operational logging remains future work.
+
+| Public route | Contract / boundary |
+| --- | --- |
+| `GET /api/v1/health` | Liveness only, `{"status":"ok"}`; no database/version/environment details |
+| `GET /api/v1/health/ready` | Constant `SELECT 1`; ready or generic 503; does not verify migrations |
+| `GET /api/v1/public/clinics/:slug/branding` | Active clinic only; exactly slug, displayName, and nullable logo/color fields |
+
+Public branding uses a validated slug and selects branding through that clinic's
+relation. Its response projection excludes legal name, IDs, private settings,
+domains, users, emails and membership/password fields. This is an intentionally
+public identification lookup, not an authorization path. There are no patient,
+appointment, queue, invoice, user-management or private clinic API routes. The
+frontend continues using only its original localStorage key/shape and Arabic UI.
+
+### Current database entities
+
+| Entity | Ownership / constraints |
+| --- | --- |
+| `Clinic` | UUID tenant root; legal/display names, globally unique normalized slug, status, timezone, three-letter currency, timestamps |
+| `ClinicBranding` | Optional one-to-one clinic configuration keyed by clinicId; nullable HTTPS logo URL, primary/secondary/optional accent hex colors, timestamps |
+| `ClinicDomain` | Clinic-owned UUID, globally unique normalized hostname, verification status, primary flag, timestamps; `(clinicId,id)` unique for future compound references |
+| `User` | Global identity, unique normalized email, nullable password hash, status, optional global platformRole, timestamps |
+| `ClinicMembership` | Clinic/user foreign keys, one role and status per pair, timestamps; unique `(clinicId,userId)` and `(clinicId,id)` |
+
+`PLATFORM_ADMIN` belongs only to `User.platformRole`. Clinic roles are
+`CLINIC_OWNER`, `CLINIC_ADMIN`, `DOCTOR`, `RECEPTIONIST`, `ACCOUNTANT`; platform
+authority never implicitly grants access to patient/clinic records. One user can
+have distinct roles in multiple clinics. Memberships default to invited status,
+and no accounts/passwords are seeded. All clinic/user child deletions and ownership
+key updates use `RESTRICT`; archive/status transitions are preferred to deletion.
+
+Indexes support clinic status, domain verification, and active membership lookups
+by user/clinic/role. Reviewed SQL adds normalized identity/currency and color/logo
+checks, plus at most one primary domain per clinic and a requirement that primary
+domains be verified. Prisma cannot express all these SQL rules; future migrations
+must retain them. No DNS verification handler is implemented, so no public caller
+can set verification status. Clinic timezone validation against IANA identifiers
+and currency configuration policy belong to the later clinic settings service.
+
+Compose is development-only: PostgreSQL 17.11, environment-provided credentials,
+loopback host port and named persistent volume. Its initialization user is
+privileged; separate production request/migration credentials and RLS are still
+required. The seed creates two fictional Arabic identities with distinct themes,
+timezones/currencies and pending `.example` domains, preserving existing fixture
+customization on rerun. It never imports browser data.
+
+### Tenant isolation gate for Step 1.3 and subsequent work
+
+Until authentication exists, only the three deliberately public routes above are
+registered. Future private access must derive tenant context from authenticated,
+active user + active membership + active clinic, then check the role's permission.
+A requested clinic ID selects a candidate membership, never proves access. A slug,
+subdomain, custom hostname, forwarded host header or verified domain only identifies
+a clinic; none establishes user authority. Never connect clinic records by an
+unscoped ID, or allow writable clinicId reassignment.
+
+Repository methods for clinic-owned reads/writes must require verified tenant
+context; nested writes and future child references must include clinicId in
+compound keys. Public branding's deliberately limited bootstrap lookup must stay
+separate from private repositories. RLS and transaction-local tenant settings,
+least-privileged request roles, tenant-keyed caches/jobs and sensitive-access audit
+are production gates. Test users with memberships in one clinic and in both,
+different roles, suspended memberships/clinics, valid foreign-clinic IDs, swapped
+headers/hostnames and absent context. Current database constraints prove ownership
+integrity and uniqueness only, not authenticated authorization.
+
+Custom DNS ownership verification, subdomain routing, TLS provisioning, media
+storage, themed invoices and messaging are deferred. Future branding changes must
+be clinic-authorized and validated before their public fields are published.
+See [development.md](development.md) for reproducible setup and verification.
+
+## 1. Historical Step 1.1 inspection
+
+This section records the frontend-only state before Step 1.2. Paths are relative
+to the old web root (now `apps/web`); backend absences below describe that snapshot.
 
 The inspection covered `package.json`, the lockfile, `tsconfig.json`,
 `vite.config.ts`, `README.md`, `index.html`, every source file, and Git status.
@@ -17,7 +128,8 @@ workspace definitions, environment configuration, or route definitions.
 Git initially had no commits; all prototype files and 2,457 dependency files under
 `node_modules` were staged. At the user's subsequent request, a baseline commit
 was created after adding `.gitignore` and removing dependency files from the
-index only. Dependencies remained on disk. Step 1.1 changes are left uncommitted.
+index only. Dependencies remained on disk. Step 1.1 was subsequently committed as
+`dbb529c`; Step 1.2 is not committed automatically.
 
 ### Technologies and entry points
 
@@ -111,7 +223,7 @@ ledger, immutable invoice number, tax, refund, or partial-payment model.
 These issues are documented rather than silently corrected during a
 behavior-preserving architecture step.
 
-## 2. Incremental frontend boundaries implemented now
+## 2. Frontend boundaries established in Step 1.1
 
 ```text
 src/
@@ -162,8 +274,8 @@ lamssa/                             # Future layout, not today's tree
     └── implementation-roadmap.md
 ```
 
-The move to `apps/web` is deferred to a dedicated step so package paths,
-lockfile/workspace changes, and root commands can be reviewed independently.
+The move to `apps/web` and initial API/database identity foundation are now
+implemented in Step 1.2; the tree above includes additional future modules/packages.
 The single-database choice simplifies initial operations but makes missing tenant
 filters especially dangerous and shares capacity/failure impact across clinics.
 Tenant-aware constraints, repositories, isolation tests, and resource limits are
@@ -198,12 +310,14 @@ unrestricted Prisma access to controllers. Use versioned REST contracts (propose
 | Audit | Restricted, append-only access/change/security events with retention policy |
 | Clinical records (later) | Encounters, consents and protected media after requirements/security review |
 
-Roles belong to a **clinic membership**, not a global user role. Initially one
-role per membership is sufficient; explicit permissions define permitted actions.
+Clinic roles belong to a **clinic membership**. The separate global platform role
+does not grant clinic permissions. Initially one role per membership is sufficient;
+explicit permissions define permitted actions.
 
 | Role | Proposed access boundary |
 | --- | --- |
 | Platform administrator | Provision/suspend clinics and operate the platform; no automatic access to clinic patient/clinical data; exceptional support access must be scoped, time-limited and audited |
+| Clinic owner | Own-clinic ownership, membership and commercial administration; clinical permissions remain explicit |
 | Clinic administrator | Manage own clinic settings, memberships and operational permissions; clinical access requires an explicit clinical permission |
 | Receptionist | Manage administrative patient details, appointments and check-in/queue; collect payments only if granted; no clinical notes/photos |
 | Clinician | Access authorized patient visits, assigned schedule, clinical workflows and permitted queue transitions; no membership management or financial reversals by default |
@@ -213,6 +327,10 @@ UI visibility improves usability but never grants authority. Membership suspensi
 and role changes must affect server access promptly, including existing sessions.
 
 ## 5. Target entities, ownership, and relationships
+
+Only the five identity models listed in the Step 1.2 section currently exist.
+Patients, scheduling, visits, queue, billing, audit and clinical entities below
+remain future work. The current global platform role is separate from membership.
 
 All clinic-owned entities carry a non-null `clinicId`. `User` is global identity;
 `Clinic` is the tenant root. Neither is an excuse for global access to clinic rows.

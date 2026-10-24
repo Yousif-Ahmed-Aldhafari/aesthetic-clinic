@@ -1,0 +1,118 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ClinicStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum DomainVerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+// Platform authority is global and never confers clinic membership access.
+enum PlatformRole {
+  PLATFORM_ADMIN
+}
+
+enum ClinicRole {
+  CLINIC_OWNER
+  CLINIC_ADMIN
+  DOCTOR
+  RECEPTIONIST
+  ACCOUNTANT
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+model Clinic {
+  id          String       @id @default(uuid()) @db.Uuid
+  legalName   String       @db.VarChar(200)
+  displayName String       @db.VarChar(150)
+  slug        String       @unique @db.VarChar(63)
+  status      ClinicStatus @default(ACTIVE)
+  timezone    String       @default("UTC") @db.VarChar(100)
+  currency    String       @db.Char(3)
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
+  branding    ClinicBranding?
+  domains     ClinicDomain[]
+  memberships ClinicMembership[]
+
+  @@index([status, createdAt])
+}
+
+model ClinicBranding {
+  clinicId       String   @id @db.Uuid
+  logoUrl        String?  @db.VarChar(2048)
+  primaryColor   String   @default("#7854D9") @db.VarChar(7)
+  secondaryColor String   @default("#F6F8FC") @db.VarChar(7)
+  accentColor    String?  @db.VarChar(7)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+  clinic         Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model ClinicDomain {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  clinicId           String                   @db.Uuid
+  hostname           String                   @unique @db.VarChar(253)
+  verificationStatus DomainVerificationStatus @default(PENDING)
+  isPrimary          Boolean                  @default(false)
+  createdAt          DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                 @updatedAt @db.Timestamptz(3)
+  clinic             Clinic                   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, verificationStatus])
+}
+
+model User {
+  id           String             @id @default(uuid()) @db.Uuid
+  name         String             @db.VarChar(150)
+  email        String             @unique @db.VarChar(254)
+  passwordHash String?            @db.VarChar(255)
+  status       UserStatus         @default(INVITED)
+  platformRole PlatformRole?
+  createdAt    DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime           @updatedAt @db.Timestamptz(3)
+  memberships  ClinicMembership[]
+}
+
+model ClinicMembership {
+  id        String           @id @default(uuid()) @db.Uuid
+  clinicId  String           @db.Uuid
+  userId    String           @db.Uuid
+  role      ClinicRole
+  status    MembershipStatus @default(INVITED)
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @db.Timestamptz(3)
+  clinic    Clinic           @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  // One current role per user/clinic; the same user can join many clinics.
+  @@unique([clinicId, userId])
+  @@unique([clinicId, id])
+  @@index([userId, status])
+  @@index([clinicId, status, role])
+}

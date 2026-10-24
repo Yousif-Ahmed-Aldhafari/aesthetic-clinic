@@ -1,9 +1,40 @@
 {
-  "name": "aesthetic-clinic-ar",
+  "name": "lamssa",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "scripts": {"dev": "vite --host 0.0.0.0", "build": "tsc -b && vite build", "preview": "vite preview --host 0.0.0.0"},
-  "dependencies": {"react": "^19.1.0", "react-dom": "^19.1.0"},
-  "devDependencies": {"@types/react": "^19.1.0", "@types/react-dom": "^19.1.0", "@vitejs/plugin-react": "^4.7.0", "typescript": "~5.9.2", "vite": "^6.3.5"}
+  "engines": {
+    "node": ">=24.11.0 <25",
+    "npm": ">=11 <12"
+  },
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @lamssa/web --",
+    "dev:web": "npm run dev --workspace @lamssa/web --",
+    "dev:api": "npm run dev --workspace @lamssa/api --",
+    "build": "npm run build --workspaces",
+    "build:web": "npm run build --workspace @lamssa/web --",
+    "build:api": "npm run build --workspace @lamssa/api --",
+    "preview": "npm run preview --workspace @lamssa/web --",
+    "start:api": "npm run start --workspace @lamssa/api --",
+    "test": "npm run test --workspace @lamssa/api --",
+    "test:db": "npm run test:db --workspace @lamssa/api --",
+    "db:generate": "npm run db:generate --workspace @lamssa/api --",
+    "db:validate": "npm run db:validate --workspace @lamssa/api --",
+    "db:migrate": "npm run db:migrate --workspace @lamssa/api --",
+    "db:migrate:dev": "npm run db:migrate:dev --workspace @lamssa/api --",
+    "db:status": "npm run db:status --workspace @lamssa/api --",
+    "db:seed": "npm run db:seed --workspace @lamssa/api --",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.1": true,
+    "prisma@7.10.1": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  }
 }
