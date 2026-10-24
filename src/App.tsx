@@ -1,52 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { Appointment, Data } from './types/clinic';
+import { loadData, makeId, rial, seed, STORAGE_KEY, today } from './lib/demo';
+import { Empty, Modal, PanelHeading, Stat, Status } from './components/ui';
+import { PatientForm } from './features/patients/PatientForm';
+import { AppointmentForm } from './features/appointments/AppointmentForm';
+import { InvoiceForm } from './features/billing/InvoiceForm';
 
-type Patient = { id: string; name: string; phone: string; notes: string; createdAt: string };
-type AppointmentStatus = 'مجدول' | 'حضر' | 'مكتمل' | 'ملغي';
-type Appointment = { id: string; patientId: string; service: string; doctor: string; date: string; time: string; status: AppointmentStatus };
-type QueueStatus = 'انتظار' | 'داخل الغرفة' | 'انتهى';
-type QueueEntry = { id: string; patientId: string; appointmentId?: string; number: number; status: QueueStatus; arrivedAt: string };
-type Invoice = { id: string; patientId: string; description: string; amount: number; paid: boolean; createdAt: string };
-type Data = { patients: Patient[]; appointments: Appointment[]; queue: QueueEntry[]; invoices: Invoice[] };
 type Section = 'overview' | 'patients' | 'appointments' | 'queue' | 'invoices';
 
-const STORAGE_KEY = 'lamssa-clinic-demo-v1';
-const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-const today = localDate();
-const makeId = () => typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const rial = (value: number) => new Intl.NumberFormat('ar-YE', { maximumFractionDigits: 0 }).format(value) + ' ر.ي';
-const seed: Data = {
-  patients: [
-    { id: 'p1', name: 'سارة أحمد', phone: '777000001', notes: 'مثال تجريبي', createdAt: today },
-    { id: 'p2', name: 'مريم محمد', phone: '777000002', notes: 'مثال تجريبي', createdAt: today },
-    { id: 'p3', name: 'نورا خالد', phone: '777000003', notes: 'مثال تجريبي', createdAt: today },
-    { id: 'p4', name: 'ريم علي', phone: '777000004', notes: 'مثال تجريبي', createdAt: today },
-  ],
-  appointments: [
-    { id: 'a1', patientId: 'p1', service: 'استشارة تجميلية', doctor: 'د. ليلى', date: today, time: '09:30', status: 'مجدول' },
-    { id: 'a2', patientId: 'p2', service: 'جلسة ليزر', doctor: 'د. ليلى', date: today, time: '10:00', status: 'حضر' },
-    { id: 'a3', patientId: 'p3', service: 'تنظيف بشرة', doctor: 'د. ياسمين', date: today, time: '11:15', status: 'مجدول' },
-    { id: 'a4', patientId: 'p4', service: 'متابعة علاج', doctor: 'د. ياسمين', date: today, time: '12:00', status: 'مجدول' },
-  ],
-  queue: [{ id: 'q1', patientId: 'p2', appointmentId: 'a2', number: 1, status: 'انتظار', arrivedAt: new Date().toISOString() }],
-  invoices: [
-    { id: 'i1', patientId: 'p1', description: 'استشارة تجميلية', amount: 10000, paid: true, createdAt: today },
-    { id: 'i2', patientId: 'p2', description: 'جلسة ليزر', amount: 25000, paid: false, createdAt: today },
-  ],
-};
-function loadData(): Data {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed: unknown = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && 'patients' in parsed && 'appointments' in parsed && 'queue' in parsed && 'invoices' in parsed) {
-        const data = parsed as Data;
-        if ([data.patients, data.appointments, data.queue, data.invoices].every(Array.isArray)) return data;
-      }
-    }
-  } catch { /* Ignore invalid local demo storage */ }
-  return seed;
-}
 const sections: { id: Section; label: string; symbol: string }[] = [
   { id: 'overview', label: 'لوحة التحكم', symbol: '▦' },
   { id: 'patients', label: 'المرضى', symbol: '♙' },
@@ -54,10 +15,6 @@ const sections: { id: Section; label: string; symbol: string }[] = [
   { id: 'queue', label: 'طابور الانتظار', symbol: '◷' },
   { id: 'invoices', label: 'الفواتير', symbol: '▤' },
 ];
-const statusClass: Record<AppointmentStatus | QueueStatus, string> = {
-  'مجدول': 'blue', 'حضر': 'amber', 'مكتمل': 'green', 'ملغي': 'gray',
-  'انتظار': 'amber', 'داخل الغرفة': 'blue', 'انتهى': 'green',
-};
 
 export default function App() {
   const [data, setData] = useState<Data>(loadData);
@@ -140,21 +97,4 @@ export default function App() {
        <InvoiceForm patients={data.patients} onSubmit={i => {setData(d => ({ ...d, invoices: [i, ...d.invoices] }));setModal(null);toast('تم إنشاء الفاتورة');}} />}
     </Modal>}
   </div>;
-}
-function Stat({ label, value, accent, icon, note }: {label:string;value:string;accent:string;icon:string;note:string}) { return <div className="stat-card"><div className={`stat-icon ${accent}`}>{icon}</div><span>{label}</span><strong>{value}</strong><small>{note}</small></div>; }
-function PanelHeading({ title, detail, action, onClick }: {title:string;detail?:string;action?:string;onClick?:()=>void}) {return <div className="panel-heading"><div><h2>{title}</h2>{detail && <span>{detail}</span>}</div>{action && <button onClick={onClick}>{action} ←</button>}</div>;}
-function Status({value}:{value:AppointmentStatus | QueueStatus}) {return <span className={`status ${statusClass[value]}`}>{value}</span>;}
-function Empty({text}:{text:string}) {return <p className="empty">{text}</p>;}
-function Modal({title,children,onClose}:{title:string;children:ReactNode;onClose:()=>void}) {return <div className="modal-backdrop" onMouseDown={e => {if(e.target === e.currentTarget)onClose();}}><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-header"><h2>{title}</h2><button aria-label="إغلاق" onClick={onClose}>×</button></div>{children}</div></div>;}
-function PatientForm({onSubmit}:{onSubmit:(p:Patient)=>void}) {
- const [name,setName]=useState(''), [phone,setPhone]=useState(''), [notes,setNotes]=useState('');
- return <form onSubmit={e=>{e.preventDefault();onSubmit({id:makeId(),name:name.trim(),phone:phone.trim(),notes:notes.trim(),createdAt:localDate()});}}><label>اسم المريض الكامل<input required maxLength={100} value={name} onChange={e=>setName(e.target.value)} placeholder="الاسم الكامل" /></label><label>رقم الهاتف<input required maxLength={25} dir="ltr" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="777000000" /></label><label>ملاحظات غير طبية (اختياري)<textarea maxLength={300} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="ملاحظة إدارية قصيرة" /></label><button className="primary-btn submit-btn" type="submit" disabled={!name.trim()||!phone.trim()}>حفظ المريض</button></form>;
-}
-function AppointmentForm({patients,onSubmit}:{patients:Patient[];onSubmit:(a:Appointment)=>void}) {
- const [patientId,setPatientId]=useState(patients[0]?.id||''), [service,setService]=useState('استشارة تجميلية'), [doctor,setDoctor]=useState(''), [date,setDate]=useState(localDate()), [time,setTime]=useState('09:00');
- return <form onSubmit={e=>{e.preventDefault();onSubmit({id:makeId(),patientId,service:service.trim(),doctor:doctor.trim(),date,time,status:'مجدول'});}}><label>المريض<select required value={patientId} onChange={e=>setPatientId(e.target.value)}>{patients.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>الخدمة<input required value={service} maxLength={120} onChange={e=>setService(e.target.value)}/></label><label>اسم الطبيب<input required value={doctor} maxLength={100} onChange={e=>setDoctor(e.target.value)} placeholder="د. ..."/></label><div className="form-grid"><label>التاريخ<input required type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>الوقت<input required type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><button className="primary-btn submit-btn" type="submit" disabled={!patientId||!service.trim()||!doctor.trim()}>حفظ الموعد</button></form>;
-}
-function InvoiceForm({patients,onSubmit}:{patients:Patient[];onSubmit:(i:Invoice)=>void}) {
- const [patientId,setPatientId]=useState(patients[0]?.id||''), [description,setDescription]=useState(''),[amount,setAmount]=useState(''),[paid,setPaid]=useState(false);
- return <form onSubmit={e=>{e.preventDefault();const parsed=Number(amount);if(!Number.isFinite(parsed)||parsed<=0)return;onSubmit({id:makeId(),patientId,description:description.trim(),amount:parsed,paid,createdAt:localDate()});}}><label>المريض<select required value={patientId} onChange={e=>setPatientId(e.target.value)}>{patients.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>وصف الخدمة<input required maxLength={120} value={description} onChange={e=>setDescription(e.target.value)} placeholder="اسم العلاج أو الخدمة"/></label><label>المبلغ بالريال اليمني<input required min="1" step="1" type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="10000"/></label><label className="checkbox-label"><input type="checkbox" checked={paid} onChange={e=>setPaid(e.target.checked)}/> تم تحصيل المبلغ</label><button className="primary-btn submit-btn" type="submit" disabled={!patientId||!description.trim()||!(Number(amount)>0)}>إنشاء الفاتورة</button></form>;
 }
