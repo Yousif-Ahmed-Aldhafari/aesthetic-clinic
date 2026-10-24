@@ -8,7 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { config } from 'dotenv';
 import { configureApp } from '../src/configure-app.js';
-import { PrismaService } from '../src/prisma/prisma.service.js';
+import type { PrismaClient } from '../src/generated/prisma/client.js';
+import { fixtureDatabase } from './database-fixtures.js';
 import { ClinicPermissions } from '../src/auth/access.js';
 import { digest } from '../src/auth/crypto.js';
 import { loginBucketKey } from '../src/auth/login-limiter.service.js';
@@ -25,7 +26,7 @@ const clinicIds = [randomUUID(), randomUUID()];
 const slugs = [`auth-a-${suffix}`, `auth-b-${suffix}`];
 const userIds: string[] = [];
 const accounts = ['owner','doctor','dual','platform','rate'].map(name=>`${name}-${suffix}@example.invalid`);
-let app: INestApplication, prisma: PrismaService, base: string;
+let app: INestApplication, prisma: PrismaClient, base: string;
 
 @Controller('security-test')
 class SecurityController {
@@ -74,7 +75,7 @@ before(async () => {
   const { AppModule } = await import('../src/app.module.js');
   const module = await Test.createTestingModule({imports:[AppModule],controllers:[SecurityController]}).compile();
   app=module.createNestApplication({logger:false}); configureApp(app); await app.listen(0,'127.0.0.1'); base=await app.getUrl();
-  prisma=app.get(PrismaService);
+  prisma=fixtureDatabase();
   for (const [i,id] of clinicIds.entries()) await prisma.clinic.create({data:{id,slug:slugs[i],legalName:'عيادة اختبار وهمية',displayName:`عيادة اختبار ${i+1}`,currency:'YER',branding:{create:{primaryColor:i===0?'#7854D9':'#087F8C'}}}});
   for (const [i,email] of accounts.entries()) {
     const role = i===1 ? 'DOCTOR' : 'CLINIC_OWNER';
@@ -98,6 +99,7 @@ after(async () => {
     const window=Math.floor(Date.now()/900000);
     await prisma.loginBucket.deleteMany({where:{key:{in:[window,window-1].flatMap(w=>[...accounts,`missing-${suffix}@example.invalid`,...[0,1,2].map(i=>`ip-${i}-${suffix}@example.invalid`)].map(email=>loginBucketKey('account',email,w)))}}});
   }
+  await prisma?.$disconnect();
   await app?.close();
 });
 live('valid login stores only hashed verifiers and uses HttpOnly scoped cookies',async()=>{
@@ -131,7 +133,10 @@ live('private routes reject missing/forged sessions; unmarked routes fail closed
 });
 live('clinic A member cannot read or select clinic B, including forged context',async()=>{
   const b=new Browser();assert.equal((await b.login()).status,200);
+  assert.equal((await b.select(0)).status,200);
   assert.equal((await b.request(`clinics/${clinicIds[0]}/me`)).status,200);
+  const settings=await b.request(`clinics/${clinicIds[0]}/settings`);assert.equal(settings.status,200);
+  assert.deepEqual(Object.keys(await settings.json() as object).sort(),['currency','displayName','timezone']);
   assert.equal((await b.request(`clinics/${clinicIds[1]}/me?slug=${slugs[0]}&role=CLINIC_OWNER`, 'GET',undefined,{'X-Clinic-Id':clinicIds[0],'X-Role':'PLATFORM_ADMIN'})).status,404);
   assert.equal((await b.select(1)).status,404);
   assert.equal((await b.request('auth/clinic','POST',{clinicId:clinicIds[0],role:'CLINIC_OWNER',slug:slugs[1]})).status,400);
@@ -139,12 +144,13 @@ live('clinic A member cannot read or select clinic B, including forged context',
 });
 live('dual membership selects either clinic with different identity and rotates the session',async()=>{
   const b=new Browser();await b.login(2);const colors=[];
-  for(const i of [0,1]){const old=b.tokenHash();const r=await b.select(i);assert.equal(r.status,200);const data=await r.json() as {clinic:{clinicId:string;branding:{primaryColor:string}}};assert.equal(data.clinic.clinicId,clinicIds[i]);colors.push(data.clinic.branding.primaryColor);assert.notEqual(b.tokenHash(),old);assert((await prisma.session.findUniqueOrThrow({where:{tokenHash:old}})).revokedAt);}
+  assert.equal((await b.request(`clinics/${clinicIds[0]}/me`)).status,403);
+  for(const i of [0,1]){const old=b.tokenHash();const r=await b.select(i);assert.equal(r.status,200);const data=await r.json() as {clinic:{clinicId:string;branding:{primaryColor:string}}};assert.equal(data.clinic.clinicId,clinicIds[i]);assert.equal((await b.request(`clinics/${clinicIds[1-i]}/me`)).status,403);colors.push(data.clinic.branding.primaryColor);assert.notEqual(b.tokenHash(),old);assert((await prisma.session.findUniqueOrThrow({where:{tokenHash:old}})).revokedAt);}
   assert.notEqual(colors[0],colors[1]);
   const clinics=await (await b.request('auth/clinics')).json() as {clinics:unknown[]};assert.equal(clinics.clinics.length,2);
 });
 live('least privilege denies settings and financial permissions to doctor despite forged role',async()=>{
-  const b=new Browser();await b.login(1);
+  const b=new Browser();await b.login(1);await b.select(0);
   assert.equal((await b.request(`clinics/${clinicIds[0]}/me`)).status,200);
   assert.equal((await b.request(`clinics/${clinicIds[0]}/settings?role=CLINIC_OWNER`,'GET',undefined,{'X-Role':'CLINIC_OWNER'})).status,403);
   assert.equal((await b.request(`security-test/clinics/${clinicIds[0]}/financial`)).status,403);

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { config } from 'dotenv';
 import { Client } from 'pg';
+import { testUrls } from './database-fixtures.js';
 
 config({ path: resolve(import.meta.dirname, '../../../../.env'), quiet: true });
 const url = process.env.TEST_DATABASE_URL;
@@ -18,13 +19,20 @@ test('live PostgreSQL identity, membership and tenant constraints', { skip: !url
     };
     assert.notEqual(identity(url!), identity(process.env.DATABASE_URL), 'Test and development must be different databases, even with different credentials');
   }
-  const client = new Client({ connectionString: url, connectionTimeoutMillis: 3000 });
+  const {owner}=testUrls();
+  const runtime=new Client({connectionString:url,connectionTimeoutMillis:3000});
+  await runtime.connect();
+  try {
+    const role=(await runtime.query('SELECT rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0];
+    assert.deepEqual(role,{rolsuper:false,rolcreatedb:false,rolcreaterole:false,rolreplication:false,rolbypassrls:false});
+    for(const sql of ['CREATE TABLE public."LamssaPermissionProbe" (id integer)','UPDATE public._prisma_migrations SET migration_name=migration_name WHERE false'])await assert.rejects(runtime.query(sql),(e:unknown)=>(e as {code:string}).code==='42501');
+  }finally{await runtime.end();}
+  // Schema constraint fixtures use the separate owner; runtime RLS/ACL is tested
+  // above and in rls.integration, never disabled to provision test rows.
+  const client = new Client({ connectionString: owner, connectionTimeoutMillis: 3000 });
   await client.connect();
   try {
     await client.query('BEGIN');
-    const role = (await client.query('SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0];
-    assert.deepEqual(role, { rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false });
-    assert.equal((await client.query('SELECT pg_get_userbyid(datdba) = current_user AS owns_database FROM pg_database WHERE datname=current_database()')).rows[0].owns_database, false);
     const a = randomUUID(), b = randomUUID(), user = randomUUID();
     const suffix = randomUUID();
     for (const [id, slug] of [[a, `test-a-${suffix}`], [b, `test-b-${suffix}`]]) {
@@ -57,8 +65,6 @@ test('live PostgreSQL identity, membership and tenant constraints', { skip: !url
         await client.query('RELEASE SAVEPOINT constraint_case');
       }
     };
-    await rejected('CREATE TABLE public."LamssaPermissionProbe" (id integer)', [], '42501');
-    await rejected('UPDATE public._prisma_migrations SET migration_name=migration_name WHERE false', [], '42501');
     await rejected('UPDATE "Clinic" SET "slug"=(SELECT "slug" FROM "Clinic" WHERE "id"=$1) WHERE "id"=$2', [a, b], '23505');
     await rejected('INSERT INTO "User" ("id","name","email","updatedAt") VALUES ($1,$2,$3,NOW())', [randomUUID(), 'مستخدم مكرر', `${suffix}@example.invalid`], '23505');
     await rejected('INSERT INTO "ClinicMembership" ("id","clinicId","userId","role","updatedAt") VALUES ($1,$2,$3,$4,NOW())', [randomUUID(), a, user, 'DOCTOR'], '23505');

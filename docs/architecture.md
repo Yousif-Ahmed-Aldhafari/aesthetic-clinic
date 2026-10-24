@@ -1,13 +1,155 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.3 — current implementation, 2026-10-24.
+Phase 1, Steps 1.1–1.4 — current implementation, 2026-10-24.
 
-**Current status:** npm workspaces contain the Arabic RTL React demo in `apps/web`
-and a modular NestJS API in `apps/api`. PostgreSQL/Prisma identity and session
-migrations are applied in development and test. Authentication, revocable sessions,
-active clinic membership checks and granular RBAC are implemented. Clinical APIs,
-RLS and production hardening are not implemented. Browser workflow records remain
-explicitly local, shared demo data; no patient data is uploaded or imported.
+**Current status:** tenant repositories and PostgreSQL FORCE RLS protect implemented
+clinic resources. Authentication/session/RBAC and public branding remain available.
+Arabic RTL workflow records remain local, shared demo data. No patient/invoice CRUD
+or clinical records have been introduced. This remains a development foundation.
+
+## Step 1.4: mandatory tenant database boundary
+
+### Audit and classification
+
+The pre-change audit confirmed two applied migrations in each database, seven
+application tables, no policies/functions/views, and no RLS. Development/test
+runtime roles had DML on all seven tables. They were already non-owner,
+NOSUPERUSER, NOBYPASSRLS, NOCREATEROLE and NOCREATEDB; their distinct migration
+owners own their respective tables. Runtime cannot assume its owner's role.
+Existing FK/unique/partial-index constraints remain intact.
+
+| Table | Classification | Runtime boundary |
+| --- | --- | --- |
+| User | Global identity | Auth-only repository SELECT; no runtime writes |
+| Session | Global security | Auth-only repository DML, verifier/identity filters |
+| LoginBucket | Global security | Auth-only repository DML, hashed counter keys |
+| Clinic | Tenant-root metadata | FORCE RLS scoped SELECT; no runtime writes; narrow bootstrap functions |
+| ClinicBranding | Tenant resource, PK/FK clinicId | FORCE RLS scoped SELECT/INSERT/UPDATE/DELETE |
+| ClinicDomain | Tenant resource, indexed clinicId | FORCE RLS scoped SELECT/INSERT/UPDATE/DELETE, global hostname uniqueness retained |
+| ClinicMembership | Tenant resource + identity bridge | FORCE RLS scoped SELECT; runtime writes denied; narrow identity snapshot function |
+| _prisma_migrations | Migration infrastructure | Maintenance owner only |
+
+Runtime branding/domain DML supports the tested tenant transaction foundation;
+there are still no HTTP mutation endpoints for these resources. Membership,
+clinic-root and user writes are maintenance-only until dedicated reviewed admin
+commands/services are implemented. No runtime TRUNCATE, REFERENCES/grant options,
+schema creation, policy ownership, role membership or BYPASSRLS are granted.
+
+### Trusted context flow
+
+The global access guard verifies the session, user and authorization fingerprint.
+Only authentication may issue an immutable, process-local `VerifiedPrincipal`;
+a WeakMap holds its server identity. JSON, clinic IDs, role headers and TypeScript
+casts cannot construct a recognized principal. A build/test architecture check
+restricts raw Prisma/pg imports and SQL to `src/prisma`, identity access to auth,
+and principal minting to AuthService. PrismaModule does not export PrismaService.
+
+`TenantDatabaseService.withClinicContext(principal, clinicId, permissions, work)`:
+
+1. Rejects unrecognized principals, invalid IDs and empty required permissions.
+2. Opens an interactive Prisma transaction on the runtime pool and rejects
+   owner/superuser/BYPASSRLS/administrative connection roles.
+3. Reloads the session, user and fixed membership snapshot on that transaction.
+   Checks expiry/idle/revocation, active status and authorization fingerprint.
+4. Requires an active membership in an active clinic, the centralized permissions,
+   and **session.selectedClinicId matching the requested clinic**.
+5. Parameterizes transaction-local `set_config(..., true)` for `lamssa.clinic_id`,
+   `lamssa.user_id` and `lamssa.session_id`, using verified database identity.
+6. Runs the callback on delegates from that same transaction; exposes tenant
+   delegates only, with no global identity/raw-SQL client. Commit/rollback releases
+   context; callbacks/transactions cannot be carried across HTTP requests.
+
+This is deliberately stricter than Step 1.3: an authorized dual member must select
+B before using B's private context/settings. Before selection, `/auth/clinics` and
+POST `/auth/clinic` retain fixed identity/public-branding bootstrap paths. Their
+responses grant no operational resource access. The frontend already selects a
+clinic before private reads and preserves its previous Arabic demo behavior.
+A supported context request for an inaccessible clinic returns 404; a member
+requesting an unselected clinic or missing permission receives 403.
+
+ClinicRepository performs both context and settings reads through this service;
+settings are reauthorized inside their own transaction after the guard. Future
+feature repositories must do the same, specify nonempty server-owned permissions,
+filter clinicId explicitly, use validated relationship IDs, and project allowed
+fields. Never pass browser-supplied query/include/role/permission definitions into
+callbacks. Nested relations to global identity require separate field/permission
+review; tenant isolation alone is not field-level medical authorization.
+
+### Policies and privileged exceptions
+
+Migration `20261024000300_tenant_rls` enables and forces RLS on the four tables above.
+Each has explicit SELECT/INSERT/UPDATE/DELETE policies. Runtime predicates bind the
+row's clinic to the transaction context and a live, nonrevoked session selected
+for that clinic, plus active user/membership/clinic. Missing, empty, malformed,
+unknown or mismatched context returns no rows and rejects inserts. UPDATE has
+both USING and WITH CHECK; cross-clinic UPDATE/DELETE filters out foreign rows.
+Clinic/membership mutation policies additionally deny runtime writes.
+Triggers reject clinicId reassignment on all three child resources, including
+maintenance-owner changes. Existing normalized identity, domain and FK checks
+are preserved.
+
+The separate maintenance owner has an explicit ALL policy for migrations and
+controlled seed/account provisioning. FORCE RLS does not make this owner a restricted
+request identity: the owner can alter its own policies. Owner-role credential
+misconfiguration fails closed in TenantDatabaseService. Production API processes
+must never receive maintenance URLs; local development tooling currently loads
+those private URLs in its own commands. Separate OS/deployment secrets remain a
+hardening task, not a guarantee supplied by this repository.
+
+`lamssa_security` is owner-controlled, with no PUBLIC USAGE/EXECUTE and no runtime
+CREATE. Every function has a fixed `pg_catalog, pg_temp` search_path and qualified
+application tables. The three SECURITY DEFINER functions are:
+
+- `context_allows(uuid)`: returns only a boolean; checks scoped session/member
+  state. It has no bypass flag or dynamic SQL.
+- `identity_memberships(uuid)`: fixed membership/status/clinic-name projection for
+  one server-verified identity. Inactive rows are needed for fingerprint revocation;
+  no arbitrary user-ID lookup route exposes it. Credential lookup itself uses the
+  global user repository; the snapshot follows password/session verification.
+- `public_branding(text)`: exact slug, active clinic only; fixed public name/logo/
+  colors. An internal hasBranding flag is removed by the API projection. No private
+  settings, domains, user, legal-name or patient fields are returned.
+
+`context_uuid(text)` is an invoker parser that returns null for malformed UUIDs;
+`reject_clinic_reassignment()` is an invoker trigger. PUBLIC function execution is
+revoked and default function privileges hardened. No views or arbitrary privileged
+query functions are installed. Owner-only policy branches are explicitly CASE
+short-circuited before calling the helper, avoiding recursive Clinic/Membership
+policy evaluation in definer queries. Catalog/role tests audit this inventory.
+
+The seed and development provisioning command now require matching, explicit local
+maintenance credentials; seed refuses nonlocal/wrong-environment targets. They
+cannot silently fall back to runtime writes. Provisioning still requires supplied
+passwords and explicit updates; no default accounts are introduced.
+
+### UTC connections and residual risks
+
+A real test exposed the installed pg adapter's datetime serialization behavior:
+its input formatting omits an offset and output normalization replaces the offset.
+With the server default Asia/Aden, a requested one-hour expiry was already expired
+in PostgreSQL while the ORM displayed the requested instant. All Prisma pools now
+use startup `options: '-c timezone=UTC'`, including maintenance/test factories.
+The system/database timezone and existing timestamps were not rewritten. Regression
+checks compare the Prisma instant with native pg and PostgreSQL's expiry decision.
+This is fixed connection configuration, **not session-global tenant SET**.
+
+Custom GUCs are not cryptographic authentication. A runtime SQL credential or
+compromised application can read global identity/session infrastructure and set
+custom settings; RLS is defense against missing filters/context, not containment
+of arbitrary trusted-runtime SQL or owner compromise. Source checks are engineering
+guardrails, not a sandbox for malicious code. These definer projections remain
+privileged infrastructure and need review when modified. Foreign-key/unique errors
+can reveal existence through raw SQL; safe API errors must remain projected.
+Future caches/jobs/storage must carry scoped identity separately. Granular clinical
+permissions, audit/security-event retention, invitation/recovery/MFA, production
+TLS/secret separation, backup restore and medical privacy review remain required.
+
+Implementation uses [PostgreSQL 16 RLS](https://www.postgresql.org/docs/16/ddl-rowsecurity.html),
+[hardened definer functions](https://www.postgresql.org/docs/16/sql-createfunction.html),
+[transaction-local settings](https://www.postgresql.org/docs/16/functions-admin.html),
+and [Prisma 7 interactive transactions](https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions).
+Connection options follow the [pg client API](https://node-postgres.com/apis/client).
+The sections below preserve prior-step history; this section governs current access.
 
 ## Step 1.3: authentication and clinic authorization
 
@@ -79,8 +221,8 @@ forwarded headers. Unrestricted proxy trust could spoof client IP or HTTPS statu
 ### Enforced clinic boundary
 
 Session identity → freshly active user → `(userId, clinicId)` active membership →
-active clinic → centralized permission check → request clinic context. Selection is
-convenience only; **each** clinic request reauthorizes its URL clinicId. Wrong-clinic
+active clinic → centralized permission check → request clinic context. Selection is a prerequisite for protected resource access in Step 1.4; **each**
+clinic request still reauthorizes its URL clinicId. Wrong-clinic
 requests return 404, insufficient permissions 403, invalid sessions 401. Slug,
 hostname, selected clinic, query parameters and headers cannot grant authority.
 Global PLATFORM_ADMIN has no clinic bypass, and no cross-clinic admin endpoint
@@ -569,8 +711,8 @@ clinic rollout. Its [documented role bypass behavior](https://www.postgresql.org
 means the request role must not be a superuser, table owner, or `BYPASSRLS` role.
 Use separate migration credentials and transaction-local tenant context on the
 same connection as the protected queries; test pooled-connection reuse and missing
-context. RLS complements explicit server scoping and compound foreign keys; no
-RLS protection exists in the current prototype.
+context. RLS complements explicit server scoping and compound foreign keys; Step 1.4 implements RLS for current clinic resources; future tables need reviewed
+policies as they are introduced.
 
 Authentication implementation must choose a session strategy explicitly. Proposed
 browser deployment is web and API behind one HTTPS origin using secure, HttpOnly,

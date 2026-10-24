@@ -48,6 +48,9 @@ async function passwordPrompt(): Promise<string> {
 async function main() {
   config({ path: resolve(import.meta.dirname, '../../../.env'), quiet: true });
   const target = new URL(process.env.DATABASE_URL ?? '');
+  const maintenance=new URL(process.env.MIGRATION_DATABASE_URL ?? '');
+  const identity=(url:URL)=>`${url.hostname}:${url.port||5432}${url.pathname}`;
+  if(identity(maintenance)!==identity(target))throw new Error('Maintenance URL must target the same local development database');
   if (process.env.NODE_ENV !== 'development' || !['127.0.0.1','localhost','[::1]'].includes(target.hostname) || !target.pathname.endsWith('_dev')) {
     throw new Error('Provisioning is restricted to an explicit local development database');
   }
@@ -61,12 +64,12 @@ async function main() {
   const membershipText = process.env.LAMSSA_DEV_MEMBERSHIPS ?? await prompt('Memberships as JSON [{"clinicSlug":"...","role":"..."}]: ');
   const password = process.env.LAMSSA_DEV_PASSWORD ?? await passwordPrompt();
   delete process.env.LAMSSA_DEV_PASSWORD;
-  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 3000 }) });
+  const prisma = new PrismaClient({ adapter: new PrismaPg({ options: '-c timezone=UTC', connectionString: process.env.MIGRATION_DATABASE_URL, connectionTimeoutMillis: 3000 }) });
   try {
     const result = await provisionUser(prisma, { email, name, password, memberships: JSON.parse(membershipText) as MembershipInput[], updateExisting: process.argv.includes('--update-existing') });
     console.info(`Development account provisioned with ${result.memberships} clinic membership(s). Existing sessions revoked. No credentials printed.`);
   } finally { await prisma.$disconnect(); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  void main().catch(() => { console.error('Provisioning failed: verify local development mode, input, clinic membership roles and explicit --update-existing for an existing account. Credentials withheld.'); process.exitCode=1; });
+  void main().catch(() => { console.error('Provisioning failed: verify separate maintenance credentials, local development mode, input, clinic membership roles and explicit --update-existing for an existing account. Credentials withheld.'); process.exitCode=1; });
 }

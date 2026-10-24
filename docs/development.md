@@ -1,7 +1,7 @@
 # Development setup
 
-Step 1.3 adds secure development login, sessions, membership selection and RBAC to
-the API/database foundation. RLS and server clinical workflows remain unimplemented.
+Step 1.4 adds mandatory tenant transactions and FORCE RLS to the authenticated
+API. Server patient/clinical workflows remain unimplemented.
 Use fictional data only; the authenticated browser workflows still use local demos.
 
 ## Requirements and versions
@@ -54,11 +54,12 @@ No server values belong in `apps/web` or `VITE_*` variables.
 
 The four roles have no superuser, create-database, create-role, replication or
 RLS-bypass privileges. Runtime roles own no database/schema, cannot create tables,
-and receive CRUD only on the five identity tables plus Session and LoginBucket, excluding `_prisma_migrations`.
+and receive scoped SELECT on Clinic/ClinicMembership, auth SELECT on User, and
+DML on ClinicBranding/ClinicDomain/Session/LoginBucket, excluding `_prisma_migrations`.
 PUBLIC has no access to either application database/schema; development and test
 runtime logins cannot connect to each other's database. Database-level privilege
 separation alone does not enforce per-clinic authorization. Step 1.3 adds server
-membership/permission checks; per-clinic RLS remains future work.
+membership/permission checks; Step 1.4 adds selected-clinic transactions and FORCE RLS.
 
 API configuration and Prisma CLI both load the root `.env`; shell environment
 variables take precedence. Vite stays rooted in `apps/web` and does not consume
@@ -146,15 +147,15 @@ npm run db:seed  # Optional: two fictional clinic identities; no users/passwords
 ```
 
 Generation and validation do not need a live database or a configured URL.
-`db:migrate` runs `prisma migrate deploy` to apply the checked-in initial migration
+`db:migrate` runs `prisma migrate deploy` to apply the checked-in migrations
 without resetting data. Prisma CLI prefers MIGRATION_DATABASE_URL, falling back
-to DATABASE_URL for older setups. The runtime Prisma adapter and seed continue
-using DATABASE_URL. The test migration/status wrapper selects the test URLs in
+to DATABASE_URL for older setups. The API uses DATABASE_URL; seed/provisioning
+require the matching local MIGRATION_DATABASE_URL. The test migration/status wrapper selects the test URLs in
 child-process environment without printing them. No shadow database, directUrl or
 additional Prisma URL is needed for migrate deploy.
 
 After migrating both databases, `db:grant` connects as each migration owner and
-grants its runtime role CRUD on the seven explicitly named identity/auth tables only. It grants no DDL,
+reapplies the explicit scoped/read-only/DML allowlist described in Step 1.4. It grants no DDL,
 role membership, grant option or migration-history access. Run this again when
 explicitly adding authorized tables in later steps; do not grant all future tables
 by default. Native test permissions follow [PostgreSQL GRANT](https://www.postgresql.org/docs/16/sql-grant.html)
@@ -241,12 +242,105 @@ memberships, independent branding, global slug/email/domain uniqueness, foreign
 keys, restricted deletion, color/identity checks and verified-primary-domain rules.
 The test also verifies non-administrative/non-owner role attributes, denied DDL,
 denied mutation of migration history, and explicitly clinic-scoped reads/updates.
-Auth integration tests additionally verify server membership/permission denial
-and session security. RLS is still absent: arbitrary unscoped SQL through a runtime
-credential can access all clinics in its database. No lint script exists yet.
+Auth integration tests verify membership/permission denial and session security.
+RLS integration tests use actual runtime credentials to test row filtering, denied
+writes, policy/role restrictions, concurrent contexts and connection reuse. The
+separate test owner provisions/cleans only tracked fictional fixtures; policies are
+never disabled for setup. No general lint script exists; database boundaries are checked.
 
-RLS, audit, backups, MFA, recovery and production deployment remain release gates. See
+RLS coverage for future tables, audit, backups, MFA, recovery and production deployment
+remain release gates. See
 [architecture.md](architecture.md) and [implementation-roadmap.md](implementation-roadmap.md).
+
+## Step 1.4 RLS setup and extension workflow
+
+The existing four private URLs remain unchanged. No new role, password, privileged
+system command or database reset is needed. Review the SQL migration before use:
+
+```bash
+npm run db:generate
+npm run db:validate
+npm run db:migrate:test
+npm run test:db
+npm run db:migrate
+npm run db:grant
+npm run db:status
+npm run db:status:test
+npm run db:seed
+npm run check:boundaries
+npm run build
+npm test
+npm run test:db
+```
+
+Migration `20261024000300_tenant_rls` atomically adds policies/functions/triggers and
+tightens existing runtime grants. Applying migrations again is a no-op; `db:grant`
+reapplies the explicit least-privilege allowlist, never all future tables. Native
+runtime roles retain no schema/policy ownership, BYPASSRLS or owner-role membership.
+No migrations were edited after application; all three migration directories must
+be retained. This step adds no dependency and changes no frontend source/storage.
+
+Seed and `npm run auth:provision` now need the existing **MIGRATION_DATABASE_URL**,
+not runtime write privileges on users/roots/memberships. CLI provisioning still
+requires explicit local development mode, secure supplied credentials and optional
+`--update-existing`; passwords/default accounts are never seeded. The seed also
+checks its runtime/maintenance URLs identify the same loopback `_dev` or `_test`
+database for the configured mode. Do not grant app-role writes to bypass a CLI error.
+Do not deploy maintenance URLs to production API workers.
+
+All Prisma connections specify `options: '-c timezone=UTC'` at startup. Keep this
+in every future client/seed/fixture factory: the installed adapter must be paired
+with UTC sessions for consistent timestamptz input/output. The OS and cluster
+remain in their prior timezone. Do not rewrite historical timestamps as an
+infrastructure fix or use session-global SET for tenant identity.
+
+For future feature repositories, import TenantDatabaseService, then:
+
+```ts
+return database.withClinicContext(
+  request.auth!.principal, clinicId, ['clinic.branding.read'],
+  (tx, context) => tx.clinicBranding.findUnique({
+    where: { clinicId: context.clinicId },
+    select: { primaryColor: true, secondaryColor: true },
+  }),
+);
+```
+
+The principal is created only after server session verification. Never accept it,
+permissions or role claims from request data. Select a clinic with POST
+`/api/v1/auth/clinic` first. Every protected operation rechecks active session,
+user, membership, clinic, permissions and selected clinic inside its transaction.
+The callback receives tenant delegates, not raw SQL/global identity. Explicit
+clinicId filters and field projections remain required even with RLS. No network
+calls or long work inside transactions; no saving transaction handles for reuse.
+
+When adding a table:
+
+1. Classify ownership; add non-null clinicId and same-clinic compound FKs/uniques
+   and indexes as appropriate. Keep immutable ownership.
+2. Add a reviewed SQL migration with ENABLE/FORCE RLS, explicit command policies,
+   USING/WITH CHECK and owner maintenance policy. Follow the existing nonrecursive
+   policy structure; do not add an application bypass role or GUC.
+3. Add only needed grants to the allowlist. Root/membership/user mutations are
+   currently maintenance-only. Inspect SQL functions/views for fixed projections,
+   ownership, PUBLIC privileges, schema qualification and safe search_path.
+4. Add a permission-specific repository and server DTO projection. Avoid nested
+   global User includes that could expose identity/password fields; authorization
+   and field minimization remain separate from row isolation.
+5. Add actual-runtime negative tests for missing/invalid/foreign context, writes,
+   reassignment, parallel transactions and reused connections. Test maintenance
+   only for fixture setup/constraint checks, not as evidence of runtime isolation.
+6. Apply to isolated test, verify old auth/public/browser flows, then development;
+   inspect migration status/policies/grants and preserve all existing records.
+
+RLS troubleshooting: no protected rows without context is expected. A 403 for a
+member may mean the session selected another clinic; explicitly select the target.
+A 503 in the tenant boundary can indicate an unsafe owner/admin runtime credential.
+Never disable RLS, use row_security=off, grant ownership or add permissive runtime
+policies to make a query work. Use the documented context path and test database.
+The global identity repository and fixed public/identity functions are intentional
+exceptions, documented in architecture.md. Custom settings are not authentication;
+arbitrary trusted-runtime SQL remains outside RLS's containment guarantee.
 
 ## Step 1.3 authentication setup
 
@@ -276,7 +370,8 @@ npm run db:seed
 
 If the variable exists but is blank/invalid, edit it privately; do not paste secrets
 in chat or replace the whole file. Both migration commands use existing isolated
-owner credentials; the API, seed and provisioning use runtime credentials. No
+owner credentials. The API uses runtime credentials; controlled seed/provisioning
+use matching local maintenance credentials after Step 1.4. No
 reset, force push, database drop or patient migration is required. The new migration
 is `20261024000200_auth_sessions`; preserve both migration directories. Runtime
 roles need explicit grants on Session/LoginBucket, never DDL or migration-history
@@ -417,7 +512,68 @@ provide the current web verification.
   status commands. Inspect server logs locally without sharing credentials or SQL
   containing secrets.
 
-## Step 1.3 verification record (2026-10-24)
+## Step 1.4 verification record (2026-10-24)
+
+Started from clean Git at `6452337`. Native PostgreSQL 16.15 was already running.
+Audit connected separately with the existing development/test runtime and owner
+credentials; no password, role, database, system timezone or cluster configuration
+was changed. No new dependency, frontend source edit, commit or push was needed.
+
+| Command/check actually executed | Result |
+| --- | --- |
+| Role/object audit using pg against all four existing private URLs | Seven application tables; owners distinct from runtime; initially no RLS, functions or views; runtime flags superuser/CREATEDB/CREATEROLE/BYPASSRLS false |
+| `npm run db:migrate:test` | Exit 0; tenant_rls applied to isolated test before development |
+| `npm run db:migrate` | Exit 0 after test verification; tenant_rls applied to development without reset/drop |
+| `npm run db:grant` | Exit 0; scoped/read-only/DML allowlist applied to both runtime roles |
+| `npm run db:status` / `npm run db:status:test` | Exit 0; both report three applied migrations and up-to-date schema |
+| `npm run db:generate` / `npm run db:validate` | Exit 0; Prisma 7.10.1 generated; schema valid |
+| `npm run db:seed` twice, then once after final CLI target checks | Exit 0; maintenance credentials work under FORCE RLS; fictional identities/branding/domains retained |
+| Native pg integrity hashes before/after migration and seed | All original Clinic (2), ClinicBranding (2), ClinicDomain (2), User (0), ClinicMembership (0) rows unchanged, including timestamps |
+| `npm run check:boundaries` | Exit 0; database imports, SQL and principal minting confined to approved paths; also runs within API build/test compilation; a temporary negative probe importing raw Prisma was rejected and removed |
+| `npm run build` | Exit 0; React/Vite and Prisma/Nest TypeScript builds pass |
+| `npm test` | 12 passed, 0 failed, 0 skipped |
+| `npm run test:db` | 39 passed, 0 failed, 0 skipped: prior 20 auth/constraint cases plus 19 RLS/context/UTC cases |
+| Post-migration catalog audit | Four FORCE RLS tables, 20 policies, three immutable-clinic triggers, five hardened functions (three definer); no views; runtime still non-owner/NOBYPASSRLS and no root/user/membership writes |
+| `npm run auth:provision` through private child environment | Exit 0 with explicit local maintenance credentials, random supplied password and two fictional memberships |
+| `CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:4179 npm run start:api` | Compiled API started with runtime credentials |
+| `npm run preview -- --host 127.0.0.1 --port 4179 --strictPort` | Production frontend started with same-origin API proxy |
+| Direct GET health, readiness, Ward/Nour public branding; proxied readiness | All HTTP 200; expected safe response fields and distinct #7854D9 / #087F8C identities |
+| `node /tmp/lamssa-step14-browser.mjs` | PASS: 19 desktop/mobile/form PNGs, zero runtime errors; Arabic RTL/auth/selection/denial/expiry/demo workflows |
+| Screenshot comparison to Step 1.3 | 18/19 byte-identical; expired-session PNG differs only in generated fictional email text |
+| `node /tmp/lamssa-step13-focus-browser.mjs` | PASS: mobile selection control, CSRF refresh after rotation in another tab, logout |
+
+The first RLS probe run denied valid one-hour test sessions. Native pg versus ORM
+comparison diagnosed the existing adapter/Asia-Aden timezone mismatch. No policy
+was weakened: startup UTC configuration fixed the actual instant mismatch and a
+regression test now compares native/ORM expiry. An early test ConfigService type
+annotation was also corrected. All final checks above pass.
+
+Runtime tests deliberately omit application WHERE clauses to prove A/B row
+filtering; cover absent/malformed/forged settings, cross-clinic read/write denial,
+same-clinic DML, immutable ownership, role/policy/TRUNCATE denial, row_security=off,
+owner-role assumptions, hardened function inventory, concurrent physical clients,
+same-connection commit/rollback/reuse, fake principals, empty permissions,
+transaction rollback, dual selected-clinic permission boundaries, suspended clinic/
+membership, revoked session, public projection, seed idempotency and wrong owner
+credentials. HTTP tests also verify unselected clinics deny access, scoped root
+settings expose only allowed fields, and previous auth/session/CSRF/RBAC remains intact.
+After the final test run, Clinic/ClinicBranding/ClinicDomain/User/ClinicMembership/Session
+fixture counts are all zero in test; application views are zero.
+Fixtures are created/cleaned using the distinct test owner; all isolation and policy
+assertions use runtime credentials. Original constraint tests use maintenance only
+for constraints, with separate runtime privilege probes. No RLS is disabled for
+fixture setup. Temporary browser accounts/sessions/memberships and credential files
+are removed by exact fixture identity; normal browser profiles/localStorage are not
+accessed. Shared hashed IP rate counters expire normally. Test servers are stopped
+after verification; PostgreSQL remains running. Browser artifacts remain outside
+Git. No frontend unit-test/general lint command exists.
+
+No claim of production or clinical readiness follows from these checks. See the
+architecture's explicit privileged paths, arbitrary-runtime-SQL limitation and
+release controls. Step 1.5 is the patient administrative backend, with a new
+clinic-scoped model, repository, permission projections and RLS/HTTP negative tests.
+
+## Historical Step 1.3 verification record (2026-10-24)
 
 Verified on the existing native PostgreSQL 16.15 service, Node 24.21.0 and npm
 11.19.0. No privileged system changes, Docker, resets, real patient data, commits

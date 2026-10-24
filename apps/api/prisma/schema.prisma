@@ -45,6 +45,7 @@ enum MembershipStatus {
   SUSPENDED
 }
 
+// Tenant root: scoped private SELECT; fixed public/identity bootstrap functions.
 model Clinic {
   id          String       @id @default(uuid()) @db.Uuid
   legalName   String       @db.VarChar(200)
@@ -63,6 +64,7 @@ model Clinic {
   @@index([status, createdAt])
 }
 
+// Tenant resource: FORCE RLS and immutable clinicId.
 model ClinicBranding {
   clinicId       String   @id @db.Uuid
   logoUrl        String?  @db.VarChar(2048)
@@ -74,6 +76,7 @@ model ClinicBranding {
   clinic         Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }
 
+// Tenant resource: FORCE RLS and immutable clinicId.
 model ClinicDomain {
   id                 String                   @id @default(uuid()) @db.Uuid
   clinicId           String                   @db.Uuid
@@ -88,6 +91,7 @@ model ClinicDomain {
   @@index([clinicId, verificationStatus])
 }
 
+// Global identity: auth-only read path; runtime cannot write users.
 model User {
   id           String             @id @default(uuid()) @db.Uuid
   name         String             @db.VarChar(150)
@@ -102,6 +106,7 @@ model User {
   sessions     Session[]
 }
 
+// Tenant resource and identity bridge: scoped SELECT, maintenance-only writes.
 model ClinicMembership {
   id        String           @id @default(uuid()) @db.Uuid
   clinicId  String           @db.Uuid
@@ -139,6 +144,7 @@ model Session {
   @@index([expiresAt])
 }
 
+// Global security infrastructure; no tenant access grant.
 model LoginBucket {
   key       String   @id @db.Char(64)
   attempts  Int      @default(1)

@@ -42,9 +42,14 @@ async function main(): Promise<void> {
   if (!['development', 'test'].includes(process.env.NODE_ENV ?? '')) {
     throw new Error('Demo seed requires explicit development/test mode');
   }
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+  if (!process.env.MIGRATION_DATABASE_URL) throw new Error('Explicit maintenance credentials are required for seed');
+  const maintenance=new URL(process.env.MIGRATION_DATABASE_URL);
+  const runtime=new URL(process.env.DATABASE_URL ?? '');
+  const identity=(url:URL)=>`${url.hostname}:${url.port||5432}${url.pathname}`;
+  if(identity(maintenance)!==identity(runtime) || !['localhost','127.0.0.1','[::1]'].includes(maintenance.hostname) ||
+    !maintenance.pathname.endsWith(process.env.NODE_ENV==='test'?'_test':'_dev'))throw new Error('Seed requires a matching local maintenance target');
   const prisma = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 3000 }),
+    adapter: new PrismaPg({ options: '-c timezone=UTC', connectionString: process.env.MIGRATION_DATABASE_URL, connectionTimeoutMillis: 3000 }),
   });
   try {
     await seedDemoClinics(prisma);

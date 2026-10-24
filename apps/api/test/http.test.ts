@@ -46,21 +46,16 @@ before(async () => {
   const { AppModule } = await import('../src/app.module.js');
   const module = await Test.createTestingModule({ imports: [AppModule], controllers: [FailureController] })
     .overrideProvider(PrismaService).useValue({
-      $queryRaw: async () => {
-        if (!databaseAvailable) throw new Error('private-test-value postgres connection');
-        return [{ value: 1 }];
-      },
-      clinic: {
-        findFirst: async (query: { where: { slug: string; status: string } }) => {
-          lookups.push(query);
-          if (query.where.slug === 'database-error') throw new Error('private-test-value SQL');
-          const fixture = fixtures.find(item => item.slug === query.where.slug && item.status === query.where.status);
-          return fixture ? {
-            ...fixture, legalName: 'private-test-value', id: 'private-id',
-            memberships: [{ email: 'private@example.invalid', passwordHash: 'private-test-value' }],
-            branding: { logoUrl: null, primaryColor: fixture.primaryColor, secondaryColor: '#FFFFFF', accentColor: null },
-          } : null;
-        },
+      $queryRaw: async (sql:TemplateStringsArray,...values:unknown[]) => {
+        if(sql.join('').includes('public_branding')) {
+          const slug=values[0] as string;
+          lookups.push({where:{slug,status:'ACTIVE'}});
+          if(slug==='database-error')throw new Error('private-test-value SQL');
+          const fixture=fixtures.find(item=>item.slug===slug && item.status==='ACTIVE');
+          return fixture?[{...fixture,hasBranding:true,logoUrl:null,secondaryColor:'#FFFFFF',accentColor:null,legalName:'private-test-value'}]:[];
+        }
+        if(!databaseAvailable)throw new Error('private-test-value postgres connection');
+        return [{value:1}];
       },
     }).compile();
   app = module.createNestApplication({ logger: false });

@@ -25,10 +25,10 @@ export class AuthController {
   @Get('me') @Authenticated()
   me(@Req() request: AuthRequest) { return this.auth.current(request); }
   @Get('clinics') @Authenticated()
-  clinics(@Req() request: AuthRequest) { return this.auth.clinics(request.auth!.user.id); }
+  clinics(@Req() request: AuthRequest) { return this.auth.clinics(request.auth!.principal); }
   @Post('clinic') @HttpCode(200) @Authenticated()
   async select(@Req() request: AuthRequest, @Res({ passthrough: true }) response: Response, @Body() body: ClinicBody) {
-    const clinic = await this.auth.clinic(request.auth!.user.id, body.clinicId);
+    const clinic = await this.auth.selectionContext(request.auth!.principal, body.clinicId);
     return { ...await this.auth.rotate(request, response, body.clinicId), clinic };
   }
   @Post('rotate') @HttpCode(200) @Authenticated()

@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { IdentityDatabase } from '../prisma/identity.database.js';
+import { VerifiedSessions, type VerifiedPrincipal } from '../prisma/verified-sessions.js';
+import { PublicBrandingRepository } from '../prisma/public-branding.repository.js';
 import type { Environment } from '../config/environment.js';
-import { authUserInclude, type AuthRequest, type AuthUser } from './access.js';
+import { type AuthRequest } from './access.js';
 import { AuthError } from './auth-error.js';
 import { CsrfService } from './csrf.service.js';
 import { authorizationHash, digest, equal, secret } from './crypto.js';
@@ -14,8 +16,8 @@ import { permissionsFor } from './permissions.js';
 @Injectable()
 export class AuthService {
   private readonly dummyHash = hashPassword(secret());
-  constructor(private readonly prisma: PrismaService, private readonly config: ConfigService<Environment, true>,
-    private readonly csrf: CsrfService, private readonly limiter: LoginLimiter) {}
+  constructor(private readonly prisma: IdentityDatabase, private readonly config: ConfigService<Environment, true>,
+    private readonly csrf: CsrfService, private readonly limiter: LoginLimiter, private readonly verified:VerifiedSessions, private readonly branding:PublicBrandingRepository) {}
 
   private rawToken(request: AuthRequest): string | undefined {
     const value: unknown = request.cookies?.[this.csrf.sessionCookie];
@@ -24,18 +26,19 @@ export class AuthService {
   async authenticate(request: AuthRequest, response: Response): Promise<void> {
     const token = this.rawToken(request);
     if (!token) throw new UnauthorizedException();
-    const session = await this.prisma.session.findUnique({ where: { tokenHash: digest(token) }, include: { user: { include: authUserInclude } } });
+    const session = await this.prisma.session.findUnique({ where: { tokenHash: digest(token) } });
     const now = new Date();
     if (!session || session.revokedAt || session.expiresAt <= now || !equal(session.csrfHash, digest(this.csrf.sessionToken(token))) ||
         now.getTime() - session.lastSeenAt.getTime() > this.config.get('AUTH_IDLE_MINUTES', { infer: true })*60000) {
       if (session && !session.revokedAt) await this.prisma.session.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: now } });
       this.csrf.clearSession(response); throw new AuthError('SESSION_EXPIRED');
     }
-    if (session.user.status !== 'ACTIVE' || !equal(session.authorizationHash, authorizationHash(session.user))) {
+    const user=await this.prisma.userById(session.userId);
+    if (!user || user.status !== 'ACTIVE' || !equal(session.authorizationHash, authorizationHash(user))) {
       await this.prisma.session.updateMany({ where: { userId: session.userId, revokedAt: null }, data: { revokedAt: now } });
       this.csrf.clearSession(response); throw new AuthError('SESSION_EXPIRED');
     }
-    request.auth = { user: session.user, session };
+    request.auth = { user: user!, session, principal:this.verified.issue(session.userId,session.id) };
   }
   async recordActivity(request: AuthRequest): Promise<void> {
     const now = new Date();
@@ -51,22 +54,23 @@ export class AuthService {
   }
   async login(request: AuthRequest, response: Response, email: string, password: string) {
     await this.limiter.consume(request.ip ?? request.socket.remoteAddress ?? 'unknown', email);
-    const user = await this.prisma.user.findUnique({ where: { email }, include: authUserInclude });
+    const user = await this.prisma.credentialsByEmail(email);
     const valid = await verifyPassword(user?.passwordHash ?? await this.dummyHash, password);
     if (!user || !valid || user.status !== 'ACTIVE' || !user.passwordHash) throw new AuthError('AUTH_FAILED');
     const token = secret(), csrfToken = this.csrf.sessionToken(token), now = new Date();
     const expiresAt = new Date(now.getTime()+this.config.get('AUTH_SESSION_HOURS', { infer: true })*3600000);
     const previous = this.rawToken(request);
-    const session = await this.prisma.$transaction(async tx => {
-      const fresh = await tx.user.findUnique({ where: { id: user.id }, include: authUserInclude });
+    const {session,user:authenticatedUser} = await this.prisma.transaction(async tx => {
+      const fresh = await tx.userById(user.id);
       if (!fresh || fresh.status !== 'ACTIVE' || fresh.passwordHash !== user.passwordHash) throw new AuthError('AUTH_FAILED');
       if (previous) await tx.session.updateMany({ where: { tokenHash: digest(previous), revokedAt: null }, data: { revokedAt: now } });
-      return tx.session.create({ data: { userId: user.id, tokenHash: digest(token), csrfHash: digest(csrfToken), authorizationHash: authorizationHash(fresh), expiresAt } });
+      const session=await tx.session.create({ data: { userId: user.id, tokenHash: digest(token), csrfHash: digest(csrfToken), authorizationHash: authorizationHash(fresh), expiresAt } });
+      return {session,user:fresh};
     });
     response.cookie(this.csrf.sessionCookie, token, { ...this.csrf.cookieOptions(), expires: expiresAt });
     response.clearCookie(this.csrf.preauthCookie, this.csrf.cookieOptions());
     request.cookies[this.csrf.sessionCookie] = token;
-    request.auth = { user, session };
+    request.auth = { user:authenticatedUser, session, principal:this.verified.issue(user.id,session.id) };
     return this.current(request);
   }
   async logout(request: AuthRequest, response: Response) {
@@ -76,7 +80,7 @@ export class AuthService {
   async rotate(request: AuthRequest, response: Response, clinicId = request.auth!.session.selectedClinicId) {
     const { session, user } = request.auth!;
     const token = secret(), csrfToken = this.csrf.sessionToken(token), now = new Date();
-    const next = await this.prisma.$transaction(async tx => {
+    const next = await this.prisma.transaction(async tx => {
       const count = await tx.session.updateMany({ where: { id: session.id, revokedAt: null, expiresAt: { gt: now } }, data: { revokedAt: now } });
       if (count.count !== 1) throw new AuthError('SESSION_EXPIRED');
       return tx.session.create({ data: { userId: user.id, tokenHash: digest(token), csrfHash: digest(csrfToken), authorizationHash: session.authorizationHash,
@@ -84,27 +88,26 @@ export class AuthService {
     });
     response.cookie(this.csrf.sessionCookie, token, { ...this.csrf.cookieOptions(), expires: next.expiresAt });
     request.cookies[this.csrf.sessionCookie] = token;
-    request.auth = { user, session: next };
+    request.auth = { user, session: next, principal:this.verified.issue(user.id,next.id) };
     return this.current(request);
   }
-  async clinics(userId: string) {
-    const memberships = await this.prisma.clinicMembership.findMany({
-      where: { userId, status: 'ACTIVE', user: { status: 'ACTIVE' }, clinic: { status: 'ACTIVE' } },
-      include: { clinic: { include: { branding: true } } }, orderBy: { clinic: { displayName: 'asc' } },
-    });
-    return { clinics: memberships.map(m => this.context(m)) };
+  // Narrow identity/bootstrap projection. Public branding is fetched through its
+  // dedicated allowlist function, not a bypass mode on tenant repositories.
+  async clinics(proof:VerifiedPrincipal) {
+    const {userId}=this.verified.require(proof);
+    const user=await this.prisma.userById(userId);
+    if(!user || user.status!=='ACTIVE')throw new UnauthorizedException();
+    const memberships=user.memberships.filter(m=>m.status==='ACTIVE' && m.clinic.status==='ACTIVE');
+    const clinics=await Promise.all(memberships.map(m=>this.selectionContext(proof,m.clinicId)));
+    return {clinics:clinics.sort((a,b)=>a.displayName.localeCompare(b.displayName))};
   }
-  async clinic(userId: string, clinicId: string) {
-    const membership = await this.prisma.clinicMembership.findFirst({
-      where: { clinicId, userId, status: 'ACTIVE', user: { status: 'ACTIVE' }, clinic: { status: 'ACTIVE' } },
-      include: { clinic: { include: { branding: true } } },
-    });
-    if (!membership) throw new NotFoundException();
-    return this.context(membership);
-  }
-  private context(m: { role: AuthUser['memberships'][number]['role']; clinic: { id: string; slug: string; displayName: string; branding: { logoUrl: string | null; primaryColor: string; secondaryColor: string; accentColor: string | null } | null } }) {
-    const b = m.clinic.branding;
-    return { clinicId: m.clinic.id, slug: m.clinic.slug, displayName: m.clinic.displayName, role: m.role, permissions: permissionsFor(m.role),
-      branding: b ? { logoUrl: b.logoUrl, primaryColor: b.primaryColor, secondaryColor: b.secondaryColor, accentColor: b.accentColor } : null };
+  async selectionContext(proof:VerifiedPrincipal,clinicId:string) {
+    const {userId}=this.verified.require(proof);
+    const user=await this.prisma.userById(userId);
+    if(!user || user.status!=='ACTIVE')throw new UnauthorizedException();
+    const m=user.memberships.find(m=>m.clinicId===clinicId && m.status==='ACTIVE' && m.clinic.status==='ACTIVE');
+    if(!m)throw new NotFoundException();
+    const publicIdentity=await this.branding.bySlug(m.clinic.slug);
+    return {clinicId:m.clinicId,slug:m.clinic.slug,displayName:m.clinic.displayName,role:m.role,permissions:permissionsFor(m.role),branding:publicIdentity.branding};
   }
 }

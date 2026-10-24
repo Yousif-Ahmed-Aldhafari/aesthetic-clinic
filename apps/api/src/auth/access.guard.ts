@@ -5,11 +5,12 @@ import type { Response } from 'express';
 import { ACCESS, type AccessPolicy, type AuthRequest } from './access.js';
 import { AuthService } from './auth.service.js';
 import { CsrfService } from './csrf.service.js';
+import { ClinicRepository } from '../prisma/clinic.repository.js';
 import { AuthError } from './auth-error.js';
 
 @Injectable()
 export class AccessGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector, private readonly auth: AuthService, private readonly csrf: CsrfService) {}
+  constructor(private readonly reflector: Reflector, private readonly auth: AuthService, private readonly csrf: CsrfService, private readonly clinics:ClinicRepository) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const policy = this.reflector.getAllAndOverride<AccessPolicy | undefined>(ACCESS, [context.getHandler(), context.getClass()]);
     if (!policy) throw new ForbiddenException();
@@ -21,7 +22,7 @@ export class AccessGuard implements CanActivate {
     if (policy.kind === 'clinic') {
       const clinicId = request.params.clinicId;
       if (typeof clinicId !== 'string' || !isUUID(clinicId)) throw new BadRequestException();
-      const clinic = await this.auth.clinic(request.auth!.user.id, clinicId);
+      const clinic = await this.clinics.context(request.auth!.principal, clinicId, policy.permissions ?? []);
       if (!policy.permissions?.length || !policy.permissions.every(permission=>clinic.permissions.includes(permission))) throw new ForbiddenException();
       request.clinicContext = clinic;
     }

@@ -1,6 +1,6 @@
 # Lamssa implementation roadmap
 
-Updated after Step 1.3, 2026-10-24. The user's current scope
+Updated after Step 1.4, 2026-10-24. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All
 production use remains gated on authentication, isolation and operational controls.
 
@@ -41,29 +41,18 @@ production use remains gated on authentication, isolation and operational contro
    Recovery/invitations, production identity administration, MFA, scheduled session
    retention and audited support access remain separately scoped follow-up work.
 
-4. **1.4 — Enforce clinic isolation before patient API rollout.**
-   Require validated tenant context in every private repository and transaction.
-   Apply clinicId to detail/list/count/search/export, nested relations and bulk
-   writes; prevent tenant reassignment and unscoped object-ID access. Add PostgreSQL
-   RLS, transaction-local context and separate request/migration credentials before
-   a real clinic pilot. Scope caches, jobs, storage and audit as introduced.
-   Acceptance: two-clinic tests cover valid foreign-clinic IDs, users in one/both
-   clinics with different roles, missing context, changed clinic selectors/hosts,
-   suspended memberships, nested writes and pooled-connection reuse. Ownership
-   constraints alone are not authorization. Custom hostnames identify, never grant
-   access. No patient endpoint opens before this gate.
+4. **1.4 — Mandatory tenant access and RLS (implemented).**
+   Added verified process-local principals, selected-clinic/permission checks in
+   interactive tenant transactions, local context settings, FORCE RLS on Clinic,
+   ClinicBranding, ClinicDomain and ClinicMembership, immutable ownership and
+   restricted runtime grants. Identity/public bootstrap functions have fixed
+   projections and hardened ownership/search paths. Maintenance credentials are
+   explicit for seed/provisioning; runtime owner misconfiguration fails closed.
+   UTC connection configuration fixes the observed adapter expiry mismatch.
+   Runtime-role isolation, concurrency, rollback/reuse, auth/public/browser and
+   record-preservation checks are recorded in development.md. No patient API yet.
 
-5. **1.5 — Clinic identity administration and white-label delivery.**
-   Add authorized clinic settings/branding changes, IANA timezone/currency policy,
-   safe logo handling and publishing rules. Extend the selected-clinic branding already shown by Step 1.3 without mixing
-   demo data with operational records. Define ownership proof
-   before domain verification, subdomain/custom-domain routing and managed TLS.
-   Acceptance: themes remain Arabic RTL/accessibility compatible, suspended clinics
-   are not published, unique/verified-primary domain constraints hold, and changing
-   a host cannot grant private clinic access. Invoice/message branding is applied
-   only through each later feature's authorized clinic settings.
-
-6. **1.6 — Patient management vertical slice.**
+5. **1.5 — Patient Management Backend.**
    Add clinic-scoped administrative patient create/list/detail/update, chart numbers,
    bounded search/pagination, name/phone/note validation and permitted response
    fields. Preserve Arabic input; shared family phones are not unique identities.
@@ -72,7 +61,7 @@ production use remains gated on authentication, isolation and operational contro
    Acceptance: clinic isolation and validation tests pass and existing demo flows
    remain usable. Clinical notes/photos are deferred.
 
-7. **1.7 — Appointments and clinic resources.**
+6. **1.6 — Appointments and clinic resources.**
    Add services, clinicians, rooms and availability; replace free-text references
    with same-clinic resource IDs. Use duration, UTC instants and clinic timezone;
    support rescheduling/cancellation and conditional status/version changes.
@@ -80,7 +69,7 @@ production use remains gated on authentication, isolation and operational contro
    resource transactions. Acceptance: simultaneous conflicts cannot both succeed;
    clinician/room conflicts, local day boundaries and Arabic errors are tested.
 
-8. **1.8 — Visits and queue consistency.**
+7. **1.7 — Visits and queue consistency.**
    Implement atomic check-in/visit creation, unique visit queue entries and ticket
    counters per clinic/lane/business-date. Lock the lane for call-next, enforce one
    serving patient across day boundaries, and complete visit/appointment together.
@@ -89,13 +78,23 @@ production use remains gated on authentication, isolation and operational contro
    produce no duplicate tickets or two patients in one room. Start with one lane
    and polling; multi-room/clinician occupancy needs additional constraints.
 
-9. **1.9 — Billing and payments.**
+8. **1.8 — Billing and payments.**
    Add line snapshots, exact money/currency totals, immutable issued numbers unique
    per clinic, auditable payments/partial settlement/reversals, and financial RBAC.
    Define tax/discount/receipt rules for the operating market before implementation.
    Acceptance: idempotent/concurrent payments cannot double-collect, searches never
    change invoice identity, and cross-clinic references are rejected. Render clinic
    branding from authorized settings; preserve historical issued document snapshots.
+
+9. **1.9 — Clinic identity administration and white-label delivery.**
+   Add authorized clinic settings/branding changes, IANA timezone/currency policy,
+   safe logo handling and publishing rules. Extend the selected-clinic branding already shown by Step 1.3 without mixing
+   demo data with operational records. Define ownership proof
+   before domain verification, subdomain/custom-domain routing and managed TLS.
+   Acceptance: themes remain Arabic RTL/accessibility compatible, suspended clinics
+   are not published, unique/verified-primary domain constraints hold, and changing
+   a host cannot grant private clinic access. Invoice/message branding is applied
+   only through each later feature's authorized clinic settings.
 
 10. **1.10 — Testing, security and release gates.**
     Add tests throughout the steps above, not only here: domain unit tests, real

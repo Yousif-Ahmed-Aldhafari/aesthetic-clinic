@@ -34,7 +34,8 @@
     "db:migrate:test": "node scripts/test-database-command.mjs migrate",
     "db:status:test": "node scripts/test-database-command.mjs status",
     "db:grant": "node scripts/grant-database-access.mjs",
-    "auth:provision": "npm run auth:provision --workspace @lamssa/api --"
+    "auth:provision": "npm run auth:provision --workspace @lamssa/api --",
+    "check:boundaries": "node scripts/check-database-boundaries.mjs"
   },
   "allowScripts": {
     "@prisma/engines@7.10.1": true,

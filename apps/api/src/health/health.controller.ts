@@ -1,11 +1,11 @@
 import { Controller, Get, Header, ServiceUnavailableException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { DatabaseHealthService } from '../prisma/database-health.service.js';
 import { PublicRoute } from '../auth/access.js';
 
 @Controller('health')
 @PublicRoute()
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: DatabaseHealthService) {}
 
   @Get()
   @Header('Cache-Control', 'no-store')
@@ -17,7 +17,7 @@ export class HealthController {
   @Header('Cache-Control', 'no-store')
   async ready() {
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      await this.database.check();
       return { status: 'ready' };
     } catch {
       throw new ServiceUnavailableException();
