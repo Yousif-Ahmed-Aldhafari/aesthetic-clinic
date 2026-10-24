@@ -8,8 +8,8 @@
     "build": "node ../../scripts/check-database-boundaries.mjs && prisma generate && tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "test:compile": "node ../../scripts/check-database-boundaries.mjs && prisma generate && tsc -p tsconfig.test.json",
-    "test": "npm run test:compile && node --test dist-test/test/auth-policy.test.js dist-test/test/config.test.js dist-test/test/http.test.js dist-test/test/patient-input.test.js",
-    "test:db": "npm run test:compile && node --test dist-test/test/database.test.js dist-test/test/auth.integration.test.js dist-test/test/rls.integration.test.js dist-test/test/patients.integration.test.js",
+    "test": "npm run test:compile && node --test dist-test/test/auth-policy.test.js dist-test/test/config.test.js dist-test/test/http.test.js dist-test/test/patient-input.test.js dist-test/test/scheduling-time.test.js",
+    "test:db": "npm run test:compile && node --test dist-test/test/database.test.js dist-test/test/auth.integration.test.js dist-test/test/rls.integration.test.js dist-test/test/patients.integration.test.js dist-test/test/appointments.integration.test.js",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate deploy",
@@ -19,30 +19,31 @@
     "auth:provision": "tsx scripts/provision-user.ts"
   },
   "dependencies": {
+    "@js-temporal/polyfill": "0.5.1",
     "@nestjs/common": "12.2.0",
     "@nestjs/config": "12.0.1",
     "@nestjs/core": "12.2.0",
     "@nestjs/platform-express": "12.2.0",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
+    "argon2": "0.45.1",
     "class-transformer": "0.5.1",
     "class-validator": "0.15.1",
+    "cookie-parser": "1.4.7",
     "dotenv": "18.0.9",
     "pg": "8.23.1",
     "reflect-metadata": "0.2.2",
-    "rxjs": "7.8.2",
-    "argon2": "0.45.1",
-    "cookie-parser": "1.4.7"
+    "rxjs": "7.8.2"
   },
   "devDependencies": {
     "@nestjs/cli": "12.0.10",
     "@nestjs/testing": "12.2.0",
+    "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
     "prisma": "7.10.1",
     "tsx": "4.23.15",
-    "typescript": "5.9.3",
-    "@types/cookie-parser": "1.4.10"
+    "typescript": "5.9.3"
   }
 }
