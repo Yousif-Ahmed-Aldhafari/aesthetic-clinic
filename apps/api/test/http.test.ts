@@ -6,6 +6,8 @@ import { Test } from '@nestjs/testing';
 import { IsString } from 'class-validator';
 import { configureApp } from '../src/configure-app.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { PublicRoute } from '../src/auth/access.js';
+import { randomBytes } from 'node:crypto';
 
 class ValidationBody {
   @IsString()
@@ -16,9 +18,11 @@ class ValidationBody {
 @Controller('test')
 class FailureController {
   @Get('failure')
+  @PublicRoute()
   fail() { throw new Error('private-test-value stack database-password'); }
 
   @Post('validation')
+  @PublicRoute()
   validate(@Body() body: ValidationBody) { return body; }
 }
 
@@ -34,6 +38,7 @@ const fixtures = [
 
 before(async () => {
   process.env.NODE_ENV = 'test';
+  process.env.AUTH_CSRF_SECRET = randomBytes(48).toString('base64url');
   process.env.API_HOST = '127.0.0.1';
   process.env.API_PORT = '3000';
   process.env.DATABASE_URL = 'postgresql://test:test@127.0.0.1:1/lamssa_test';
@@ -88,11 +93,11 @@ test('readiness returns a safe 503 on database failure, independently of livenes
   } finally { databaseAvailable = true; }
 });
 
-test('CORS permits configured origins, without wildcard or credentials', async () => {
+test('CORS permits credentials only for explicit configured origins', async () => {
   for (const origin of ['http://localhost:5173', 'http://127.0.0.1:5173']) {
     const response = await fetch(`${base}/api/v1/health`, { headers: { Origin: origin } });
     assert.equal(response.headers.get('access-control-allow-origin'), origin);
-    assert.equal(response.headers.get('access-control-allow-credentials'), null);
+    assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
   }
   const denied = await fetch(`${base}/api/v1/health`, { headers: { Origin: 'https://untrusted.example' } });
   assert.equal(denied.headers.get('access-control-allow-origin'), null);
@@ -128,9 +133,12 @@ test('suspended, missing and malformed clinic identities are rejected', async ()
 });
 
 test('request validation rejects unknown fields and wrong types', async () => {
+  const preauth = await fetch(`${base}/api/v1/auth/csrf`);
+  const csrfToken = (await preauth.json() as { csrfToken: string }).csrfToken;
+  const cookie = preauth.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
   for (const body of [{ value: 42 }, { value: 'valid', clinicId: 'mass-assigned' }]) {
     const response = await fetch(`${base}/api/v1/test/validation`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:5173', Cookie: cookie, 'X-CSRF-Token': csrfToken }, body: JSON.stringify(body),
     });
     assert.equal(response.status, 400);
     assert.equal((await response.json() as { error: { code: string } }).error.code, 'INVALID_REQUEST');

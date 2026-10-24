@@ -72,6 +72,12 @@ test('live PostgreSQL identity, membership and tenant constraints', { skip: !url
     await rejected('INSERT INTO "ClinicDomain" ("id","clinicId","hostname","updatedAt") VALUES ($1,$2,$3,NOW())', [randomUUID(), b, hostname], '23505');
     await rejected('INSERT INTO "ClinicDomain" ("id","clinicId","hostname","verificationStatus","isPrimary","updatedAt") VALUES ($1,$2,$3,$4,true,NOW())', [randomUUID(), a, `other-${hostname}`, 'VERIFIED'], '23505');
     await rejected('INSERT INTO "ClinicDomain" ("id","clinicId","hostname","isPrimary","updatedAt") VALUES ($1,$2,$3,true,NOW())', [randomUUID(), b, `pending-${hostname}`], '23514');
+    const sessionId = randomUUID(), tokenHash = 'a'.repeat(64);
+    await client.query('INSERT INTO "Session" ("id","userId","tokenHash","csrfHash","authorizationHash","expiresAt") VALUES ($1,$2,$3,$3,$3,NOW()+INTERVAL \'1 hour\')', [sessionId,user,tokenHash]);
+    await rejected('INSERT INTO "Session" ("id","userId","tokenHash","csrfHash","authorizationHash","expiresAt") VALUES ($1,$2,$3,$3,$3,NOW()+INTERVAL \'1 hour\')', [randomUUID(),user,tokenHash], '23505');
+    await rejected('UPDATE "Session" SET "expiresAt"="createdAt" WHERE "id"=$1', [sessionId], '23514');
+    await rejected('UPDATE "Session" SET "selectedClinicId"=$1 WHERE "id"=$2', [randomUUID(),sessionId], '23503');
+    await rejected('INSERT INTO "LoginBucket" ("key","attempts","expiresAt") VALUES ($1,0,NOW())', ['b'.repeat(64)], '23514');
     await rejected('DELETE FROM "Clinic" WHERE "id"=$1', [a], '23503');
     await rejected('DELETE FROM "User" WHERE "id"=$1', [user], '23503');
   } finally {

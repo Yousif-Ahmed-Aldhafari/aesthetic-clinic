@@ -6,6 +6,8 @@ import { PatientForm } from './features/patients/PatientForm';
 import { AppointmentForm } from './features/appointments/AppointmentForm';
 import { InvoiceForm } from './features/billing/InvoiceForm';
 
+import type { ClinicContext } from './features/auth/api';
+
 type Section = 'overview' | 'patients' | 'appointments' | 'queue' | 'invoices';
 
 const sections: { id: Section; label: string; symbol: string }[] = [
@@ -16,7 +18,7 @@ const sections: { id: Section; label: string; symbol: string }[] = [
   { id: 'invoices', label: 'الفواتير', symbol: '▤' },
 ];
 
-export default function App() {
+export default function App({ clinic, userName, busy, onSwitch, onLogout }: { clinic: ClinicContext; userName: string; busy: boolean; onSwitch: () => void; onLogout: () => void }) {
   const [data, setData] = useState<Data>(loadData);
   const [section, setSection] = useState<Section>('overview');
   const [search, setSearch] = useState('');
@@ -69,13 +71,13 @@ export default function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">✧</span><div><strong>لمسة</strong><small>إدارة العيادات التجميلية</small></div></div>
-      <div className="clinic-switch"><span className="clinic-icon">✦</span><div><b>عيادة لمسة</b><small>الفرع الرئيسي · تجريبي</small></div><span className="chevron">⌄</span></div>
+      <button className="clinic-switch" onClick={onSwitch} disabled={busy} aria-label="تغيير العيادة">{clinic.branding?.logoUrl ? <img className="clinic-logo" src={clinic.branding.logoUrl} alt="شعار العيادة"/> : <span className="clinic-icon">✦</span>}<div><b>{clinic.displayName}</b><small>تغيير العيادة · عرض تجريبي</small></div><span className="chevron">⌄</span></button>
       <div className="menu-label">القائمة الرئيسية</div>
       <nav aria-label="القائمة الرئيسية">{sections.map(item => <button key={item.id} className={`nav-link ${section === item.id ? 'selected' : ''}`} onClick={() => { setSection(item.id); setSearch(''); setNotice(''); }}><span className="nav-icon">{item.symbol}</span>{item.label}{item.id === 'queue' && waiting.length > 0 && <em>{waiting.length}</em>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="help-card"><b>نسخة تجريبية</b><p>البيانات محفوظة محليًا في متصفحك فقط. لا تُدخل معلومات مرضى حقيقية.</p></div><button className="reset" onClick={resetDemo}>↻ استعادة البيانات التجريبية</button></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div className="breadcrumb">العيادة <span>/</span> <b>{title}</b></div><div className="top-actions"><span className="date-pill">◷ {new Intl.DateTimeFormat('ar-YE', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</span><span className="avatar">م</span></div></header>
+      <header className="topbar"><div className="breadcrumb">العيادة <span>/</span> <b>{title}</b></div><div className="top-actions"><span className="date-pill">◷ {new Intl.DateTimeFormat('ar-YE', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</span><span className="user-name">{userName}</span><span className="avatar">{userName.slice(0,1)}</span><button className="logout-button" onClick={onLogout} disabled={busy}>تسجيل الخروج</button></div></header>
       <div className="content">
         <div className="page-header"><div><div className="eyebrow">نظام إدارة عيادات التجميل</div><h1>{section === 'overview' ? 'صباح الخير، أهلاً بك 👋' : title}</h1><p>{section === 'overview' ? 'إليك ملخص ما يحدث في عيادتك اليوم.' : section === 'queue' ? 'متابعة دور المرضى داخل العيادة لحظة بلحظة.' : section === 'patients' ? 'ملفات المرضى وبيانات التواصل الأساسية.' : section === 'appointments' ? 'تنظيم الحجوزات وحضور المرضى.' : 'إدارة الفواتير والمدفوعات.'}</p></div><div className="header-buttons">{section !== 'queue' && <button className="primary-btn" onClick={() => setModal(section === 'invoices' ? 'invoice' : section === 'patients' ? 'patient' : 'appointment')}>＋ {section === 'invoices' ? 'فاتورة جديدة' : section === 'patients' ? 'مريض جديد' : 'حجز موعد'}</button>}</div></div>
         {notice && <div className="notice" role="status">✓ {notice}<button aria-label="إغلاق التنبيه" onClick={() => setNotice('')}>×</button></div>}

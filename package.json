@@ -33,12 +33,14 @@
     "db:env:native": "node scripts/native-postgres-env.mjs",
     "db:migrate:test": "node scripts/test-database-command.mjs migrate",
     "db:status:test": "node scripts/test-database-command.mjs status",
-    "db:grant": "node scripts/grant-database-access.mjs"
+    "db:grant": "node scripts/grant-database-access.mjs",
+    "auth:provision": "npm run auth:provision --workspace @lamssa/api --"
   },
   "allowScripts": {
     "@prisma/engines@7.10.1": true,
     "prisma@7.10.1": true,
     "esbuild@0.25.12": true,
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "argon2@0.45.1": true
   }
 }

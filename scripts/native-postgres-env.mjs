@@ -8,6 +8,7 @@ const content = [
   '# Native local PostgreSQL. Private credentials; never commit or print this file.',
   'NODE_ENV=development', 'API_HOST=127.0.0.1', 'API_PORT=3000',
   'CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173',
+  `AUTH_CSRF_SECRET=${randomBytes(48).toString('base64url')}`,
   `DATABASE_URL=${url('lamssa_dev_app', 'lamssa_dev')}`,
   `MIGRATION_DATABASE_URL=${url('lamssa_dev_migrator', 'lamssa_dev')}`,
   `TEST_DATABASE_URL=${url('lamssa_test_app', 'lamssa_test')}`,

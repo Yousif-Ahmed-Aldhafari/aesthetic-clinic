@@ -6,6 +6,8 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { HealthController } from './health/health.controller.js';
 import { PublicBrandingController } from './clinics/public-branding.controller.js';
 import { PublicBrandingService } from './clinics/public-branding.service.js';
+import { AuthModule } from './auth/auth.module.js';
+import { ClinicContextController } from './clinics/clinic-context.controller.js';
 
 @Module({
   imports: [
@@ -16,8 +18,9 @@ import { PublicBrandingService } from './clinics/public-branding.service.js';
       validate: validateEnvironment,
     }),
     PrismaModule,
+    AuthModule,
   ],
-  controllers: [HealthController, PublicBrandingController],
+  controllers: [HealthController, PublicBrandingController, ClinicContextController],
   providers: [PublicBrandingService],
 })
 export class AppModule {}

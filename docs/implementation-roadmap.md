@@ -1,6 +1,6 @@
 # Lamssa implementation roadmap
 
-Updated after the expanded Step 1.2 request, 2026-10-24. The user's current scope
+Updated after Step 1.3, 2026-10-24. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All
 production use remains gated on authentication, isolation and operational controls.
 
@@ -29,19 +29,17 @@ production use remains gated on authentication, isolation and operational contro
    [development.md](development.md). Authentication/RBAC is the next implementation
    step; current public endpoints do not grant private clinic access.
 
-3. **1.3 — Authentication and role-based access control.**
-   Implement credential provisioning without default passwords, strong password
-   hashing, login/logout, secure sessions, expiry/rotation/revocation, CSRF for
-   cookie-authenticated writes, rate limits and recovery/invitation flows. An
-   invited/null-password user cannot authenticate. Resolve current active user,
-   clinic and membership into immutable request context; check server permissions
-   for CLINIC_OWNER, CLINIC_ADMIN, DOCTOR, RECEPTIONIST and ACCOUNTANT. Keep global
-   PLATFORM_ADMIN out of clinic authorization unless an explicit, scoped and audited
-   support-access policy is approved. Add a protected identity/membership endpoint;
-   keep only documented health/branding routes intentionally public.
-   Acceptance: unauthenticated/forbidden/expired/revoked sessions are tested over
-   HTTP; role changes and suspended clinics/memberships take effect promptly;
-   credentials and tokens never enter localStorage, logs or public branding.
+3. **1.3 — Authentication and role-based access control (implemented).**
+   Argon2id, explicit local account provisioning, database-backed hashed session
+   verifiers, idle/absolute expiry, revocation/rotation, signed/session-bound CSRF,
+   exact origins and persistent login limits. Default-deny global guard checks
+   active user/clinic/membership and centralized granular permissions on each
+   clinic request. Platform authority has no bypass. Arabic RTL login/selection,
+   active branding, expired/denied states and labeled unchanged local demos exist.
+   Two-clinic HTTP/database tests cover forged context, lifecycle and CSRF. See
+   architecture/development for the matrix, commands and executed evidence.
+   Recovery/invitations, production identity administration, MFA, scheduled session
+   retention and audited support access remain separately scoped follow-up work.
 
 4. **1.4 — Enforce clinic isolation before patient API rollout.**
    Require validated tenant context in every private repository and transaction.
@@ -57,8 +55,8 @@ production use remains gated on authentication, isolation and operational contro
 
 5. **1.5 — Clinic identity administration and white-label delivery.**
    Add authorized clinic settings/branding changes, IANA timezone/currency policy,
-   safe logo handling and publishing rules. Connect the web to public branding
-   without mixing its demo data with operational records. Define ownership proof
+   safe logo handling and publishing rules. Extend the selected-clinic branding already shown by Step 1.3 without mixing
+   demo data with operational records. Define ownership proof
    before domain verification, subdomain/custom-domain routing and managed TLS.
    Acceptance: themes remain Arabic RTL/accessibility compatible, suspended clinics
    are not published, unique/verified-primary domain constraints hold, and changing

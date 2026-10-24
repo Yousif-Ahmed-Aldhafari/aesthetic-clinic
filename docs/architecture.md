@@ -1,12 +1,145 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.2 — architecture and backend identity foundation, 2026-10-24.
+Phase 1, Steps 1.1–1.3 — current implementation, 2026-10-24.
 
-**Current status:** npm workspaces contain the unchanged demo frontend in
-`apps/web` and a NestJS API in `apps/api`. PostgreSQL/Prisma configuration, an
-initial identity migration and an optional two-clinic seed exist. Authentication,
-RBAC, private clinic endpoints and RLS are **not implemented**; tenant isolation
-is not production-secure. Prototype records remain demo-only and are not uploaded.
+**Current status:** npm workspaces contain the Arabic RTL React demo in `apps/web`
+and a modular NestJS API in `apps/api`. PostgreSQL/Prisma identity and session
+migrations are applied in development and test. Authentication, revocable sessions,
+active clinic membership checks and granular RBAC are implemented. Clinical APIs,
+RLS and production hardening are not implemented. Browser workflow records remain
+explicitly local, shared demo data; no patient data is uploaded or imported.
+
+## Step 1.3: authentication and clinic authorization
+
+`AuthModule` contains login, CSRF, persistent throttling, sessions and the global
+access guard. Every route must declare `@PublicRoute`, `@Authenticated` or
+`@ClinicPermissions(...)`; missing metadata denies access. Clinic policies require
+nonempty permissions. Only health, active public branding and pre-login CSRF/login
+are public. No patient, invoice or staff CRUD is exposed.
+
+| Endpoint under `/api/v1` | Access and response |
+| --- | --- |
+| `GET auth/csrf` | Public signed pre-login CSRF token + HttpOnly preauth cookie |
+| `POST auth/login` | Origin + signed pre-login CSRF, persistent rate limit, email/password; creates fresh session |
+| `POST auth/logout` | Verified session + Origin + session CSRF; revokes database row, clears cookie |
+| `GET auth/me` | Verified session; safe user ID/name/email, selectedClinicId, CSRF token and absolute expiry |
+| `GET auth/clinics` | Verified session; only active memberships in active clinics, safe branding and role/permissions |
+| `POST auth/clinic` | Verified session + CSRF; `{clinicId}` must pass a fresh active membership check; rotates session |
+| `POST auth/rotate` | Verified session + CSRF; atomically replaces/revokes previous verifier |
+| `GET clinics/:clinicId/me` | Active user/clinic/membership + `clinic.branding.read`; projected clinic context |
+| `GET clinics/:clinicId/settings` | Active user/clinic/membership + `clinic.settings.read`; display name, timezone, currency only |
+
+Account creation is an explicit **local development CLI** (`npm run auth:provision`),
+not public registration. It requires supplied credentials (interactive hidden
+password or secure environment), 15–128 character passwords, explicit existing
+clinic memberships and a local `_dev` database in development mode. Existing
+accounts require `--update-existing`; updates increment authVersion and revoke all
+sessions. It cannot provision platform administrators. No account/password is
+seeded. Invitations, recovery, MFA and production identity administration are deferred.
+
+Passwords use Argon2id (64 MiB, 3 iterations, parallelism 1, library-generated salt).
+Login verifies a dummy hash for unknown users and returns the same failure for wrong
+passwords, unknown users and suspended users. PostgreSQL `LoginBucket` upserts count
+normalized account and server-derived IP attempts in fixed 15-minute windows
+(default 5/account, 30/IP, including successful attempts). Buckets store SHA-256 keys,
+counts and expiry, not submitted passwords. Multiple API processes share the limit.
+This basic limit needs deployment abuse/lockout review and edge protection.
+
+Sessions use 32 cryptographically random bytes encoded base64url. Only a SHA-256
+verifier is persisted, never the raw secret. Cookies are HttpOnly, SameSite=Lax,
+host-only and expire with the session. Development uses `/api/v1`; production uses
+Secure `__Host-` cookies with path `/` and requires HTTPS for auth/private routes.
+Absolute expiry defaults to eight hours, idle expiry to 30 minutes. The active UI
+checks `/auth/me` every minute and on focus; these successful requests count as
+activity. Revocation/expiry is enforced on every server request, independently of
+UI polling. Logout, login replacement and clinic selection revoke previous browser
+sessions transactionally; explicit rotation preserves absolute expiry.
+
+Every authenticated request reloads the user and all memberships/clinic statuses.
+A fingerprint of password hash, authVersion, platform role, user status, membership
+IDs/roles/statuses and clinic statuses is compared with the login snapshot. Changes
+invalidate **all** user sessions and require reauthentication with a fresh secret;
+there is no silent privilege escalation. CSRF-secret changes also invalidate older
+sessions on use. No application role claims are accepted from browser input.
+
+CSRF uses both an exact Origin allowlist (also rejecting cross-site Fetch Metadata)
+and a token: signed, time-bounded double-submit before login; session-bound HMAC
+returned by `/auth/me` after login, with only its hash in the session row. Unsafe
+requests require `X-CSRF-Token`. SameSite alone is insufficient. CSRF values live
+only in React memory; session secrets never enter JavaScript or localStorage.
+Cookie-bearing responses are `no-store`; exceptions expose static Arabic messages,
+never stacks, SQL, cookies or passwords. Login accepts bounded, validated fields and
+rejects role/clinic mass assignment. The API body limit is 16 KiB.
+
+The browser uses a same-origin `/api/v1` proxy in Vite development/preview; production
+must route web and API under one HTTPS origin. `TRUST_PROXY_HOPS=0` is the default.
+Set 1 only behind a single trusted, network-restricted TLS proxy that overwrites
+forwarded headers. Unrestricted proxy trust could spoof client IP or HTTPS status.
+
+### Enforced clinic boundary
+
+Session identity → freshly active user → `(userId, clinicId)` active membership →
+active clinic → centralized permission check → request clinic context. Selection is
+convenience only; **each** clinic request reauthorizes its URL clinicId. Wrong-clinic
+requests return 404, insufficient permissions 403, invalid sessions 401. Slug,
+hostname, selected clinic, query parameters and headers cannot grant authority.
+Global PLATFORM_ADMIN has no clinic bypass, and no cross-clinic admin endpoint
+exists. Future operations require explicit scoped/audited platform authorization.
+
+### Current permission matrix
+
+Source of truth: `apps/api/src/auth/permissions.ts`. `r/c/u/m` means read/create/
+update/manage; `—` denies. Each comma-separated action is a separate permission.
+
+| Module | CLINIC_OWNER | CLINIC_ADMIN | DOCTOR | RECEPTIONIST | ACCOUNTANT |
+| --- | --- | --- | --- | --- | --- |
+| clinic.settings | r,u | r,u | — | — | — |
+| clinic.branding | r,u | r,u | r | r | r |
+| staff | r,m | r,m | — | — | — |
+| patients | r,c,u | r,c,u | r,u | r,c,u | — |
+| appointments | r,c,u | r,c,u | r,u | r,c,u | — |
+| queue | r,m | r,m | r,m | r,m | — |
+| invoices | r,c,m | — | — | r,c | r,c,m |
+| reports | r | — | — | — | r |
+
+`patients.*` is reserved for administrative patient identity/contact operations;
+it grants no clinical notes, charts, images or unrestricted clinical-record access.
+Those require separate sensitive permissions and patient/encounter policies later.
+Financial permissions are independent; clinic administration and doctor roles do
+not automatically receive them. Unknown roles/permissions default deny. The owner
+is explicitly granted commercial permissions, not future medical permissions.
+Permission arrays returned to the UI are advisory; guards use the server matrix.
+Future staff-management handlers must also restrict which roles the actor may
+assign: `staff.manage` alone must never allow granting ownership, platform authority
+or permissions the actor cannot delegate. Clinical reporting requires its own
+explicit policy; `reports.read` does not grant access to clinical charts.
+All five existing workflow tabs remain usable with fictional local demo data for
+any authenticated clinic member; this does not authorize future server records.
+
+### Added persistence
+
+`User.authVersion` supports identity invalidation. Global identity infrastructure
+`Session` belongs to one user and optionally references a selected clinic (RESTRICT
+FKs); it stores tokenHash (unique), csrfHash, authorizationHash, created/lastSeen/
+expires/revoked timestamps. Indexes support `(userId,revokedAt)` and expiry.
+`LoginBucket` stores a unique hashed key, positive attempt count and indexed expiry.
+Session expiry must follow creation. These tables grant no clinic access by
+existence. Migration `20261024000200_auth_sessions` adds only these structures and
+authVersion; both databases use their existing migration owners and restricted DML
+runtime credentials. The explicit grant allowlist now covers seven tables only.
+Revoked/expired session retention and scheduled cleanup are deployment work;
+expired rate buckets are removed during login requests.
+
+The design follows [OWASP password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html),
+[session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html),
+and [CSRF guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
+It uses [node-argon2](https://github.com/ranisalt/node-argon2) and
+[Nest guards](https://docs.nestjs.com/guards). This is a development foundation,
+not a production-readiness or clinical compliance claim. RLS, audit, MFA, recovery,
+TLS deployment, backups, privacy review and operational abuse controls remain gates.
+
+The following Step 1.1/1.2 inspection and verification sections retain historical
+context; current behavior is specified above and in [development.md](development.md).
 
 ## Step 1.2.1: native database foundation verified
 
@@ -20,13 +153,13 @@ constraint/privilege tests, database-backed public branding and HTTP readiness a
 pass. Test fixtures roll back. See [development.md](development.md) for the exact
 commands/results and native start/stop/troubleshooting instructions.
 
-This completes the database prerequisite for Step 1.3. It does not implement
-per-clinic RLS, authenticated membership authorization or production safeguards.
+This completed the database prerequisite for Step 1.3; the later authentication
+implementation is described above. Per-clinic RLS and production safeguards remain pending.
 
 ## Step 1.2: implemented foundation
 
 The user's expanded Step 1.2 scope supersedes the original split between workspace,
-API and database steps. The next step is now **1.3 — Authentication and RBAC**.
+API and database steps. Step 1.3 is implemented above; Step 1.4 will deepen tenant isolation.
 
 ```text
 .
@@ -42,9 +175,9 @@ API and database steps. The next step is now **1.3 — Authentication and RBAC**
 └── docs/
 ```
 
-No `packages/shared` exists yet: there is no frontend/API contract consumer, and
-the browser does not depend on Prisma. Add a shared package when an authenticated
-feature actually crosses that boundary. Root dev/preview commands delegate to
+No `packages/shared` exists yet. Small auth transport interfaces currently live in
+the web feature and API projections; the browser does not depend on Prisma. A shared
+contract package can be extracted as operational features grow, with contract tests. Root dev/preview commands delegate to
 Vite; root build builds both apps. The web's dependencies are pinned to their
 previous lockfile versions so moving it does not upgrade its runtime.
 
@@ -68,9 +201,9 @@ operational logging remains future work.
 Public branding uses a validated slug and selects branding through that clinic's
 relation. Its response projection excludes legal name, IDs, private settings,
 domains, users, emails and membership/password fields. This is an intentionally
-public identification lookup, not an authorization path. There are no patient,
-appointment, queue, invoice, user-management or private clinic API routes. The
-frontend continues using only its original localStorage key/shape and Arabic UI.
+public identification lookup, not an authorization path. There are no patient, appointment, queue, invoice or user-management CRUD routes.
+Step 1.3 adds the protected clinic-context routes above. Demo workflow records keep
+their original localStorage key/shape and Arabic UI.
 
 ### Current database entities
 
@@ -104,11 +237,11 @@ required. The seed creates two fictional Arabic identities with distinct themes,
 timezones/currencies and pending `.example` domains, preserving existing fixture
 customization on rerun. It never imports browser data.
 
-### Tenant isolation gate for Step 1.3 and subsequent work
+### Tenant isolation gate for subsequent work
 
-Until authentication exists, only the three deliberately public routes above are
-registered. Future private access must derive tenant context from authenticated,
-active user + active membership + active clinic, then check the role's permission.
+Step 1.3 derives private clinic context from authenticated, active user + active
+membership + active clinic, then checks the role's permission. The public route
+allowlist and protected auth/context routes are listed in the Step 1.3 section.
 A requested clinic ID selects a candidate membership, never proves access. A slug,
 subdomain, custom hostname, forwarded host header or verified domain only identifies
 a clinic; none establishes user authority. Never connect clinic records by an
@@ -121,8 +254,8 @@ separate from private repositories. RLS and transaction-local tenant settings,
 least-privileged request roles, tenant-keyed caches/jobs and sensitive-access audit
 are production gates. Test users with memberships in one clinic and in both,
 different roles, suspended memberships/clinics, valid foreign-clinic IDs, swapped
-headers/hostnames and absent context. Current database constraints prove ownership
-integrity and uniqueness only, not authenticated authorization.
+headers/hostnames and absent context. Database constraints prove ownership integrity and uniqueness; authenticated
+authorization additionally depends on the Step 1.3 server guard and services.
 
 Custom DNS ownership verification, subdomain routing, TLS provisioning, media
 storage, themed invoices and messaging are deferred. Future branding changes must
@@ -343,7 +476,7 @@ and role changes must affect server access promptly, including existing sessions
 
 ## 5. Target entities, ownership, and relationships
 
-Only the five identity models listed in the Step 1.2 section currently exist.
+The five clinic identity models plus Session and LoginBucket currently exist.
 Patients, scheduling, visits, queue, billing, audit and clinical entities below
 remain future work. The current global platform role is separate from membership.
 

@@ -8,14 +8,15 @@
     "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "test:compile": "prisma generate && tsc -p tsconfig.test.json",
-    "test": "npm run test:compile && node --test dist-test/test/config.test.js dist-test/test/http.test.js",
-    "test:db": "npm run test:compile && node --test dist-test/test/database.test.js",
+    "test": "npm run test:compile && node --test dist-test/test/auth-policy.test.js dist-test/test/config.test.js dist-test/test/http.test.js",
+    "test:db": "npm run test:compile && node --test dist-test/test/database.test.js dist-test/test/auth.integration.test.js",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:status": "prisma migrate status",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "auth:provision": "tsx scripts/provision-user.ts"
   },
   "dependencies": {
     "@nestjs/common": "12.2.0",
@@ -29,7 +30,9 @@
     "dotenv": "18.0.9",
     "pg": "8.23.1",
     "reflect-metadata": "0.2.2",
-    "rxjs": "7.8.2"
+    "rxjs": "7.8.2",
+    "argon2": "0.45.1",
+    "cookie-parser": "1.4.7"
   },
   "devDependencies": {
     "@nestjs/cli": "12.0.10",
@@ -39,6 +42,7 @@
     "@types/pg": "8.23.1",
     "prisma": "7.10.1",
     "tsx": "4.23.15",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@types/cookie-parser": "1.4.10"
   }
 }

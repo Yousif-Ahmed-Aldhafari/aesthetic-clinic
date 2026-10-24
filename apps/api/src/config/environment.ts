@@ -6,6 +6,12 @@ export type Environment = {
   API_PORT: number;
   CORS_ORIGINS: string[];
   DATABASE_URL: string;
+  AUTH_CSRF_SECRET: string;
+  AUTH_SESSION_HOURS: number;
+  AUTH_IDLE_MINUTES: number;
+  AUTH_LOGIN_ACCOUNT_LIMIT: number;
+  AUTH_LOGIN_IP_LIMIT: number;
+  TRUST_PROXY_HOPS: number;
 };
 
 export function validateEnvironment(input: Record<string, unknown>): Environment {
@@ -14,6 +20,19 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
   const host = input.API_HOST ?? '127.0.0.1';
   const port = Number(input.API_PORT ?? 3000);
   const databaseUrl = typeof input.DATABASE_URL === 'string' ? input.DATABASE_URL : '';
+  const csrfKey = typeof input.AUTH_CSRF_SECRET === 'string' ? input.AUTH_CSRF_SECRET : '';
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(csrfKey)) errors.push('AUTH_CSRF_SECRET');
+  const numeric = (key: string, fallback: number, min: number, max: number) => {
+    const value = Number(input[key] ?? fallback);
+    if (!Number.isInteger(value) || value < min || value > max) errors.push(key);
+    return value;
+  };
+  const hours = numeric('AUTH_SESSION_HOURS', 8, 1, 24);
+  const idle = numeric('AUTH_IDLE_MINUTES', 30, 1, 120);
+  if (idle > hours*60) errors.push('AUTH_IDLE_MINUTES');
+  const accountLimit = numeric('AUTH_LOGIN_ACCOUNT_LIMIT', 5, 1, 1000);
+  const ipLimit = numeric('AUTH_LOGIN_IP_LIMIT', 30, 1, 10000);
+  const proxyHops = numeric('TRUST_PROXY_HOPS', 0, 0, 1);
   if (!['development', 'test', 'production'].includes(String(mode))) errors.push('NODE_ENV');
   if (typeof host !== 'string' || !isIP(host)) errors.push('API_HOST');
   if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push('API_PORT');
@@ -40,5 +59,7 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
   return {
     NODE_ENV: mode as Environment['NODE_ENV'], API_HOST: host as string,
     API_PORT: port, CORS_ORIGINS: origins, DATABASE_URL: databaseUrl,
+    AUTH_CSRF_SECRET: csrfKey, AUTH_SESSION_HOURS: hours, AUTH_IDLE_MINUTES: idle,
+    AUTH_LOGIN_ACCOUNT_LIMIT: accountLimit, AUTH_LOGIN_IP_LIMIT: ipLimit, TRUST_PROXY_HOPS: proxyHops,
   };
 }

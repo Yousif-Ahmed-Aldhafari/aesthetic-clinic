@@ -58,6 +58,7 @@ model Clinic {
   branding    ClinicBranding?
   domains     ClinicDomain[]
   memberships ClinicMembership[]
+  sessions    Session[]
 
   @@index([status, createdAt])
 }
@@ -97,6 +98,8 @@ model User {
   createdAt    DateTime           @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime           @updatedAt @db.Timestamptz(3)
   memberships  ClinicMembership[]
+  authVersion  Int                @default(0)
+  sessions     Session[]
 }
 
 model ClinicMembership {
@@ -115,4 +118,31 @@ model ClinicMembership {
   @@unique([clinicId, id])
   @@index([userId, status])
   @@index([clinicId, status, role])
+}
+
+// Global identity infrastructure, never an authorization grant for a clinic.
+model Session {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @db.Uuid
+  tokenHash         String    @unique @db.Char(64)
+  csrfHash          String    @db.Char(64)
+  authorizationHash String    @db.Char(64)
+  selectedClinicId  String?   @db.Uuid
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt        DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt         DateTime  @db.Timestamptz(3)
+  revokedAt         DateTime? @db.Timestamptz(3)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  selectedClinic    Clinic?   @relation(fields: [selectedClinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model LoginBucket {
+  key       String   @id @db.Char(64)
+  attempts  Int      @default(1)
+  expiresAt DateTime @db.Timestamptz(3)
+
+  @@index([expiresAt])
 }

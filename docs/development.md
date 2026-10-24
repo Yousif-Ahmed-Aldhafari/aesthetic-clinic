@@ -1,7 +1,8 @@
 # Development setup
 
-Step 1.2 adds the API/database identity foundation. Authentication, private clinic
-endpoints, RLS and clinical workflows are not implemented. Use fictional data only.
+Step 1.3 adds secure development login, sessions, membership selection and RBAC to
+the API/database foundation. RLS and server clinical workflows remain unimplemented.
+Use fictional data only; the authenticated browser workflows still use local demos.
 
 ## Requirements and versions
 
@@ -53,16 +54,16 @@ No server values belong in `apps/web` or `VITE_*` variables.
 
 The four roles have no superuser, create-database, create-role, replication or
 RLS-bypass privileges. Runtime roles own no database/schema, cannot create tables,
-and receive CRUD only on the five identity tables, excluding `_prisma_migrations`.
+and receive CRUD only on the five identity tables plus Session and LoginBucket, excluding `_prisma_migrations`.
 PUBLIC has no access to either application database/schema; development and test
 runtime logins cannot connect to each other's database. Database-level privilege
-separation does not enforce per-clinic authorization; Authentication/RBAC and RLS
-are still future work.
+separation alone does not enforce per-clinic authorization. Step 1.3 adds server
+membership/permission checks; per-clinic RLS remains future work.
 
 API configuration and Prisma CLI both load the root `.env`; shell environment
 variables take precedence. Vite stays rooted in `apps/web` and does not consume
 the root server configuration. `DATABASE_URL` and a comma-separated list of exact
-`CORS_ORIGINS` are required to start the API. Wildcards, paths, and trailing slashes
+`CORS_ORIGINS`, plus a private random `AUTH_CSRF_SECRET`, are required to start the API. Wildcards, paths, and trailing slashes
 are rejected. Production mode requires HTTPS origins. The defaults bind the API
 to `127.0.0.1:3000`; use `API_HOST`/`API_PORT` to change it explicitly.
 
@@ -153,7 +154,7 @@ child-process environment without printing them. No shadow database, directUrl o
 additional Prisma URL is needed for migrate deploy.
 
 After migrating both databases, `db:grant` connects as each migration owner and
-grants its runtime role CRUD on the five named tables only. It grants no DDL,
+grants its runtime role CRUD on the seven explicitly named identity/auth tables only. It grants no DDL,
 role membership, grant option or migration-history access. Run this again when
 explicitly adding authorized tables in later steps; do not grant all future tables
 by default. Native test permissions follow [PostgreSQL GRANT](https://www.postgresql.org/docs/16/sql-grant.html)
@@ -193,9 +194,10 @@ The web command remains Vite on port 5173, with its previous host behavior; use
 the **same scheme/hostname/port as before** to retain access to existing demo
 localStorage. Moving source files does not migrate, clear or import that storage.
 Use `npm run dev:web -- --host 127.0.0.1` when local-only web binding is desired.
-The frontend still uses demo data only: it does not call the new API or replace
-the displayed clinic identity. Clinic-specific UI, invoices and messaging will be
-connected through later authorized feature work.
+The frontend calls the same-origin `/api/v1` Vite proxy for authentication and
+clinic identity, and displays selected clinic branding. Workflow records remain
+local demo data, shared across selections in that browser. Never enter real patient
+information; switching clinics does not copy, clear or import any browser data.
 
 ```bash
 curl -i http://127.0.0.1:3000/api/v1/health
@@ -225,25 +227,159 @@ resolution are deferred. Public identities are intentionally discoverable.
 npm run build       # Web build, then Prisma generation + API TypeScript compilation
 npm run preview     # Existing web production preview command
 npm run start:api   # Compiled API; requires environment settings, no automatic migration
-npm test            # Configuration and real HTTP tests with a mocked database
-npm run test:db     # Live PostgreSQL constraints; skips explicitly without TEST_DATABASE_URL
+npm test            # Permission/CSRF policy, configuration, mocked-database HTTP checks
+npm run test:db     # Live PostgreSQL constraints + auth/tenant HTTP integration tests
 ```
 
 Native setup creates the separate test database and credentials. Apply its
 migration with `db:migrate:test`, then run `db:grant` before `test:db`. Existing
-setups must explicitly configure both test URLs. Never use a production URL. The test
-requires it to differ from the normal application URL and wraps synthetic inserts
-and constraint probes in one transaction that is rolled back. It tests scoped
+setups must explicitly configure both test URLs. Never use a production URL. Tests require a physically different database from the normal application URL.
+The original constraint test rolls back synthetic inserts and probes. Auth HTTP
+tests commit UUID-tracked fictional fixtures so requests on separate pooled
+connections can see them; cleanup removes only those fixture rows in FK order. It tests scoped
 memberships, independent branding, global slug/email/domain uniqueness, foreign
 keys, restricted deletion, color/identity checks and verified-primary-domain rules.
 The test also verifies non-administrative/non-owner role attributes, denied DDL,
 denied mutation of migration history, and explicitly clinic-scoped reads/updates.
-It does not establish authenticated tenant isolation or prevent arbitrary unscoped
-queries before RLS/auth exist. No lint script exists yet.
+Auth integration tests additionally verify server membership/permission denial
+and session security. RLS is still absent: arbitrary unscoped SQL through a runtime
+credential can access all clinics in its database. No lint script exists yet.
 
-Authentication, secure sessions, permissions, membership-derived tenant context,
-RLS, audit, backups and production deployment remain release gates. See
+RLS, audit, backups, MFA, recovery and production deployment remain release gates. See
 [architecture.md](architecture.md) and [implementation-roadmap.md](implementation-roadmap.md).
+
+## Step 1.3 authentication setup
+
+New installations receive a random `AUTH_CSRF_SECRET` from `db:env:native`.
+For an existing private `.env` missing only this setting, append it without
+replacing any credentials:
+
+```bash
+node --input-type=module <<'JS'
+import {readFile, appendFile, chmod} from 'node:fs/promises';
+import {randomBytes} from 'node:crypto';
+const current = await readFile('.env', 'utf8');
+if (!/^AUTH_CSRF_SECRET=/m.test(current)) {
+  await appendFile('.env', `\nAUTH_CSRF_SECRET=${randomBytes(48).toString('base64url')}\n`);
+  await chmod('.env', 0o600);
+}
+JS
+npm run db:generate
+npm run db:validate
+npm run db:migrate
+npm run db:migrate:test
+npm run db:grant
+npm run db:status
+npm run db:status:test
+npm run db:seed
+```
+
+If the variable exists but is blank/invalid, edit it privately; do not paste secrets
+in chat or replace the whole file. Both migration commands use existing isolated
+owner credentials; the API, seed and provisioning use runtime credentials. No
+reset, force push, database drop or patient migration is required. The new migration
+is `20261024000200_auth_sessions`; preserve both migration directories. Runtime
+roles need explicit grants on Session/LoginBucket, never DDL or migration-history
+access. The seed still creates only fictional Ward/Nour identities, no accounts.
+
+Provision your own local account **interactively**:
+
+```bash
+npm run auth:provision
+```
+
+Supply your chosen email/name, a membership JSON value such as
+`[{"clinicSlug":"ward-demo","role":"CLINIC_OWNER"},{"clinicSlug":"nour-demo","role":"DOCTOR"}]`,
+and your own 15–128 character password at the hidden prompt. There is no default
+password or unrestricted registration. The command requires `NODE_ENV=development`,
+a loopback database URL whose database name ends `_dev`, active existing clinics
+and valid clinic roles. It does not grant PLATFORM_ADMIN. A duplicate email fails;
+intentional password/role updates use `npm run auth:provision -- --update-existing`
+and revoke all that user's sessions. Memberships omitted on update are retained,
+not deleted. Suspension/recovery tooling is deferred; do not use this development
+command for production administration.
+
+For secure automation, supply `LAMSSA_DEV_EMAIL`, `LAMSSA_DEV_NAME`,
+`LAMSSA_DEV_MEMBERSHIPS` (JSON) and `LAMSSA_DEV_PASSWORD` in the child environment
+through your secret manager. Do not place passwords in command arguments, shell
+history, committed env files or `VITE_*` settings. Interactive input is preferred
+locally. Do not share `.env` output or authentication cookies in bug reports.
+
+Start `npm run dev:api` and `npm run dev` in separate terminals. Open the **same
+frontend origin used previously** (usually http://localhost:5173), log in, then
+choose a clinic. Login no longer opens a demo without a verified session. Selected
+name/logo/colors come from the server membership context; invoice/message identity
+and custom DNS/TLS integration are deferred. All tabs manipulate labeled local demo
+arrays only, for every active demo member, regardless of future API permissions.
+Local demo records are not tenant isolated or secured by the login screen.
+
+The browser uses relative `/api/v1` requests. The Vite proxy targets loopback port
+3000; production needs an equivalent same-origin HTTPS reverse proxy. CORS origins
+must exactly match the browser scheme/host/port. For a production-bundle preview at
+4173, explicitly allow it when starting the development API, for example:
+
+```bash
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:4173 npm run start:api
+npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
+```
+
+This overrides only the process configuration, not your private file. A Vite port
+auto-increment to 5174 also requires an explicitly allowed origin. Use the previous
+port to preserve the localStorage namespace. No session or bearer secret is stored
+in localStorage; CSRF tokens are in React memory, cookies HttpOnly.
+
+| Environment setting | Default / requirement |
+| --- | --- |
+| AUTH_CSRF_SECRET | Required random base64url secret, 43–128 characters; keep stable/private; rotation expires old sessions on use |
+| AUTH_SESSION_HOURS | 8, absolute lifetime; allowed 1–24 |
+| AUTH_IDLE_MINUTES | 30, allowed 1–120 and within absolute lifetime; successful UI polling counts as activity |
+| AUTH_LOGIN_ACCOUNT_LIMIT | 5 attempts per normalized email / 15-minute fixed window, including successful logins |
+| AUTH_LOGIN_IP_LIMIT | 30 attempts per server-derived IP / 15-minute fixed window |
+| TRUST_PROXY_HOPS | 0; only 1 behind one trusted network-restricted HTTPS proxy |
+| CORS_ORIGINS | Exact allowed frontend origins, HTTPS only in production |
+
+In production, auth/private endpoints require HTTPS and Secure `__Host-` cookies.
+TLS must terminate at a reviewed proxy with forwarding headers overwritten and
+backend access restricted; never trust arbitrary X-Forwarded-For/Proto. The
+repository has not deployed or tested a real production TLS environment.
+
+Browser/API authentication flow for other clients: first `GET /api/v1/auth/csrf`
+with a cookie jar, then POST login with the same jar, an exact allowed `Origin`,
+JSON `{email,password}` and `X-CSRF-Token` from that response. Login returns safe
+user fields and a new session CSRF token. Send that token and Origin on every
+subsequent POST; clinic selection and explicit rotation replace both cookie and
+CSRF value. `/auth/me` restores CSRF after a page reload. Never copy credential
+responses or cookie jars to tracked files. Consult the route table/matrix in
+[architecture.md](architecture.md).
+
+Authentication troubleshooting:
+
+- **401:** absent, expired, revoked or invalidated session; log in again. Changing
+  password, role, membership/user/clinic status or platform authority invalidates
+  old sessions; disabled users cannot log in.
+- **403 CSRF_INVALID:** check exact Origin, matching cookie/token and frontend
+  proxy. A stale token after clinic selection/rotation is invalid. Refresh and
+  reauthenticate if necessary; do not disable CSRF or broaden to wildcard origins.
+- **403 FORBIDDEN:** active membership lacks the server permission; browser role
+  headers and selected clinic do not elevate access. Unknown policies deny access.
+- **404 clinic context:** no active membership in an active clinic. Public branding
+  and a guessed clinicId/hostname are not proof of membership.
+- **429:** wait for the 15-minute fixed window; counters survive API restart. Use
+  separate fictional test accounts rather than disabling local protections.
+- **Missing Session/LoginBucket or permission denied:** apply the migration to the
+  correct database and run `db:grant`; do not grant runtime ownership/superuser.
+- **API cannot start:** verify required secret length and database/env settings
+  privately. Safe startup errors intentionally withhold raw configuration.
+
+The test database must have both migrations and DML grants. `npm test` runs without
+live DB access; `npm run test:db` runs real auth HTTP plus constraint/privilege tests.
+Auth tests refuse development DB identity, use random credentials and UUID-scoped
+fixture cleanup, and do not seed permanent users. Hashed IP rate buckets may remain
+until their short expiry; the limiter removes expired buckets on later login.
+No actual patient tables are present. Browser smoke checks use isolated temporary
+profiles and fictional records, never your normal browser storage. There is no
+frontend unit-test or lint script; strict web compilation and browser journeys
+provide the current web verification.
 
 ## Native troubleshooting
 
@@ -281,12 +417,70 @@ RLS, audit, backups and production deployment remain release gates. See
   status commands. Inspect server logs locally without sharing credentials or SQL
   containing secrets.
 
-## Step 1.2.1 verification results (2026-10-24)
+## Step 1.3 verification record (2026-10-24)
+
+Verified on the existing native PostgreSQL 16.15 service, Node 24.21.0 and npm
+11.19.0. No privileged system changes, Docker, resets, real patient data, commits
+or pushes were involved. Existing database secrets were retained; one new random
+CSRF signing secret was appended only because it was absent. `.env` remains ignored
+and mode `0600`. Argon2 0.45.1 and cookie-parser 1.4.7 are pinned with their lockfile.
+
+| Executed command/check | Final result |
+| --- | --- |
+| `npm install --no-audit --no-fund --prefer-offline` | Exit 0; 9 packages added; native Argon2 works |
+| `npm run db:generate` / `npm run db:validate` | Exit 0; Prisma 7.10.1 client generated and schema valid |
+| `npm exec --workspace @lamssa/api -- prisma migrate diff --from-schema /tmp/lamssa-before-auth.prisma --to-schema prisma/schema.prisma --script --output prisma/auth.generated.sql` | Exit 0; additive SQL reviewed, moved into migration with transactional checks; temporary SQL removed |
+| `npm run db:migrate` / `npm run db:migrate:test` | Exit 0; auth_sessions migration applied in both existing databases, no reset/drop |
+| `npm run db:grant` | Exit 0; explicit seven-table DML allowlist; no new runtime ownership/DDL |
+| `npm run db:status` / `npm run db:status:test` | Exit 0; both databases up to date with two migrations |
+| `npm run db:seed` | Exit 0; Ward/Nour fictional identities retained; distinct primary colors #7854D9 / #087F8C |
+| `npm run build` | Exit 0; strict frontend TypeScript/Vite and Prisma/API TypeScript builds |
+| `npm run build:web` after final UI changes | Exit 0; latest bundle generated |
+| `npm test` | 12 passed, 0 failed, 0 skipped |
+| `npm run test:db` | 20 passed, 0 failed, 0 skipped; real test DB, not development |
+| `npm run auth:provision` with private child environment | Exit 0; random supplied credentials and two fictional memberships; test accounts subsequently removed by exact fixture IDs |
+| `CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:4179 npm run start:api` | Compiled API started on loopback; private credentials not printed |
+| `npm run preview -- --host 127.0.0.1 --port 4179 --strictPort` | Production web bundle served with same-origin API proxy |
+| Direct GET health / health/ready and proxied health/ready | HTTP 200; `{status:"ok"}` / `{status:"ready"}` |
+| Isolated Chrome: `/tmp/lamssa-step13-browser.mjs` | PASS; 19 desktop/mobile/form screenshots, zero runtime exceptions |
+| Isolated Chrome: `/tmp/lamssa-step13-focus-browser.mjs` | PASS; mobile clinic switch visible, CSRF refresh following another tab's rotation, successful logout, zero runtime exceptions |
+| `git diff --check` and private-value scan | Passed; no current DB passwords or signing secret in 69 tracked/untracked project files; `.env` ignored |
+
+The browser smoke harnesses/screenshots are temporary artifacts outside the repo,
+not new test dependencies. They exercise invalid/valid login, two clinic identities,
+permission denial, expired sessions, HttpOnly cookies, absence of tokens in
+localStorage, all five existing views, all three forms, patient creation/search,
+appointment check-in/duplicate prevention, queue single-room transitions, invoice
+creation/payment, and unchanged data across reload/selection/logout. Normal user
+browser profiles were not accessed. Temporary development users/memberships/sessions
+and private browser credential files were removed; temporary API/preview processes
+were stopped after verification. The two existing clinic
+identities remain. Development contains zero users and zero sessions after cleanup;
+provision your own account to log in. Hashed short-lived rate counters are harmless
+local development/test infrastructure and expire separately.
+
+Security checks cover valid/invalid/unknown/suspended login, hashed persistence,
+absolute/idle expiry, re-login/explicit/selection rotation, replay/logout,
+privilege and CSRF-secret invalidation, missing/forged sessions, unmarked default
+deny, wrong-clinic 404, dual memberships, doctor permission denial, global platform
+no-bypass, suspended user/membership/clinic, forged IDs/roles/slugs, public field
+allowlist, Origin/token/Fetch-Metadata CSRF denial, rejected requests not extending
+idle time, persistent account/IP throttles, ignored forged forwarding headers,
+production plaintext rejection, safe provisioning update and live schema privileges/
+constraints. Early assertion mismatches (Argon2 parameter ordering/readiness body)
+and a test type error were corrected before these final passing runs.
+
+No frontend unit-test or lint command exists. Real production TLS, RLS, MFA,
+recovery/invitations, clinical compliance, audit/retention and release operations
+are unverified or deferred. Step 1.4 should establish mandatory scoped repositories,
+transaction-local tenant context/RLS defense and isolation tests before patient APIs.
+
+## Historical Step 1.2.1 verification results (2026-10-24)
 
 **Completed:** native PostgreSQL 16.15 is connected; the existing initial migration
 is applied to both dedicated databases; the seed and live database tests pass.
 The foundation is ready for **Step 1.3 — Authentication and RBAC** development.
-It is not ready for real clinical data: application authentication, clinic-level
+At that checkpoint it was not ready for real clinical data: authentication, clinic-level
 permissions, RLS, audit and production operational controls remain unimplemented.
 
 The user approved installation, service startup and first-time provisioning. The
