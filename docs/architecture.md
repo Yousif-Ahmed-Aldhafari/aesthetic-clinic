@@ -8,6 +8,21 @@ initial identity migration and an optional two-clinic seed exist. Authentication
 RBAC, private clinic endpoints and RLS are **not implemented**; tenant isolation
 is not production-secure. Prototype records remain demo-only and are not uploaded.
 
+## Step 1.2.1: native database foundation verified
+
+Native PostgreSQL 16.15 now runs on loopback with separate development and test
+migration owners/runtime logins. Both databases have the initial migration applied
+and report up-to-date schemas. Runtime roles are non-owner, non-administrative,
+DML-only, cannot modify migration history and cannot connect to the other
+environment's database. The fictional clinic seed was run twice without duplicates;
+Ward and Nour retain distinct branding, and no user accounts were seeded. Live
+constraint/privilege tests, database-backed public branding and HTTP readiness all
+pass. Test fixtures roll back. See [development.md](development.md) for the exact
+commands/results and native start/stop/troubleshooting instructions.
+
+This completes the database prerequisite for Step 1.3. It does not implement
+per-clinic RLS, authenticated membership authorization or production safeguards.
+
 ## Step 1.2: implemented foundation
 
 The user's expanded Step 1.2 scope supersedes the original split between workspace,

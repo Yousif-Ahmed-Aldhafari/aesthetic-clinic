@@ -281,27 +281,57 @@ RLS, audit, backups and production deployment remain release gates. See
   status commands. Inspect server logs locally without sharing credentials or SQL
   containing secrets.
 
-## Step 1.2.1 verification progress (2026-10-24)
+## Step 1.2.1 verification results (2026-10-24)
 
-The user approved native package installation, service startup and first-time
-database/role provisioning. The tool's `sudo -n apt-get update` attempt exited 1
-with `sudo: a password is required`; the chained install/start commands did not
-execute. No package, service, database or existing password was changed by that
-failed command. Subsequent inspection found the native PostgreSQL 16/main cluster
-online on port 5432, and `pg_isready` reported accepting connections. All four
-configured Lamssa logins still failed with PostgreSQL authentication code 28P01;
-first-time role/database provisioning has not yet been verified. Do not replace
-passwords or assume the existing roles/databases are safe to overwrite.
+**Completed:** native PostgreSQL 16.15 is connected; the existing initial migration
+is applied to both dedicated databases; the seed and live database tests pass.
+The foundation is ready for **Step 1.3 — Authentication and RBAC** development.
+It is not ready for real clinical data: application authentication, clinic-level
+permissions, RLS, audit and production operational controls remain unimplemented.
 
-A new private root `.env` was created only because none existed, using exclusive
-creation and mode 0600; its four passwords were not printed. Existing secrets are
-never replaced. Native helper syntax, Prisma generation/validation, both application
-builds and all nine configuration/HTTP tests pass. The frontend sources remain
-byte-identical, and all 13 desktop/mobile/form snapshots and the existing demo
-workflow checks match the previous baseline. Live migrations, seed, integration tests and healthy readiness must
-be recorded after the local terminal setup completes; they are not yet claimed.
+The user approved installation, service startup and first-time provisioning. The
+tool's initial `sudo -n apt-get update` exited 1 (`a password is required`), so the
+user performed the privileged commands locally. The service became available first;
+initial logins failed with 28P01 and server logs confirmed the roles were absent.
+After the final provisioning command succeeded in the user's terminal, all four
+configured logins connected. No existing password was rotated or replaced.
 
-## Step 1.2 verification record (2026-10-24)
+| Command/check | Exact observed result |
+| --- | --- |
+| `pg_lsclusters` | 16/main, port 5432, online |
+| `psql --version` | PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) |
+| `pg_isready -h 127.0.0.1 -p 5432` | Accepting connections |
+| `ss -ltn '( sport = :5432 )'` | Listener on 127.0.0.1:5432 only |
+| Four private URL connectivity/role checks | All connected; superuser, CREATEDB, CREATEROLE, replication and BYPASSRLS flags all false |
+| Initial schema inspection | Both dedicated public schemas empty before migration |
+| `npm run db:migrate` | Applied 20261024000100_clinic_identity to lamssa_dev; exit 0 |
+| `npm run db:migrate:test` | Applied the same migration to lamssa_test; exit 0 |
+| `npm run db:grant` | Granted runtime CRUD on five identity tables only; exit 0 |
+| `npm run db:status` / `npm run db:status:test` | One migration found; both database schemas up to date; exit 0 |
+| `npm run db:seed` (twice) | Both exited 0; identical identities/colors/counts after rerun; two clinics, two branding rows, two pending domains, zero users/memberships |
+| Runtime permission probes | Both runtimes denied schema CREATE and migration-history UPDATE; actual connections to the other environment's database rejected with 42501 |
+| `npm run test:db` | 1 passed, 0 failed, 0 skipped; real PostgreSQL unique/FK/check constraints, scoped membership/branding behavior and restricted permissions |
+| Post-test fixture counts | All five test tables empty; fixture transaction rolled back |
+| `npm run db:generate` / `npm run db:validate` | Passed with Prisma 7.10.1; exit 0 |
+| `npm run build` | Both Vite frontend and NestJS API passed; exit 0 |
+| `npm test` | 9 passed, 0 failed, 0 skipped; exit 0 |
+| `npm run start:api` then GET /api/v1/health | HTTP 200, {"status":"ok"} |
+| GET /api/v1/health/ready | HTTP 200, {"status":"ready"}, using the restricted development runtime login |
+| GET /api/v1/public/clinics/ward-demo/branding | HTTP 200; primary color #7854D9; public field allowlist verified against the real database |
+| GET /api/v1/public/clinics/nour-demo/branding | HTTP 200; primary color #087F8C; public field allowlist verified against the real database |
+| `npm run preview -- --host 127.0.0.1 --port 4179 --strictPort` plus isolated Chrome checks | Existing Arabic RTL workflows passed with no runtime exceptions; all 13 desktop/mobile/form PNGs matched the Step 1.1 baseline byte-for-byte |
+
+The private root `.env` remains ignored and mode 0600. Environment generation used
+exclusive creation because no file existed, and refusal-to-overwrite was verified.
+No passwords or credential URLs are included in this record. Browser verification
+used separate temporary profiles with fixed Asia/Aden time and blocked external
+fonts, matching the prior baseline. User browser localStorage was never accessed
+or cleared. No real patient data, database resets/drops, or migration force-push
+commands were used. Temporary API/preview processes are stopped after verification;
+the native PostgreSQL service remains running. Verification does not automatically
+commit or push repository changes.
+
+## Historical Step 1.2 verification record (2026-10-24)
 
 | Command/check | Actual result |
 | --- | --- |
@@ -324,7 +354,7 @@ be recorded after the local terminal setup completes; they are not yet claimed.
 Browser verification used a new temporary profile, fixed Asia/Aden time and
 blocked external fonts to match the Step 1.1 baseline; it never accessed the user's
 browser data. Database migration application, persistent two-clinic seed reruns,
-actual database-backed branding and live SQL constraint tests remain **unverified
-until a local PostgreSQL service is available**. Compose parsing/runtime cannot be
-verified without Docker. No real patient records, reset/force-push commands,
+actual database-backed branding and live SQL constraint tests were unverified at
+that point. These database checks are now completed in Step 1.2.1 above. Optional
+Compose parsing/runtime remains unverified without Docker. No real patient records, reset/force-push commands,
 commits or pushes were part of Step 1.2.

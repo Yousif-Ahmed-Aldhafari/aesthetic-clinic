@@ -8,7 +8,7 @@ production use remains gated on authentication, isolation and operational contro
    Recorded the actual frontend state and risks, extracted existing definitions,
    preserved Arabic RTL behavior and demo storage. Committed as `dbb529c`.
 
-2. **1.2 — Workspace, backend, PostgreSQL and clinic identity (current change).**
+2. **1.2 — Workspace, backend, PostgreSQL and clinic identity (completed).**
    Move the frontend intact to `apps/web`; add `apps/api` using NestJS and a single
    npm workspace lockfile. Validate environment/input, constrain CORS, sanitize API
    errors and expose versioned liveness/readiness plus public branding by slug.
@@ -20,6 +20,14 @@ production use remains gated on authentication, isolation and operational contro
    Acceptance: unchanged frontend/storage, build and HTTP checks, Prisma validation
    and migration artifact. Report live migration/test status separately when the
    environment lacks PostgreSQL/Docker. See [development.md](development.md).
+
+   **1.2.1 — Native PostgreSQL verification (completed).** PostgreSQL 16.15 is
+   online locally. Development/test migrations are applied; restricted runtime
+   permissions, seed idempotency, independent clinic branding, live constraints,
+   API readiness and unchanged Arabic frontend flows were verified. Separate
+   environment credentials remain private. See the verification record in
+   [development.md](development.md). Authentication/RBAC is the next implementation
+   step; current public endpoints do not grant private clinic access.
 
 3. **1.3 — Authentication and role-based access control.**
    Implement credential provisioning without default passwords, strong password
