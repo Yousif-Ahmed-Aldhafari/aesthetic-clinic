@@ -1,9 +1,84 @@
 # Development setup
 
-Step 1.5 adds persistent administrative patients to the existing authenticated
-tenant/RLS boundary. The Arabic patient directory/register/profile now use the API.
-Appointments, queue, invoices and dashboard remain explicitly local demos. Use
-fictional data only; clinical records and production operational controls are deferred.
+Step 1.6 adds persistent clinic appointments, resources, services and operating schedules to the existing authenticated
+tenant/RLS boundary. The Arabic RTL appointment calendar and resource settings now communicate with the protected API.
+Queue, invoices and dashboard remain explicitly local demos. Use fictional data only; clinical records and production
+operational controls are deferred.
+
+## Step 1.6 appointments and scheduling setup and verification
+
+Use the existing private root `.env`; **no new variable, password, dependency or
+system privilege** is needed. Keep runtime and migration URLs separate. From root:
+
+```bash
+npm run db:generate
+npm run db:validate
+npm run db:migrate:test
+npm run test:db
+npm run db:migrate
+npm run db:grant
+npm run db:status
+npm run db:status:test
+npm run check:boundaries
+npm run build
+npm test
+npm run test:browser
+```
+
+### Executed Step 1.6 checks (2026-10-25)
+
+| Command / check | Actual result |
+| --- | --- |
+| `npm run db:validate` | Prisma schema valid |
+| `npm run db:generate` | Prisma Client 7.10.1 generated |
+| `npm run db:migrate:test` then `npm run db:migrate` | `20261025000100_scheduling` applied in both test and dev without resetting records |
+| `npm run db:grant` | Explicit restricted grants applied in both; SELECT, INSERT, UPDATE on 6 scheduling tables; DELETE exclusively on `ResourceAvailability` |
+| `npm run db:status` / `npm run db:status:test` | Five applied migrations; both schemas up to date |
+| `npm run check:boundaries` | Passed; database architectural boundaries intact |
+| `npm run build` | Both workspaces passed (`@lamssa/web` and `@lamssa/api`) |
+| `npm test` | 32 passed (9 web + 23 api); zero failed, zero skipped |
+| `npm run test:db` | 81 passed; zero failed, zero skipped (22 scheduling integration + 20 patient + 20 auth + 18 database/RLS + 1 health) |
+| `npm run test:browser` | Real Chrome journey passed; zero runtime exceptions; temporary test processes/fixtures/profile cleaned |
+| Development compiled API probe | health 200 `{status:"ok"}`, ready 200 `{status:"ready"}`; Ward public branding 200; unauthenticated appointments 401; unauthenticated scheduling settings 401 |
+| Catalog/record audit with both real runtime roles | Both non-owner, NOSUPERUSER/NOBYPASSRLS; six scheduling tables FORCE-RLS; DELETE restricted to `ResourceAvailability` |
+| Post-test maintenance counts | Zero test appointment or patient rows left in either database; development Ward/Nour branding unchanged |
+| `git diff --check` and ignored-file checks | Clean whitespace; `.env`, generated clients and build artifacts ignored; `.env.example` tracked |
+
+### Scheduling conflict and separation verification
+
+The SQL tests explicitly separate interval exclusion constraints from foreign-key checks:
+1. Doctor interval overlap triggers `23P01` (`appointment_doctor_no_overlap`).
+2. Room interval overlap triggers `23P01` (`appointment_room_no_overlap`).
+3. Foreign-key violations (cross-clinic patient, wrong resource kind, cross-clinic doctor, cross-clinic service, cross-clinic room) are tested at independent non-overlapping time slots, validating `23503` without collision with exclusion constraints.
+4. Cross-clinic inserts, clinic ownership updates, and appointment deletions are rejected with `42501` under restricted runtime credentials.
+
+### Step 1.6 file inventory
+
+Added / Modified:
+
+```text
+apps/api/prisma/migrations/20261025000100_scheduling/migration.sql
+apps/api/prisma/schema.prisma
+apps/api/src/appointments/appointment.controller.ts
+apps/api/src/appointments/scheduling.controller.ts
+apps/api/src/appointments/scheduling-error.ts
+apps/api/src/appointments/scheduling-input.ts
+apps/api/src/appointments/scheduling-time.ts
+apps/api/src/prisma/appointment.repository.ts
+apps/api/src/prisma/scheduling.helpers.ts
+apps/api/src/prisma/scheduling.repository.ts
+apps/api/test/appointments.integration.test.ts
+apps/api/test/scheduling-time.test.ts
+apps/web/src/features/appointments/AppointmentCalendar.tsx
+apps/web/src/features/appointments/BookingForm.tsx
+apps/web/src/features/appointments/ResourceSettings.tsx
+apps/web/src/features/appointments/appointment-api.ts
+apps/web/src/features/appointments/calendar-time.ts
+apps/web/src/features/appointments/appointments.css
+apps/web/src/lib/request-scope.ts
+apps/web/test/calendar-time.test.mjs
+scripts/grant-database-access.mjs
+```
 
 ## Step 1.5 patient setup and verification
 
