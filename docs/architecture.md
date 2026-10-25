@@ -1,14 +1,60 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.6 — current implementation, 2026-10-25.
+Phase 1, Steps 1.1–1.7 — current implementation, 2026-10-25.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
-and appointment scheduling now persist per clinic through mandatory tenant transactions,
+appointment scheduling, visits and live queues now persist per clinic through mandatory tenant transactions,
 RBAC and PostgreSQL FORCE RLS. Arabic RTL directory and appointment calendar screens
-use the protected API. Queue, invoices and dashboard metrics still use the original
-browser demo data. No clinical records, photographs or automatic demo import are
+use the protected API, as do reception and doctor queue dashboards. Invoices and
+dashboard metrics still use the original browser demo data. The original queue
+remains an explicitly separate optional demo. No clinical records, photographs or automatic demo import are
 implemented. Use only fictional data until production privacy and operational controls
 are reviewed.
+
+## Step 1.7: persistent visits and live queues
+
+The clean `main` branch contained merge `d957aa8` and scheduling completion `f35c13f`.
+The completion diff added documentation, calendar unit tests and additional raw SQL
+constraint assertions; no queue backend existed. Baseline independently passed:
+32 unit tests, 81 database tests and the 11 existing browser assertions. Those browser
+assertions exercised patient APIs and legacy scheduling/queue demos, not a full
+persistent appointment booking journey. Work continues on `feature/live-patient-queue`.
+
+Five new tenant-owned tables are protected with ENABLE/FORCE RLS: `Visit`,
+`QueueTicket`, `QueueCounter`, `QueueConfiguration`, `QueueCommand`. Identity/security
+(`User`, `Session`, `LoginBucket`) remain global; `Clinic` remains the separately
+protected tenant root. All protected feature operations use `TenantDatabaseService`.
+Fresh trusted context includes the authenticated membership ID, enabling a doctor
+restriction to their own linked `BookableResource`; a supplied doctor ID cannot
+broaden that access. Platform administration still has no automatic bypass.
+
+`SchedulingState` now serializes queue and appointment writes in the same clinic
+transaction, preserving a single lock order. The daily counter allocates numbers
+transactionally; partial unique indexes independently prevent simultaneous CALLED
+or IN_SERVICE claims for one doctor or one non-null room, across all dates.
+Composite FKs enforce clinic identity and resource kind. Deferred invoker constraint
+triggers check appointment/visit/ticket consistency at commit. Call-next has a durable,
+immutable request-key ledger, including empty results; replay never calls a second
+patient. Ticket and visit versions guard stale actions. There is no runtime DELETE.
+
+Normal check-in changes appointment → ARRIVED and creates visit + ticket atomically.
+An existing ARRIVED appointment without a visit requires explicit per-appointment
+reconciliation; migrations do not backfill attendance. Completion, cancellation and
+absence synchronize all linked states in the same transaction. The existing ARRIVED
+appointment completion API now requires an IN_SERVICE ticket; UI completion occurs
+in the queue. Early/late appointment check-in is an explicit staff action: the ticket
+uses the actual check-in day in the clinic timezone, not the scheduled day.
+
+Private SSE publishes revision invalidations only. Each two-second poll uses a short
+fresh authorized tenant transaction; it neither holds a transaction open nor renews
+session activity. Logout, expiry, selection rotation or membership/clinic changes
+terminate the subscription. REST resynchronizes after reconnect, with a 15-second UI
+fallback. Only opaque invalidations, never patient identities, travel over SSE.
+The public board is disabled by default and exposes a bounded opt-in fixed projection
+through one hardened SECURITY DEFINER function, `public_queue(text)`. Public streams
+fingerprint only that approved projection; private scheduling revisions are not public.
+See [queue contracts and policies](queue.md) for state rules, permissions, privacy,
+numbering, migration extension instructions and operational limitations.
 
 ## Step 1.6: appointments and clinic resources
 
@@ -47,7 +93,7 @@ Terminal appointments (`CANCELLED`, `NO_SHOW`) release their resource occupancy,
 
 A database trigger `lamssa_security.scheduling_guard()` enforces invariant state transitions and field immutability:
 - Initial appointments must be inserted with status `SCHEDULED`.
-- Allowed transitions: `SCHEDULED` → `CONFIRMED` / `ARRIVED` / `CANCELLED` / `NO_SHOW`; `CONFIRMED` → `ARRIVED` / `CANCELLED` / `NO_SHOW`; `CONFIRMED` → `SCHEDULED` (on valid rescheduling); `ARRIVED` → `COMPLETED`.
+- Allowed transitions: `SCHEDULED` → `CONFIRMED` / `ARRIVED` / `CANCELLED` / `NO_SHOW`; `CONFIRMED` → `ARRIVED` / `CANCELLED` / `NO_SHOW`; `CONFIRMED` → `SCHEDULED` (on valid rescheduling); `ARRIVED` → `COMPLETED` (Step 1.7 also permits CANCELLED/NO_SHOW through the synchronized queue workflow).
 - Terminal states (`COMPLETED`, `CANCELLED`, `NO_SHOW`) cannot transition or reopen.
 - Arrived appointments cannot be rescheduled.
 - Clinic ownership (`clinicId`), patient identity (`patientId`), and booking idempotency tokens (`bookingKey`, `requestHash`) are strictly immutable.
@@ -453,7 +499,9 @@ update/manage; `—` denies. Each comma-separated action is a separate permissio
 | staff | r,m | r,m | — | — | — |
 | patients | r,c,u | r,c,u | r,u | r,c,u | — |
 | appointments | r,c,u | r,c,u | r,u | r,c,u | — |
-| queue | r,m | r,m | r,m | r,m | — |
+| queue | r,m | r,m | r,m (own resource) | r,m | — |
+| queue.checkin / queue.transfer | yes | yes | — | yes | — |
+| queue.complete (begin/complete) | yes | yes | own resource | — | — |
 | invoices | r,c,m | — | — | r,c | r,c,m |
 | reports | r | — | — | — | r |
 

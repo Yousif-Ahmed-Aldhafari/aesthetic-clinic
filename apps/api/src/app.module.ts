@@ -1,3 +1,6 @@
+import { QueueController } from './queue/queue.controller.js';
+import { PublicQueueController } from './queue/public-queue.controller.js';
+import { QueueStreams } from './queue/queue-streams.js';
 import { AppointmentController } from './appointments/appointment.controller.js';
 import { SchedulingController } from './appointments/scheduling.controller.js';
 import { PatientController } from './patients/patient.controller.js';
@@ -23,7 +26,7 @@ import { ClinicContextController } from './clinics/clinic-context.controller.js'
     PrismaModule,
     AuthModule,
   ],
-  controllers: [AppointmentController,SchedulingController,PatientController,HealthController, PublicBrandingController, ClinicContextController],
-  providers: [PublicBrandingService],
+  controllers: [QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController,HealthController, PublicBrandingController, ClinicContextController],
+  providers: [QueueStreams,PublicBrandingService],
 })
 export class AppModule {}

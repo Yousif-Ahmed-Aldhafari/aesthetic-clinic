@@ -19,7 +19,7 @@ export class PrismaService extends PrismaClient implements OnApplicationShutdown
   async assertRuntimeRole(tx: Pick<Prisma.TransactionClient,'$queryRaw'>): Promise<void> {
     const [role]=await tx.$queryRaw<{unsafe:boolean}[]>`SELECT (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR EXISTS (
       SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname='public' AND c.relname IN ('Clinic','ClinicBranding','ClinicDomain','ClinicMembership','Patient','PatientCounter','ClinicService','BookableResource','ResourceAvailability','ResourceTimeOff','SchedulingState','Appointment')
+      WHERE n.nspname='public' AND c.relname IN ('Clinic','ClinicBranding','ClinicDomain','ClinicMembership','Patient','PatientCounter','ClinicService','BookableResource','ResourceAvailability','ResourceTimeOff','SchedulingState','Appointment','Visit','QueueTicket','QueueCounter','QueueConfiguration','QueueCommand')
         AND pg_catalog.pg_has_role(current_user,c.relowner,'USAGE')
     )) AS unsafe FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`;
     if(!role || role.unsafe)throw new ServiceUnavailableException();

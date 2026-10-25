@@ -78,14 +78,17 @@ production use remains gated on authentication, isolation and operational contro
    restricted runtime permissions. Verified through 81 live database tests, 32 unit tests, and
    browser regression. Zero regressions on existing patient management or authentication.
 
-7. **1.7 — Visits and queue consistency.**
-   Implement atomic check-in/visit creation, unique visit queue entries and ticket
-   counters per clinic/lane/business-date. Lock the lane for call-next, enforce one
-   serving patient across day boundaries, and complete visit/appointment together.
-   Add idempotency, bounded retries, version conflicts and a carry-over policy.
-   Acceptance: concurrent calls, duplicate check-ins, retries and midnight cases
-   produce no duplicate tickets or two patients in one room. Start with one lane
-   and polling; multi-room/clinician occupancy needs additional constraints.
+7. **1.7 — Persistent visits and live queues (implemented).**
+   Five RLS-protected models, clinic/day transactional numbering and same-clinic FKs.
+   Atomic scheduled check-in and idempotent explicit reconciliation of old ARRIVED
+   appointments; active walk-ins, duplicate-visit prevention, FIFO call-next with durable
+   replay keys and doctor/room partial unique claim indexes across date boundaries.
+   Versioned recall/start/complete/absence/cancel/transfer actions synchronize linked
+   appointments. Doctor access is limited to the membership-linked resource; receptionist
+   service completion and accountant queue access are denied. Arabic reception/doctor
+   screens, retained history and opt-in anonymous number-only board use reauthorized SSE
+   invalidations plus REST resynchronization. Original local demo remains separate.
+   Verification details and current constraints: [development](development.md), [queue](queue.md).
 
 8. **1.8 — Billing and payments.**
    Add line snapshots, exact money/currency totals, immutable issued numbers unique

@@ -11,12 +11,13 @@ import { PrismaService } from './prisma.service.js';
 import { VerifiedSessions, type VerifiedPrincipal } from './verified-sessions.js';
 
 // Feature callbacks receive only tenant delegates, never raw SQL/global identity.
-export type TenantTransaction = Pick<Prisma.TransactionClient,'clinic'|'clinicBranding'|'clinicDomain'|'clinicMembership'|'patient'|'patientCounter'|'clinicService'|'bookableResource'|'resourceAvailability'|'resourceTimeOff'|'schedulingState'|'appointment'>;
+export type TenantTransaction = Pick<Prisma.TransactionClient,'clinic'|'clinicBranding'|'clinicDomain'|'clinicMembership'|'patient'|'patientCounter'|'clinicService'|'bookableResource'|'resourceAvailability'|'resourceTimeOff'|'schedulingState'|'appointment'|'visit'|'queueTicket'|'queueCounter'|'queueConfiguration'|'queueCommand'>;
+export type TenantContext={userId:string;membershipId:string;clinicId:string;role:ClinicRole;permissions:readonly Permission[];slug:string;displayName:string};
 @Injectable()
 export class TenantDatabaseService {
   constructor(private readonly prisma:PrismaService,private readonly identity:IdentityDatabase,
     private readonly verified:VerifiedSessions,private readonly config:ConfigService<Environment,true>) {}
-  async withClinicContext<T>(proof:VerifiedPrincipal,clinicId:string,required:readonly Permission[],work:(tx:TenantTransaction,context:{clinicId:string;role:ClinicRole;permissions:readonly Permission[];slug:string;displayName:string})=>Promise<T>):Promise<T> {
+  async withClinicContext<T>(proof:VerifiedPrincipal,clinicId:string,required:readonly Permission[],work:(tx:TenantTransaction,context:TenantContext)=>Promise<T>):Promise<T> {
     const principal=this.verified.require(proof);
     if(!isUUID(clinicId) || !required.length)throw new ForbiddenException();
     return this.prisma.$transaction(async tx=>{
@@ -35,8 +36,8 @@ export class TenantDatabaseService {
       // true makes every value transaction-local on this same pooled connection.
       await tx.$queryRaw`SELECT set_config('lamssa.clinic_id',${membership.clinicId},true),
         set_config('lamssa.user_id',${user.id},true),set_config('lamssa.session_id',${session.id},true)`;
-      const context={clinicId:membership.clinicId,role:membership.role,permissions,slug:membership.clinic.slug,displayName:membership.clinic.displayName};
-      return work({clinic:tx.clinic,clinicBranding:tx.clinicBranding,clinicDomain:tx.clinicDomain,clinicMembership:tx.clinicMembership,patient:tx.patient,patientCounter:tx.patientCounter,clinicService:tx.clinicService,bookableResource:tx.bookableResource,resourceAvailability:tx.resourceAvailability,resourceTimeOff:tx.resourceTimeOff,schedulingState:tx.schedulingState,appointment:tx.appointment},context);
+      const context={userId:user.id,membershipId:membership.id,clinicId:membership.clinicId,role:membership.role,permissions,slug:membership.clinic.slug,displayName:membership.clinic.displayName};
+      return work({clinic:tx.clinic,clinicBranding:tx.clinicBranding,clinicDomain:tx.clinicDomain,clinicMembership:tx.clinicMembership,patient:tx.patient,patientCounter:tx.patientCounter,clinicService:tx.clinicService,bookableResource:tx.bookableResource,resourceAvailability:tx.resourceAvailability,resourceTimeOff:tx.resourceTimeOff,schedulingState:tx.schedulingState,appointment:tx.appointment,visit:tx.visit,queueTicket:tx.queueTicket,queueCounter:tx.queueCounter,queueConfiguration:tx.queueConfiguration,queueCommand:tx.queueCommand},context);
     },{maxWait:5000,timeout:10000});
   }
 }

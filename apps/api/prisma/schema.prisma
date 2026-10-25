@@ -68,6 +68,11 @@ model Clinic {
   availability ResourceAvailability[]
   timeOff ResourceTimeOff[]
   schedulingState SchedulingState?
+  visits Visit[]
+  queueTickets QueueTicket[]
+  queueCounters QueueCounter[]
+  queueConfiguration QueueConfiguration?
+  queueCommands QueueCommand[]
 
   @@index([status, createdAt])
 }
@@ -195,6 +200,7 @@ model Patient {
 
   @@unique([clinicId, id])
   appointments Appointment[]
+  visits Visit[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -261,6 +267,8 @@ model BookableResource {
   doctorMembership ClinicMembership? @relation(fields:[clinicId,doctorMembershipId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   doctorAppointments Appointment[] @relation("AppointmentDoctor")
   roomAppointments Appointment[] @relation("AppointmentRoom")
+  doctorTickets QueueTicket[] @relation("QueueDoctor")
+  roomTickets QueueTicket[] @relation("QueueRoom")
   availability ResourceAvailability[]
   timeOff ResourceTimeOff[]
   @@unique([clinicId,id])
@@ -326,9 +334,119 @@ model Appointment {
   service ClinicService @relation(fields:[clinicId,serviceId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   doctor BookableResource @relation("AppointmentDoctor",fields:[clinicId,doctorResourceId,doctorKind],references:[clinicId,id,kind],onDelete:Restrict,onUpdate:Restrict)
   room BookableResource? @relation("AppointmentRoom",fields:[clinicId,roomResourceId,roomKind],references:[clinicId,id,kind],onDelete:Restrict,onUpdate:Restrict)
+  visit Visit?
   @@unique([clinicId,id])
   @@unique([clinicId,bookingKey])
   @@index([clinicId,startAt,id])
   @@index([clinicId,patientId,startAt,id])
   @@index([clinicId,doctorResourceId,startAt,id])
+}
+
+enum VisitSource {
+  APPOINTMENT
+  WALK_IN
+}
+
+enum VisitStatus {
+  WAITING
+  IN_SERVICE
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_SERVICE
+  COMPLETED
+  CANCELLED
+  ABSENT
+}
+
+// Administrative attendance only; never clinical consultation records.
+model Visit {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  patientId String @db.Uuid
+  appointmentId String? @db.Uuid
+  source VisitSource
+  status VisitStatus @default(WAITING)
+  checkInKey String @db.Uuid
+  requestHash String @db.Char(64)
+  checkedInAt DateTime @default(now()) @db.Timestamptz(3)
+  startedAt DateTime? @db.Timestamptz(3)
+  endedAt DateTime? @db.Timestamptz(3)
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  patient Patient @relation(fields:[clinicId,patientId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  appointment Appointment? @relation(fields:[clinicId,appointmentId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  ticket QueueTicket?
+  @@unique([clinicId,id])
+  @@unique([clinicId,appointmentId])
+  @@unique([clinicId,checkInKey])
+  @@index([clinicId,checkedInAt,id])
+  @@index([clinicId,patientId,checkedInAt])
+}
+
+model QueueTicket {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  visitId String @db.Uuid
+  businessDate DateTime @db.Date
+  number Int
+  doctorResourceId String @db.Uuid
+  doctorKind ResourceKind @default(DOCTOR)
+  roomResourceId String? @db.Uuid
+  roomKind ResourceKind @default(ROOM)
+  status QueueStatus @default(WAITING)
+  queuedAt DateTime @default(now()) @db.Timestamptz(3)
+  calledAt DateTime? @db.Timestamptz(3)
+  recallCount Int @default(0)
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  visit Visit @relation(fields:[clinicId,visitId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  doctor BookableResource @relation("QueueDoctor",fields:[clinicId,doctorResourceId,doctorKind],references:[clinicId,id,kind],onDelete:Restrict,onUpdate:Restrict)
+  room BookableResource? @relation("QueueRoom",fields:[clinicId,roomResourceId,roomKind],references:[clinicId,id,kind],onDelete:Restrict,onUpdate:Restrict)
+  commands QueueCommand[]
+  @@unique([clinicId,id])
+  @@unique([clinicId,visitId])
+  @@unique([clinicId,businessDate,number])
+  @@index([clinicId,status,queuedAt,id])
+  @@index([clinicId,doctorResourceId,status,queuedAt,id])
+  @@index([clinicId,businessDate,number])
+}
+
+// Clinic-wide daily numbering, independent of doctor/room assignment.
+model QueueCounter {
+  clinicId String @db.Uuid
+  businessDate DateTime @db.Date
+  lastNumber Int
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  @@id([clinicId,businessDate])
+}
+
+model QueueConfiguration {
+  clinicId String @id @db.Uuid
+  publicDisplayEnabled Boolean @default(false)
+  version Int @default(1)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+}
+
+// Durable call-next replay ledger: a retried request never claims a second ticket.
+model QueueCommand {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  requestKey String @db.Uuid
+  requestHash String @db.Char(64)
+  ticketId String? @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  ticket QueueTicket? @relation(fields:[clinicId,ticketId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  @@unique([clinicId,requestKey])
 }

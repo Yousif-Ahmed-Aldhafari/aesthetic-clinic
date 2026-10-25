@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { Permission } from '../auth/permissions.js';
 import type { VerifiedPrincipal } from './verified-sessions.js';
-import { TenantDatabaseService, type TenantTransaction } from './tenant-database.service.js';
+import { TenantDatabaseService, type TenantTransaction, type TenantContext } from './tenant-database.service.js';
 import { SchedulingError } from '../appointments/scheduling-error.js';
 import { bookingTimes, withinWeekly, zone } from '../appointments/scheduling-time.js';
 import type { LocalBookingInput } from '../appointments/scheduling-input.js';
@@ -20,12 +20,12 @@ export function schedulingDatabaseError(error:unknown):never {
   if(hasCode(error,'P2028')||hasCode(error,'P2034')||hasCode(error,'40P01'))throw new SchedulingError('SCHEDULING_BUSY');
   throw error;
 }
-export async function mutateScheduling<T>(database:TenantDatabaseService,proof:VerifiedPrincipal,clinicId:string,permissions:readonly Permission[],work:(tx:TenantTransaction,clinicId:string)=>Promise<T>){
+export async function mutateScheduling<T>(database:TenantDatabaseService,proof:VerifiedPrincipal,clinicId:string,permissions:readonly Permission[],work:(tx:TenantTransaction,clinicId:string,context:TenantContext)=>Promise<T>){
   try{return await database.withClinicContext(proof,clinicId,permissions,async(tx,context)=>{
     // A small clinic-local row lock serializes configuration and booking writes.
     // RLS and the database exclusion constraints remain independently mandatory.
     await tx.schedulingState.upsert({where:{clinicId:context.clinicId},create:{clinicId:context.clinicId},update:{revision:{increment:1}},select:{clinicId:true}});
-    return work(tx,context.clinicId);
+    return work(tx,context.clinicId,context);
   });}catch(error){return schedulingDatabaseError(error);}
 }
 export async function clinicTimezone(tx:TenantTransaction,clinicId:string){

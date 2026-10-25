@@ -4,6 +4,8 @@ import type { Prisma } from '../generated/prisma/client.js';
 import type { Permission } from '../auth/permissions.js';
 import type { VerifiedPrincipal } from './verified-sessions.js';
 import { TenantDatabaseService } from './tenant-database.service.js';
+import { checkInAppointment, finishTicket, ticket, ticketProjection } from './queue.helpers.js';
+import { QueueError } from '../queue/queue-error.js';
 import { SchedulingError } from '../appointments/scheduling-error.js';
 import { calendarRange, localCandidates, localView, nextStatuses, plainDate, withinWeekly, todayInZone } from '../appointments/scheduling-time.js';
 import type { AppointmentQuery, AppointmentStatusInput, AvailabilityQuery, CreateAppointment, UpdateAppointment } from '../appointments/scheduling-input.js';
@@ -60,12 +62,24 @@ export class AppointmentRepository {
   status(proof:VerifiedPrincipal,clinicId:string,id:string,input:AppointmentStatusInput){
     const required:Permission[]=['appointments.update'];
     if(['CANCELLED','NO_SHOW'].includes(input.status))required.push('appointments.cancel');
-    if(input.status==='COMPLETED')required.push('appointments.complete');
-    return mutateScheduling(this.database,proof,clinicId,required,async(tx,tenant)=>{
+    if(input.status==='ARRIVED')required.push('queue.manage');
+    if(input.status==='COMPLETED')required.push('appointments.complete','queue.manage','queue.complete');
+    return mutateScheduling(this.database,proof,clinicId,required,async(tx,tenant,c)=>{
+      if(input.status==='ARRIVED'){
+        if(input.cancellationReason!=null)throw new BadRequestException();
+        await checkInAppointment(tx,c,id,input.expectedVersion);
+        const arrived=await tx.appointment.findFirstOrThrow({where:{id,clinicId:tenant},select:projection});return response(arrived,await clinicTimezone(tx,tenant));
+      }
       const current=await tx.appointment.findFirst({where:{id,clinicId:tenant},select:{id:true,status:true,version:true}});if(!current)throw new NotFoundException();
       if(current.version!==input.expectedVersion)throw new SchedulingError('STALE_VERSION');
       if(!nextStatuses[current.status].includes(input.status))throw new SchedulingError('INVALID_TRANSITION');
       if(input.status!=='CANCELLED'&&input.cancellationReason!=null)throw new BadRequestException();
+      if(current.status==='ARRIVED'){
+        const row=await tx.queueTicket.findFirst({where:{clinicId:tenant,visit:{appointmentId:id}},select:ticketProjection});
+        if(!row||row.status!=='IN_SERVICE'||input.status!=='COMPLETED')throw new QueueError('QUEUE_WORKFLOW');
+        await ticket(tx,c,row.id);await finishTicket(tx,c,row,'COMPLETED');
+        return response(await tx.appointment.findFirstOrThrow({where:{id,clinicId:tenant},select:projection}),await clinicTimezone(tx,tenant));
+      }
       const p=await tx.appointment.update({where:{clinicId_id:{clinicId:tenant,id},version:input.expectedVersion},data:{status:input.status,cancellationReason:input.status==='CANCELLED'?input.cancellationReason??null:null,version:{increment:1}},select:projection});return response(p,await clinicTimezone(tx,tenant));
     });
   }

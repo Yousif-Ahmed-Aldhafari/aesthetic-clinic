@@ -1,3 +1,5 @@
+import { QueueRepository } from './queue.repository.js';
+import { PublicQueueRepository } from './public-queue.repository.js';
 import { AppointmentRepository } from './appointment.repository.js';
 import { SchedulingRepository } from './scheduling.repository.js';
 import { PatientRepository } from './patient.repository.js';
@@ -11,8 +13,8 @@ import { ClinicRepository } from './clinic.repository.js';
 import { DatabaseHealthService } from './database-health.service.js';
 
 @Module({
-  providers:[AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService],
+  providers:[QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService],
   // Raw Prisma is private to database infrastructure, never exported to features.
-  exports:[AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService],
+  exports:[QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService],
 })
 export class PrismaModule {}
