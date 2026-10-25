@@ -11,7 +11,7 @@ import { PrismaService } from './prisma.service.js';
 import { VerifiedSessions, type VerifiedPrincipal } from './verified-sessions.js';
 
 // Feature callbacks receive only tenant delegates, never raw SQL/global identity.
-export type TenantTransaction = Pick<Prisma.TransactionClient,'clinic'|'clinicBranding'|'clinicDomain'|'clinicMembership'|'patient'|'patientCounter'>;
+export type TenantTransaction = Pick<Prisma.TransactionClient,'clinic'|'clinicBranding'|'clinicDomain'|'clinicMembership'|'patient'|'patientCounter'|'clinicService'|'bookableResource'|'resourceAvailability'|'resourceTimeOff'|'schedulingState'|'appointment'>;
 @Injectable()
 export class TenantDatabaseService {
   constructor(private readonly prisma:PrismaService,private readonly identity:IdentityDatabase,
@@ -36,7 +36,7 @@ export class TenantDatabaseService {
       await tx.$queryRaw`SELECT set_config('lamssa.clinic_id',${membership.clinicId},true),
         set_config('lamssa.user_id',${user.id},true),set_config('lamssa.session_id',${session.id},true)`;
       const context={clinicId:membership.clinicId,role:membership.role,permissions,slug:membership.clinic.slug,displayName:membership.clinic.displayName};
-      return work({clinic:tx.clinic,clinicBranding:tx.clinicBranding,clinicDomain:tx.clinicDomain,clinicMembership:tx.clinicMembership,patient:tx.patient,patientCounter:tx.patientCounter},context);
+      return work({clinic:tx.clinic,clinicBranding:tx.clinicBranding,clinicDomain:tx.clinicDomain,clinicMembership:tx.clinicMembership,patient:tx.patient,patientCounter:tx.patientCounter,clinicService:tx.clinicService,bookableResource:tx.bookableResource,resourceAvailability:tx.resourceAvailability,resourceTimeOff:tx.resourceTimeOff,schedulingState:tx.schedulingState,appointment:tx.appointment},context);
     },{maxWait:5000,timeout:10000});
   }
 }

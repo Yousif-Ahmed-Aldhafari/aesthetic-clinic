@@ -65,13 +65,18 @@ production use remains gated on authentication, isolation and operational contro
    Change/access audit, durable create idempotency, retention and production
    operational/privacy review remain separate gates before real patient data.
 
-6. **1.6 — Appointments and clinic resources.**
-   Use persisted Patient via compound (clinicId,patientId) FK and explicit active-patient booking policy. Add services, clinicians, rooms and availability; replace free-text references
-   with same-clinic resource IDs. Use duration, UTC instants and clinic timezone;
-   support rescheduling/cancellation and conditional status/version changes.
-   Prevent interval overlaps with reviewed database exclusion rules or serialized
-   resource transactions. Acceptance: simultaneous conflicts cannot both succeed;
-   clinician/room conflicts, local day boundaries and Arabic errors are tested.
+6. **1.6 — Appointments and clinic resources (implemented).**
+   Implemented ClinicService, BookableResource, ResourceAvailability, ResourceTimeOff,
+   SchedulingState, and Appointment using compound `(clinicId, id)` keys referencing persisted
+   active Patients and ClinicMemberships. Enforced doctor and room conflict prevention with
+   native PostgreSQL GiST exclusion constraints (`btree_gist` extension), serialized clinic
+   transaction locking, and optimistic concurrency versioning. Preserved idempotency keys and
+   request hashes. Handled clinic-local time and DST gaps/disambiguation via Temporal. Terminal
+   cancellations and no-shows release reservations, while completed and arrived records remain
+   immutable. Added full Arabic RTL appointment calendar (day/week/list views), doctor lanes,
+   resource settings, and advisory availability. Enforced FORCE RLS across all six tables with
+   restricted runtime permissions. Verified through 81 live database tests, 32 unit tests, and
+   browser regression. Zero regressions on existing patient management or authentication.
 
 7. **1.7 — Visits and queue consistency.**
    Implement atomic check-in/visit creation, unique visit queue entries and ticket

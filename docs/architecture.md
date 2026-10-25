@@ -1,13 +1,81 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.5 — current implementation, 2026-10-24.
+Phase 1, Steps 1.1–1.6 — current implementation, 2026-10-25.
 
-**Current status:** authenticated administrative patients now persist per clinic through
-mandatory tenant transactions, RBAC and PostgreSQL FORCE RLS. Arabic RTL directory,
-registration and profile/edit/status screens use the API. Appointments, queue,
-invoices and dashboard metrics still use the original browser demo data. No
-clinical records, photographs or automatic demo import are implemented. Use only
-fictional data until production privacy and operational controls are reviewed.
+**Current status:** authenticated administrative patients, clinic resources, services,
+and appointment scheduling now persist per clinic through mandatory tenant transactions,
+RBAC and PostgreSQL FORCE RLS. Arabic RTL directory and appointment calendar screens
+use the protected API. Queue, invoices and dashboard metrics still use the original
+browser demo data. No clinical records, photographs or automatic demo import are
+implemented. Use only fictional data until production privacy and operational controls
+are reviewed.
+
+## Step 1.6: appointments and clinic resources
+
+### Scheduling models and constraints
+
+Step 1.6 introduces six persistent models under mandatory tenant isolation:
+
+| Model | Purpose / constraints |
+| --- | --- |
+| `ClinicService` | Administrative service definition. `durationMinutes` between 5 and 480. `requiresRoom` boolean flag. `active` boolean flag. `version` for optimistic locking. Compound unique `(clinicId, id)`. |
+| `BookableResource` | Clinician or Room resource. `kind` is `DOCTOR` or `ROOM`. `label` 2–100 chars. For doctors, `doctorMembershipId` references `ClinicMembership(clinicId, id)` with unique `(clinicId, doctorMembershipId)`; for rooms, `doctorMembershipId` must be null. `active` boolean flag. `version` counter. Compound unique `(clinicId, id)` and `(clinicId, id, kind)`. |
+| `ResourceAvailability` | Weekly recurring operating intervals. `weekday` 1–7 (Saturday is 6, Sunday 7, Monday 1). `startMinute` / `endMinute` within 0–1440. GiST exclusion constraint `weekly_no_overlap` on `(clinicId, resourceId, weekday, int4range)`. |
+| `ResourceTimeOff` | Specific time-off interval exceptions. UTC `startAt` and `endAt`. Checked `startAt < endAt` and max duration 366 days. `active` flag and `version`. |
+| `SchedulingState` | Clinic-level row with monotonic `revision` BIGINT. Used for atomic serialization locking during booking transactions. |
+| `Appointment` | Authoritative clinic appointment. References `Patient(clinicId, id)`, `ClinicService(clinicId, id)`, and `BookableResource(clinicId, id, kind)`. Half-open UTC intervals `[startAt, endAt)` truncated to minute. `bookingKey` UUID and `requestHash` SHA-256 for request idempotency. `status` lifecycle enum (`SCHEDULED`, `CONFIRMED`, `ARRIVED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`). `cancellationReason` (`PATIENT_REQUEST`, `SCHEDULE_CHANGE`, `OTHER`). |
+
+### PostgreSQL GiST exclusion constraints and database extension
+
+The native PostgreSQL `btree_gist` extension is enabled in `public` schema without requiring superuser privileges.
+Double-booking prevention is enforced authoritatively at the database engine level via exclusion constraints:
+
+```sql
+ALTER TABLE public."Appointment" ADD CONSTRAINT appointment_doctor_no_overlap EXCLUDE USING gist (
+  "clinicId" WITH =, "doctorResourceId" WITH =, tstzrange("startAt", "endAt", '[)') WITH &&
+) WHERE (status NOT IN ('CANCELLED', 'NO_SHOW'));
+
+ALTER TABLE public."Appointment" ADD CONSTRAINT appointment_room_no_overlap EXCLUDE USING gist (
+  "clinicId" WITH =, "roomResourceId" WITH =, tstzrange("startAt", "endAt", '[)') WITH &&
+) WHERE ("roomResourceId" IS NOT NULL AND status NOT IN ('CANCELLED', 'NO_SHOW'));
+```
+
+Half-open intervals `[)` permit back-to-back bookings (e.g. 09:00–09:30 and 09:30–10:00).
+Terminal appointments (`CANCELLED`, `NO_SHOW`) release their resource occupancy, allowing the slot to be immediately rebooked while retaining historical audit records. `COMPLETED` appointments retain slot occupancy.
+
+### State machine trigger and immutability rules
+
+A database trigger `lamssa_security.scheduling_guard()` enforces invariant state transitions and field immutability:
+- Initial appointments must be inserted with status `SCHEDULED`.
+- Allowed transitions: `SCHEDULED` → `CONFIRMED` / `ARRIVED` / `CANCELLED` / `NO_SHOW`; `CONFIRMED` → `ARRIVED` / `CANCELLED` / `NO_SHOW`; `CONFIRMED` → `SCHEDULED` (on valid rescheduling); `ARRIVED` → `COMPLETED`.
+- Terminal states (`COMPLETED`, `CANCELLED`, `NO_SHOW`) cannot transition or reopen.
+- Arrived appointments cannot be rescheduled.
+- Clinic ownership (`clinicId`), patient identity (`patientId`), and booking idempotency tokens (`bookingKey`, `requestHash`) are strictly immutable.
+- Optimistic locking requires `version = old.version + 1` on every update.
+
+### Timezone and DST handling
+
+All timestamps are stored in UTC TIMESTAMPTZ. Local clinic conversion utilizes `@js-temporal/polyfill` with the clinic's configured IANA timezone (e.g. `Asia/Aden`).
+- Clocks springing forward over a DST gap are strictly rejected (`INVALID_LOCAL_TIME`).
+- Clocks falling back over repeated hours require explicit client disambiguation (`EARLIER` vs `LATER`); ambiguous requests are rejected with `AMBIGUOUS_LOCAL_TIME`.
+- Range and date filtering accurately spans 23-hour or 25-hour DST transition days.
+
+### Row-Level Security and runtime privileges
+
+All six scheduling tables have Row-Level Security enabled and forced (`FORCE ROW LEVEL SECURITY`).
+Restricted runtime roles (`lamssa_dev_app`, `lamssa_test_app`) possess:
+- `SELECT, INSERT, UPDATE` on `ClinicService`, `BookableResource`, `ResourceAvailability`, `ResourceTimeOff`, `SchedulingState`, and `Appointment`.
+- `DELETE` granted exclusively on `ResourceAvailability` (for updating weekly hours).
+- Hard deletion on `Appointment`, `ClinicService`, `BookableResource`, and `ResourceTimeOff` is strictly prohibited.
+
+### Frontend Arabic RTL Calendar
+
+- **Views**: Daily lane view grouped by doctor, 7-day weekly view, and 14-day list view.
+- **Controls**: Clinic-timezone date picker, period navigation, and doctor/status/patient filters.
+- **Advisory availability**: Real-time slot calculation excluding non-working hours, breaks, and existing commitments.
+- **Resource configuration**: Modal for managing administrative services, doctor memberships, rooms, weekly working intervals, and time-off exceptions.
+- **Request scopes**: Request scopes cancel stale in-flight queries upon filter change, date change, or clinic switching.
+- **Demo data preservation**: Existing demo appointments, queue, and billing remain untouched in localStorage.
 
 ## Step 1.5: administrative patients
 

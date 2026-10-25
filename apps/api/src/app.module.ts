@@ -1,3 +1,5 @@
+import { AppointmentController } from './appointments/appointment.controller.js';
+import { SchedulingController } from './appointments/scheduling.controller.js';
 import { PatientController } from './patients/patient.controller.js';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -21,7 +23,7 @@ import { ClinicContextController } from './clinics/clinic-context.controller.js'
     PrismaModule,
     AuthModule,
   ],
-  controllers: [PatientController,HealthController, PublicBrandingController, ClinicContextController],
+  controllers: [AppointmentController,SchedulingController,PatientController,HealthController, PublicBrandingController, ClinicContextController],
   providers: [PublicBrandingService],
 })
 export class AppModule {}
