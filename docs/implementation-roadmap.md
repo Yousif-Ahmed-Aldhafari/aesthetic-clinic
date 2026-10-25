@@ -90,13 +90,18 @@ production use remains gated on authentication, isolation and operational contro
    invalidations plus REST resynchronization. Original local demo remains separate.
    Verification details and current constraints: [development](development.md), [queue](queue.md).
 
-8. **1.8 — Billing and payments.**
-   Add line snapshots, exact money/currency totals, immutable issued numbers unique
-   per clinic, auditable payments/partial settlement/reversals, and financial RBAC.
-   Define tax/discount/receipt rules for the operating market before implementation.
-   Acceptance: idempotent/concurrent payments cannot double-collect, searches never
-   change invoice identity, and cross-clinic references are rejected. Render clinic
-   branding from authorized settings; preserve historical issued document snapshots.
+8. **1.8 — Billing and payments — implemented.**
+   Seven tenant-owned RLS tables, same-patient visit linkage, clinic-unique transactional
+   numbers, exact minor-unit/quantity/discount/tax arithmetic and frozen issued identity
+   and line snapshots. Versioned, idempotent manual payments/partial settlement/refunds
+   and full erroneous-payment reversals retain an append-only hash-chained audit trail.
+   Safe void policy forbids any payment history. Finance RBAC separates owner/accountant,
+   reception and clinical/operational roles; SQL policies reinforce those boundaries.
+   Arabic directory/editor/payment history, business identity settings, currency-separated
+   totals and branded RTL A4 invoice/receipt printing use protected APIs. Legacy invoices
+   stay separate. See [billing](billing.md) and actual [verification](development.md).
+   Real-market statutory tax/e-invoice rules, credit notes, external gateways/webhooks,
+   archival, reconciliation and privileged audit checkpoints remain separate work.
 
 9. **1.9 — Clinic identity administration and white-label delivery.**
    Add authorized clinic settings/branding changes, IANA timezone/currency policy,

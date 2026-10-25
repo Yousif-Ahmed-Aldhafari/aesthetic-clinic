@@ -73,6 +73,13 @@ model Clinic {
   queueCounters QueueCounter[]
   queueConfiguration QueueConfiguration?
   queueCommands QueueCommand[]
+  invoices Invoice[]
+  invoiceLines InvoiceLine[]
+  payments Payment[]
+  paymentReversals PaymentReversal[]
+  financialAuditEvents FinancialAuditEvent[]
+  invoiceCounter ClinicInvoiceCounter?
+  billingProfile ClinicBillingProfile?
 
   @@index([status, createdAt])
 }
@@ -132,6 +139,7 @@ model ClinicMembership {
   user      User             @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   bookableResource BookableResource?
+  financialAuditEvents FinancialAuditEvent[]
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -201,6 +209,7 @@ model Patient {
   @@unique([clinicId, id])
   appointments Appointment[]
   visits Visit[]
+  invoices Invoice[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -384,6 +393,8 @@ model Visit {
   patient Patient @relation(fields:[clinicId,patientId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   appointment Appointment? @relation(fields:[clinicId,appointmentId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   ticket QueueTicket?
+  invoices Invoice[]
+  @@unique([clinicId,id,patientId])
   @@unique([clinicId,id])
   @@unique([clinicId,appointmentId])
   @@unique([clinicId,checkInKey])
@@ -449,4 +460,170 @@ model QueueCommand {
   clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
   ticket QueueTicket? @relation(fields:[clinicId,ticketId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   @@unique([clinicId,requestKey])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CARD_MANUAL
+}
+
+enum ReversalKind {
+  REFUND
+  REVERSAL
+}
+
+enum FinancialReason {
+  ADMIN_ERROR
+  DUPLICATE
+  PATIENT_REFUND
+  OTHER
+}
+
+// Exact minor units. No floating point amounts, inferred currency or conversion.
+model Invoice {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  patientId String @db.Uuid
+  visitId String? @db.Uuid
+  number String? @db.VarChar(24)
+  currency String @db.Char(3)
+  currencyScale Int
+  status InvoiceStatus @default(DRAFT)
+  subtotalMinor BigInt
+  discountMinor BigInt
+  taxMinor BigInt
+  totalMinor BigInt
+  netPaidMinor BigInt @default(0)
+  patientName String @db.VarChar(150)
+  patientNumber String @db.VarChar(20)
+  issuerSnapshot Json?
+  issuedAt DateTime? @db.Timestamptz(3)
+  voidedAt DateTime? @db.Timestamptz(3)
+  voidReason FinancialReason?
+  version Int @default(1)
+  requestKey String @db.Uuid
+  requestHash String @db.Char(64)
+  issueKey String? @db.Uuid
+  issueHash String? @db.Char(64)
+  voidKey String? @db.Uuid
+  voidHash String? @db.Char(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  patient Patient @relation(fields:[clinicId,patientId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  visit Visit? @relation(fields:[clinicId,visitId,patientId],references:[clinicId,id,patientId],onDelete:Restrict,onUpdate:Restrict)
+  lines InvoiceLine[]
+  payments Payment[]
+  reversals PaymentReversal[]
+  auditEvents FinancialAuditEvent[]
+  @@unique([clinicId,id])
+  @@unique([clinicId,number])
+  @@unique([clinicId,requestKey])
+  @@index([clinicId,status,createdAt,id])
+  @@index([clinicId,patientId,createdAt,id])
+}
+
+model InvoiceLine {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  invoiceId String @db.Uuid
+  position Int
+  serviceName String @db.VarChar(120)
+  description String? @db.VarChar(240)
+  quantityMilli Int
+  unitPriceMinor BigInt
+  grossMinor BigInt
+  discountMinor BigInt
+  taxBasisPoints Int
+  taxMinor BigInt
+  totalMinor BigInt
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  invoice Invoice @relation(fields:[clinicId,invoiceId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  @@unique([clinicId,invoiceId,position])
+}
+
+// A recorded payment applies to exactly one invoice; allocations are unnecessary.
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  invoiceId String @db.Uuid
+  amountMinor BigInt
+  currency String @db.Char(3)
+  currencyScale Int
+  method PaymentMethod
+  requestKey String @db.Uuid
+  requestHash String @db.Char(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  invoice Invoice @relation(fields:[clinicId,invoiceId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  reversals PaymentReversal[]
+  @@unique([clinicId,id])
+  @@unique([clinicId,id,invoiceId])
+  @@unique([clinicId,requestKey])
+  @@index([clinicId,invoiceId,createdAt,id])
+}
+
+model PaymentReversal {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  invoiceId String @db.Uuid
+  paymentId String @db.Uuid
+  kind ReversalKind
+  reason FinancialReason
+  amountMinor BigInt
+  currency String @db.Char(3)
+  currencyScale Int
+  requestKey String @db.Uuid
+  requestHash String @db.Char(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  invoice Invoice @relation(fields:[clinicId,invoiceId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  payment Payment @relation(fields:[clinicId,paymentId,invoiceId],references:[clinicId,id,invoiceId],onDelete:Restrict,onUpdate:Restrict)
+  @@unique([clinicId,requestKey])
+  @@index([clinicId,paymentId,createdAt,id])
+}
+
+model FinancialAuditEvent {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  invoiceId String? @db.Uuid
+  actorMembershipId String @db.Uuid
+  sequence Int
+  action String @db.VarChar(32)
+  payload String @db.Text
+  previousHash String @db.Char(64)
+  eventHash String @db.Char(64)
+  createdAt DateTime @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  invoice Invoice? @relation(fields:[clinicId,invoiceId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  actor ClinicMembership @relation(fields:[clinicId,actorMembershipId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  @@unique([clinicId,sequence])
+  @@index([clinicId,invoiceId,sequence])
+}
+
+// Also serializes financial writes and audit append order inside one clinic.
+model ClinicInvoiceCounter {
+  clinicId String @id @db.Uuid
+  lastNumber Int @default(0)
+  revision BigInt @default(1)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+}
+
+model ClinicBillingProfile {
+  clinicId String @id @db.Uuid
+  address String? @db.VarChar(250)
+  registrationNumber String? @db.VarChar(50)
+  taxIdentifier String? @db.VarChar(50)
+  version Int @default(1)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
 }

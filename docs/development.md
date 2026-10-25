@@ -1,11 +1,193 @@
 # Development setup
 
-Step 1.7 adds persistent administrative visits and live queues to the authenticated
-patient/scheduling boundary. Reception, doctor and opt-in public waiting screens are
-Arabic RTL. Invoices, dashboard summaries and explicitly selected legacy workflows
-remain local demos. Use fictional data; this is not production clinical readiness.
+Step 1.8 adds persistent invoices, manual payments and financial corrections to the
+existing protected patient/scheduling/visit/queue boundary. Current UI is Arabic RTL;
+only the dashboard overview and explicitly opened old workflows remain local demos.
+Use fictional data until operational, privacy and market-specific finance review.
 
-## Step 1.7 setup and verification
+## Step 1.8 — native PostgreSQL setup and verification
+
+Work stays directly on `main`, as explicitly requested. Starting tree was clean at
+`e291522`, one commit ahead of origin/main. No branch, commit or push is created by
+this step. Baseline was independently rerun before editing: 34 unit, 109 database
+and 18 browser checks passed, zero skips/failures/browser exceptions.
+
+No dependency, installation, environment variable, default account or credential
+change is required. Continue using the private root `.env` (0600) and existing
+separate runtime/migration URLs for development and test. PostgreSQL remains native
+and loopback-only. From the repository root:
+
+```bash
+npm run db:validate
+npm run db:generate
+npm run db:migrate:test
+npm run db:migrate
+npm run db:grant
+npm run db:status
+npm run db:status:test
+npm run check:boundaries
+npm run build
+npm test
+npm run test:db
+npm run test:browser
+```
+
+Two additive migrations, applied in both databases:
+
+- `20261025000300_billing`: seven tables, four enums, exact-money checks, composite
+  visit/recipient FK, version/issuance guards, deferred totals/audit checks, three
+  fixed-path invoker functions, 35 finance RLS policies and restricted grants.
+- `20261025000400_billing_policy_hardening`: restrict runtime Invoice VOID updates
+  to owner/accountant and bind audit INSERT actor to the verified context membership.
+  It changes policies additively; the applied billing migration is not rewritten.
+
+Each SQL file was executed in a test maintenance transaction ending in ROLLBACK
+before applying with the existing deploy workflow. No destructive reset, failed
+migration workaround, old migration edit, data backfill or demo import was used.
+Eight migrations are expected after this step. Keep `db:grant` synchronized when
+adding protected tables; never grant blanket UPDATE/DELETE to ledger tables.
+
+Start apps in two terminals: `npm run dev:web` (normally localhost:5173) and
+`npm run dev:api` (127.0.0.1:3000). Check:
+
+```bash
+curl -i http://127.0.0.1:3000/api/v1/health
+curl -i http://127.0.0.1:3000/api/v1/health/ready
+```
+
+Provision development accounts only through `npm run auth:provision`, with an
+interactively supplied private password and an explicit membership. Use CLINIC_OWNER
+or ACCOUNTANT for full billing; RECEPTIONIST can draft/issue/record receipts but cannot
+refund, void, change billing identity or read aggregate reports. DOCTOR and CLINIC_ADMIN
+have no finance permission. There is no default administrator password.
+
+In **الفواتير**, set optional **بيانات الفوترة**, select an existing active patient,
+optionally link their own visit, create a multi-line draft and review before issuing.
+Enter decimal money as text, not exponent or rounded JavaScript numbers. The invoice
+currency comes from Clinic; no currency input/automatic conversion exists. Register
+actual cash/manual transfer/card receipts; do not enter card numbers or bank secrets.
+Refund/reversal records document an action performed manually, not an external transfer.
+Print issued Arabic RTL invoices/receipts; retain the original API record as authoritative.
+
+Troubleshooting:
+
+- 409 stale version: reload the invoice, review balance/history, then start a new
+  command. Do not blindly repeat with a new UUID after an uncertain network result.
+- Ambiguous request/network error: the financial form freezes its exact body/key;
+  “إعادة إرسال الطلب نفسه” safely replays it. Closing/reviewing history is the alternative.
+- 409 overpayment: another receipt may have arrived; re-read the actual balance.
+- VOID denied after a refund: void requires **no payment history**, not just a zero
+  current paid balance. Correction history is intentionally retained.
+- Missing settings/recipient results: verify selected active clinic/membership and
+  the finance role. Accountants use billing's minimal recipient lookup; granting
+  patients.read is not a fix.
+- Database policy/constraint failures: inspect migration/grant status with maintenance
+  credentials; keep runtime non-owner/NOBYPASSRLS. Do not disable RLS or triggers.
+- Print layouts use a separate body-level root so app navigation/modal scrolling is
+  excluded. Browser print backgrounds preserve clinic color; remote logo bytes are
+  not permanently archived yet.
+
+Complete contracts, stored fields, currency/rounding policy, role matrix, audit chain,
+security assumptions and extension rules are in [billing.md](billing.md).
+
+### Final Step 1.8 verification (2026-10-25)
+
+| Executed command/check | Observed result |
+| --- | --- |
+| Starting `git status --short --branch` and history inspection | Clean `main` at `e291522`; Step 1.7 present; no feature branch created |
+| Starting `npm test`, `npm run test:db`, `npm run test:browser` | 34 unit, 109 database and 18 browser checks passed before edits |
+| `prisma migrate diff --from-schema /tmp/lamssa-18-before.prisma --to-schema prisma/schema.prisma --script` (API workspace) | Generated additive base SQL; custom guards/policies reviewed and tested in a rolled-back test transaction |
+| `npm run db:migrate:test`, `npm run db:migrate`, `npm run db:grant` | Exit 0 for both new migrations and explicit restricted grants; no reset/drop |
+| `npm run db:validate` | Exit 0; Prisma schema valid |
+| `npm run db:generate` and generation during final builds/test compilation | Exit 0; Prisma Client 7.10.1 generated |
+| `npm run db:status`, `npm run db:status:test` | Exit 0; eight migrations applied, both schemas up to date |
+| Read-only migration-history/checksum audit | All eight files match stored checksums in both databases; original six unchanged; zero incomplete migrations |
+| `npm run check:boundaries` | Exit 0; also passes during API build/test compilation |
+| `npm test` | Exit 0; **43 passed** (14 web + 29 API), zero failed/skipped |
+| `npm run test:db` | Exit 0; **141 passed**, zero failed/cancelled/skipped; includes **32 billing tests**, under real restricted test runtime credentials |
+| `npm run test:browser` | Exit 0; includes successful web/API production builds, Prisma generation and test compilation; **24 browser checks**, zero runtime errors |
+| Invoice/receipt PDF inspection | Both fictional two-line invoice and receipt render as one A4 page with Arabic RTL text, logo, legal identity and correct exact amounts |
+| Temporary compiled API using development runtime | Health 200 `{status:"ok"}`, readiness 200 `{status:"ready"}`; Ward/Nour public branding 200, distinct colors `#7854D9` / `#087F8C`; process stopped afterward |
+| Actual runtime privilege/catalog audit in both databases | All seven finance tables ENABLE/FORCE RLS, 35 policies; separate owner; runtime NOSUPERUSER/NOBYPASSRLS/NOCREATEDB/NOCREATEROLE; three new fixed-path invoker functions, no PUBLIC execute |
+| `git diff --check`, staging/dependency/environment inspection, private-value scan | Passed; 35 changed/new files, zero secret matches; no staged files, lockfile or env-template changes; private `.env` remains ignored, mode 0600 |
+
+Coverage includes concurrent numbering/payment/refund races, identical and changed
+idempotency retries, exact 0/2/3-scale money and rounding, cross-clinic patient/visit
+links, runtime RLS, missing/forged context, recipient minimization, role/CSRF denial,
+issued snapshot and line immutability, safe voids, append-only ledger/hash-chain
+integrity, forged audit actors, status revocation, paginated searches and summaries.
+Existing authentication, patients, scheduling, live queue/public board, clinic branding
+and explicitly opened legacy demo invoices pass the same browser/database regressions.
+
+Some intermediate long-running tool processes were terminated (exit 143); those
+are not counted as successful checks. The final standalone database and full browser
+commands above completed with exit 0. A fixture-order assertion was corrected before
+the final run: check raw RLS before the expected 401 clears the browser test cookie.
+Two confirmed fictional billing clinics left by an interrupted run were reviewed and
+removed by exact IDs through the test-only fixture owner, including their dependent
+fictional records. No prefix-wide or development-data deletion was used.
+
+Final read-only counts: development retains its two fictional clinic identities and
+has zero users, patients, invoices, payments, reversals or financial audit events;
+test fixtures for those tables are all cleaned up. Browser checks use a temporary
+Chrome profile and test database; the original demo storage value is byte-preserved
+during API journeys. No user browser profile, localStorage, secrets or real patient
+records were rewritten; no user browser profile or real patient records were accessed.
+Secrets were used only through existing private configuration and never printed or
+committed. Native PostgreSQL remains running.
+
+Final logs/artifacts, outside the repository: `/tmp/lamssa-18-verified-unit.log`,
+`/tmp/lamssa-18-complete-db.log`, `/tmp/lamssa-18-complete-browser.log`, and
+`/tmp/lamssa-step18-browser/` (fictional screenshots and invoice/receipt PDFs).
+
+### Step 1.8 file inventory
+
+18 new files:
+
+```text
+apps/api/prisma/migrations/20261025000300_billing/migration.sql
+apps/api/prisma/migrations/20261025000400_billing_policy_hardening/migration.sql
+apps/api/src/billing/billing-error.ts
+apps/api/src/billing/billing-input.ts
+apps/api/src/billing/billing.controller.ts
+apps/api/src/billing/money.ts
+apps/api/src/prisma/billing.helpers.ts
+apps/api/src/prisma/billing.repository.ts
+apps/api/test/billing-money.test.ts
+apps/api/test/billing.integration.test.ts
+apps/web/src/features/billing/BillingForms.tsx
+apps/web/src/features/billing/BillingWorkspace.tsx
+apps/web/src/features/billing/InvoicePrint.tsx
+apps/web/src/features/billing/billing-api.ts
+apps/web/src/features/billing/billing-money.ts
+apps/web/src/features/billing/billing.css
+apps/web/test/billing-money.test.mjs
+docs/billing.md
+```
+
+17 modified files:
+
+```text
+README.md
+apps/api/package.json
+apps/api/prisma/schema.prisma
+apps/api/src/app.module.ts
+apps/api/src/auth/permissions.ts
+apps/api/src/common/safe-exception.filter.ts
+apps/api/src/prisma/prisma.module.ts
+apps/api/src/prisma/prisma.service.ts
+apps/api/src/prisma/tenant-database.service.ts
+apps/api/test/rls.integration.test.ts
+apps/web/src/App.tsx
+apps/web/src/features/auth/AuthShell.tsx
+docs/architecture.md
+docs/development.md
+docs/implementation-roadmap.md
+scripts/grant-database-access.mjs
+scripts/patients-browser-smoke.mjs
+```
+
+## Historical Step 1.7 setup and verification
 
 Continue using the existing private `.env` and restricted dev/test URLs. No dependency,
 password, environment variable or privileged installation is introduced. From root:

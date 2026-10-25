@@ -1,15 +1,52 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.7 — current implementation, 2026-10-25.
+Phase 1, Steps 1.1–1.8 — current implementation, 2026-10-25.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
-appointment scheduling, visits and live queues now persist per clinic through mandatory tenant transactions,
+appointment scheduling, visits, live queues, invoices and payments now persist per clinic through mandatory tenant transactions,
 RBAC and PostgreSQL FORCE RLS. Arabic RTL directory and appointment calendar screens
-use the protected API, as do reception and doctor queue dashboards. Invoices and
-dashboard metrics still use the original browser demo data. The original queue
+use the protected API, as do reception/doctor queue and billing workspaces.
+Dashboard metrics and explicitly selected legacy workflows retain browser demo data. The original queue
 remains an explicitly separate optional demo. No clinical records, photographs or automatic demo import are
 implemented. Use only fictional data until production privacy and operational controls
 are reviewed.
+
+## Step 1.8: persistent financial records
+
+Seven new clinic-owned tables: Invoice, InvoiceLine, Payment, PaymentReversal,
+FinancialAuditEvent, ClinicInvoiceCounter and ClinicBillingProfile. All use FORCE RLS,
+restricted grants and same-clinic RESTRICT foreign keys. An optional Visit reference
+also matches the invoice recipient via `(clinicId,id,patientId)`. Global identity,
+sessions and the anonymous waiting-board path are unchanged.
+
+Money is stored/calculated in integer minor units with BigInt; API money is string
+encoded. Currency scale is explicit and retained per invoice/payment. Bounded quantities,
+fixed line discounts and per-line half-up taxes have one documented arithmetic policy.
+Issued recipient/business/branding/line snapshots and original payments are immutable.
+Refunds and reversals append records, rather than rewrite amounts or erase history.
+Clinic counters serialize issuance, payment balance checks and hash-chained audit events.
+Deferred SQL checks reconcile line/ledger totals and require an invoice-version audit
+record at commit. Summary aggregates use a repeatable-read tenant transaction.
+
+Finance-specific roles are separate from operational administration: owner/accountant
+can manage finance; receptionist can draft, issue and record receipts; doctor and clinic
+admin are denied. Minimal billing recipient/visit lookups let accountants identify an
+invoice without granting general patient/queue/scheduling access. The fixed-path invoker
+`finance_allows` helper additionally checks finance roles in SQL policies. Reception
+cannot write reversals/profile settings or transition an invoice to VOID under runtime SQL.
+Audit INSERT binds the actor to the current membership; runtime audit/payment records
+are append-only. New migration files are additive; prior applied history is preserved.
+
+The Arabic RTL invoice directory, editor, payment/correction forms, business settings,
+financial summaries and A4 invoice/receipt layouts replace the default local invoice UI.
+A dedicated body-level print root avoids modal/hidden-app pagination. Clinic switching
+aborts/ignores stale reads and writes. The old invoice demo remains explicitly separate
+and its storage key/data are not imported, rewritten or deleted by API activity.
+
+See [billing contracts, RLS, lifecycle, arithmetic and residual risks](billing.md).
+The hash chain is application-level tamper evidence, not protection against privileged
+full-history rewrites. External checkpoints, immutable asset/PDF archival, tax/e-invoice
+compliance, accounting reconciliation, MFA and deployment controls remain future work.
 
 ## Step 1.7: persistent visits and live queues
 
@@ -18,7 +55,7 @@ The completion diff added documentation, calendar unit tests and additional raw 
 constraint assertions; no queue backend existed. Baseline independently passed:
 32 unit tests, 81 database tests and the 11 existing browser assertions. Those browser
 assertions exercised patient APIs and legacy scheduling/queue demos, not a full
-persistent appointment booking journey. Work continues on `feature/live-patient-queue`.
+persistent appointment booking journey. Step 1.7 was subsequently committed as `e291522` and merged into `main`; old feature branches were removed. Step 1.8 works directly on `main` by owner request.
 
 Five new tenant-owned tables are protected with ENABLE/FORCE RLS: `Visit`,
 `QueueTicket`, `QueueCounter`, `QueueConfiguration`, `QueueCommand`. Identity/security
