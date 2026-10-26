@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { IdentityDatabase } from '../prisma/identity.database.js';
@@ -12,12 +12,14 @@ import { authorizationHash, digest, equal, secret } from './crypto.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { LoginLimiter } from './login-limiter.service.js';
 import { permissionsFor } from './permissions.js';
+import { AuditService } from '../audit/audit.service.js';
 
 @Injectable()
 export class AuthService {
   private readonly dummyHash = hashPassword(secret());
   constructor(private readonly prisma: IdentityDatabase, private readonly config: ConfigService<Environment, true>,
-    private readonly csrf: CsrfService, private readonly limiter: LoginLimiter, private readonly verified:VerifiedSessions, private readonly branding:PublicBrandingRepository) {}
+    private readonly csrf: CsrfService, private readonly limiter: LoginLimiter, private readonly verified:VerifiedSessions, private readonly branding:PublicBrandingRepository,
+    @Optional() private readonly audit?: AuditService) {}
 
   private rawToken(request: AuthRequest): string | undefined {
     const value: unknown = request.cookies?.[this.csrf.sessionCookie];
@@ -53,10 +55,30 @@ export class AuthService {
       csrfToken: this.csrf.sessionToken(this.rawToken(request)!), expiresAt: session.expiresAt.toISOString() };
   }
   async login(request: AuthRequest, response: Response, email: string, password: string) {
-    await this.limiter.consume(request.ip ?? request.socket.remoteAddress ?? 'unknown', email);
+    const ip = request.ip ?? request.socket?.remoteAddress ?? 'unknown';
+    const correlationId = typeof request.headers?.['x-correlation-id'] === 'string'
+      ? request.headers['x-correlation-id']
+      : typeof request.headers?.['x-request-id'] === 'string'
+      ? request.headers['x-request-id']
+      : null;
+    const userAgent = typeof request.headers?.['user-agent'] === 'string' ? request.headers['user-agent'] : null;
+
+    await this.limiter.consume(ip, email);
     const user = await this.prisma.credentialsByEmail(email);
     const valid = await verifyPassword(user?.passwordHash ?? await this.dummyHash, password);
-    if (!user || !valid || user.status !== 'ACTIVE' || !user.passwordHash) throw new AuthError('AUTH_FAILED');
+    if (!user || !valid || user.status !== 'ACTIVE' || !user.passwordHash) {
+      await this.audit?.recordDirectSafe({
+        action: 'auth.failed_login',
+        category: 'AUTH',
+        outcome: 'FAILURE',
+        actorEmail: email,
+        ipAddress: ip,
+        userAgent,
+        correlationId,
+        metadata: { email, reason: 'INVALID_CREDENTIALS' },
+      });
+      throw new AuthError('AUTH_FAILED');
+    }
     const token = secret(), csrfToken = this.csrf.sessionToken(token), now = new Date();
     const expiresAt = new Date(now.getTime()+this.config.get('AUTH_SESSION_HOURS', { infer: true })*3600000);
     const previous = this.rawToken(request);
@@ -71,11 +93,40 @@ export class AuthService {
     response.clearCookie(this.csrf.preauthCookie, this.csrf.cookieOptions());
     request.cookies[this.csrf.sessionCookie] = token;
     request.auth = { user:authenticatedUser, session, principal:this.verified.issue(user.id,session.id) };
+
+    await this.audit?.recordDirectSafe({
+      action: 'auth.login',
+      category: 'AUTH',
+      outcome: 'SUCCESS',
+      actorId: user.id,
+      actorEmail: user.email,
+      ipAddress: ip,
+      userAgent,
+      correlationId,
+      metadata: { sessionId: session.id },
+    });
+
     return this.current(request);
   }
   async logout(request: AuthRequest, response: Response) {
-    await this.prisma.session.updateMany({ where: { id: request.auth!.session.id, revokedAt: null }, data: { revokedAt: new Date() } });
-    this.csrf.clearSession(response); return { ok: true };
+    const session = request.auth?.session;
+    const user = request.auth?.user;
+    await this.prisma.session.updateMany({ where: { id: session!.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    this.csrf.clearSession(response);
+
+    await this.audit?.recordDirectSafe({
+      clinicId: session?.selectedClinicId ?? null,
+      action: 'auth.logout',
+      category: 'AUTH',
+      outcome: 'SUCCESS',
+      actorId: user?.id ?? null,
+      actorEmail: user?.email ?? null,
+      ipAddress: request.ip ?? request.socket?.remoteAddress ?? null,
+      userAgent: typeof request.headers?.['user-agent'] === 'string' ? request.headers['user-agent'] : null,
+      metadata: { sessionId: session?.id },
+    });
+
+    return { ok: true };
   }
   async rotate(request: AuthRequest, response: Response, clinicId = request.auth!.session.selectedClinicId) {
     const { session, user } = request.auth!;
@@ -89,6 +140,19 @@ export class AuthService {
     response.cookie(this.csrf.sessionCookie, token, { ...this.csrf.cookieOptions(), expires: next.expiresAt });
     request.cookies[this.csrf.sessionCookie] = token;
     request.auth = { user, session: next, principal:this.verified.issue(user.id,next.id) };
+
+    await this.audit?.recordDirectSafe({
+      clinicId: clinicId ?? null,
+      action: 'auth.rotate',
+      category: 'AUTH',
+      outcome: 'SUCCESS',
+      actorId: user.id,
+      actorEmail: user.email,
+      ipAddress: request.ip ?? request.socket?.remoteAddress ?? null,
+      userAgent: typeof request.headers?.['user-agent'] === 'string' ? request.headers['user-agent'] : null,
+      metadata: { previousSessionId: session.id, nextSessionId: next.id },
+    });
+
     return this.current(request);
   }
   // Narrow identity/bootstrap projection. Public branding is fetched through its

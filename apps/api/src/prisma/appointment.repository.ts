@@ -10,6 +10,7 @@ import { SchedulingError } from '../appointments/scheduling-error.js';
 import { calendarRange, localCandidates, localView, nextStatuses, plainDate, withinWeekly, todayInZone } from '../appointments/scheduling-time.js';
 import type { AppointmentQuery, AppointmentStatusInput, AvailabilityQuery, CreateAppointment, UpdateAppointment } from '../appointments/scheduling-input.js';
 import { bookingResources, clinicTimezone, mutateScheduling, validatedBooking } from './scheduling.helpers.js';
+import { AuditRepository } from './audit.repository.js';
 const projection={id:true,patientId:true,serviceId:true,doctorResourceId:true,roomResourceId:true,startAt:true,endAt:true,status:true,cancellationReason:true,version:true,createdAt:true,updatedAt:true,
   patient:{select:{id:true,patientNumber:true,fullName:true}},service:{select:{id:true,name:true}},doctor:{select:{id:true,label:true}},room:{select:{id:true,label:true}}} satisfies Prisma.AppointmentSelect;
 type Row=Prisma.AppointmentGetPayload<{select:typeof projection}>;
@@ -25,7 +26,10 @@ const bookingHash=(input:CreateAppointment)=>createHash('sha256').update(JSON.st
 
 @Injectable()
 export class AppointmentRepository {
-  constructor(private readonly database:TenantDatabaseService){}
+  constructor(
+    private readonly database:TenantDatabaseService,
+    private readonly audit:AuditRepository,
+  ){}
   settings(proof:VerifiedPrincipal,clinicId:string){return this.database.withClinicContext(proof,clinicId,['appointments.read'],async(tx,c)=>({timezone:await clinicTimezone(tx,c.clinicId),slotStepMinutes:15,minDurationMinutes:5,maxDurationMinutes:480,maxBookingDays:366}));}
   list(proof:VerifiedPrincipal,clinicId:string,q:AppointmentQuery){
     return this.database.withClinicContext(proof,clinicId,['appointments.read'],async(tx,c)=>{
@@ -44,20 +48,23 @@ export class AppointmentRepository {
   get(proof:VerifiedPrincipal,clinicId:string,id:string){return this.database.withClinicContext(proof,clinicId,['appointments.read'],async(tx,c)=>{
     const p=await tx.appointment.findFirst({where:{id,clinicId:c.clinicId},select:projection});if(!p)throw new NotFoundException();return response(p,await clinicTimezone(tx,c.clinicId));
   });}
-  create(proof:VerifiedPrincipal,clinicId:string,input:CreateAppointment){return mutateScheduling(this.database,proof,clinicId,['appointments.create'],async(tx,id)=>{
+  create(proof:VerifiedPrincipal,clinicId:string,input:CreateAppointment){return mutateScheduling(this.database,proof,clinicId,['appointments.create'],async(tx,id,c)=>{
     const hash=bookingHash(input),existing=await tx.appointment.findFirst({where:{clinicId:id,bookingKey:input.bookingKey},select:{...projection,requestHash:true}});
     if(existing){if(existing.requestHash!==hash)throw new SchedulingError('IDEMPOTENCY_CONFLICT');return response(existing,await clinicTimezone(tx,id));}
     const times=await validatedBooking(tx,id,input.patientId,input);
     const p=await tx.appointment.create({data:{clinicId:id,patientId:input.patientId,serviceId:input.serviceId,doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null,startAt:times.startAt,endAt:times.endAt,bookingKey:input.bookingKey,requestHash:hash},select:projection});
+    await this.audit.record({clinicId:id,actorId:c.userId,action:'appointments.book',category:'SCHEDULING',targetType:'Appointment',targetId:p.id,outcome:'SUCCESS',metadata:{patientId:input.patientId,serviceId:input.serviceId,doctorResourceId:input.doctorResourceId}},tx);
     return response(p,times.timeZone);
   });}
-  update(proof:VerifiedPrincipal,clinicId:string,id:string,input:UpdateAppointment){return mutateScheduling(this.database,proof,clinicId,['appointments.update'],async(tx,tenant)=>{
+  update(proof:VerifiedPrincipal,clinicId:string,id:string,input:UpdateAppointment){return mutateScheduling(this.database,proof,clinicId,['appointments.update'],async(tx,tenant,c)=>{
     const current=await tx.appointment.findFirst({where:{id,clinicId:tenant},select:projection});if(!current)throw new NotFoundException();
     if(current.version!==input.expectedVersion)throw new SchedulingError('STALE_VERSION');
     if(!['SCHEDULED','CONFIRMED'].includes(current.status))throw new SchedulingError('INVALID_TRANSITION');
     const times=await validatedBooking(tx,tenant,current.patientId,input);
     const changed=times.startAt.getTime()!==current.startAt.getTime()||times.endAt.getTime()!==current.endAt.getTime()||input.serviceId!==current.serviceId||input.doctorResourceId!==current.doctorResourceId||(input.roomResourceId??null)!==current.roomResourceId;
-    const p=await tx.appointment.update({where:{clinicId_id:{clinicId:tenant,id},version:input.expectedVersion},data:{serviceId:input.serviceId,doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null,startAt:times.startAt,endAt:times.endAt,status:changed?'SCHEDULED':current.status,version:{increment:1}},select:projection});return response(p,times.timeZone);
+    const p=await tx.appointment.update({where:{clinicId_id:{clinicId:tenant,id},version:input.expectedVersion},data:{serviceId:input.serviceId,doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null,startAt:times.startAt,endAt:times.endAt,status:changed?'SCHEDULED':current.status,version:{increment:1}},select:projection});
+    await this.audit.record({clinicId:tenant,actorId:c.userId,action:'appointments.reschedule',category:'SCHEDULING',targetType:'Appointment',targetId:p.id,outcome:'SUCCESS',metadata:{version:p.version,changed}},tx);
+    return response(p,times.timeZone);
   });}
   status(proof:VerifiedPrincipal,clinicId:string,id:string,input:AppointmentStatusInput){
     const required:Permission[]=['appointments.update'];
@@ -68,6 +75,7 @@ export class AppointmentRepository {
       if(input.status==='ARRIVED'){
         if(input.cancellationReason!=null)throw new BadRequestException();
         await checkInAppointment(tx,c,id,input.expectedVersion);
+        await this.audit.record({clinicId:tenant,actorId:c.userId,action:'queue.checkin',category:'QUEUE',targetType:'Appointment',targetId:id,outcome:'SUCCESS',metadata:{status:'ARRIVED'}},tx);
         const arrived=await tx.appointment.findFirstOrThrow({where:{id,clinicId:tenant},select:projection});return response(arrived,await clinicTimezone(tx,tenant));
       }
       const current=await tx.appointment.findFirst({where:{id,clinicId:tenant},select:{id:true,status:true,version:true}});if(!current)throw new NotFoundException();
@@ -78,9 +86,12 @@ export class AppointmentRepository {
         const row=await tx.queueTicket.findFirst({where:{clinicId:tenant,visit:{appointmentId:id}},select:ticketProjection});
         if(!row||row.status!=='IN_SERVICE'||input.status!=='COMPLETED')throw new QueueError('QUEUE_WORKFLOW');
         await ticket(tx,c,row.id);await finishTicket(tx,c,row,'COMPLETED');
+        await this.audit.record({clinicId:tenant,actorId:c.userId,action:'queue.complete',category:'QUEUE',targetType:'Appointment',targetId:id,outcome:'SUCCESS',metadata:{status:'COMPLETED'}},tx);
         return response(await tx.appointment.findFirstOrThrow({where:{id,clinicId:tenant},select:projection}),await clinicTimezone(tx,tenant));
       }
-      const p=await tx.appointment.update({where:{clinicId_id:{clinicId:tenant,id},version:input.expectedVersion},data:{status:input.status,cancellationReason:input.status==='CANCELLED'?input.cancellationReason??null:null,version:{increment:1}},select:projection});return response(p,await clinicTimezone(tx,tenant));
+      const p=await tx.appointment.update({where:{clinicId_id:{clinicId:tenant,id},version:input.expectedVersion},data:{status:input.status,cancellationReason:input.status==='CANCELLED'?input.cancellationReason??null:null,version:{increment:1}},select:projection});
+      await this.audit.record({clinicId:tenant,actorId:c.userId,action:input.status==='CANCELLED'?'appointments.cancel':'appointments.status_change',category:'SCHEDULING',targetType:'Appointment',targetId:id,outcome:'SUCCESS',metadata:{status:input.status,cancellationReason:input.cancellationReason}},tx);
+      return response(p,await clinicTimezone(tx,tenant));
     });
   }
   availability(proof:VerifiedPrincipal,clinicId:string,q:AvailabilityQuery){return this.database.withClinicContext(proof,clinicId,['appointments.read'],async(tx,c)=>{

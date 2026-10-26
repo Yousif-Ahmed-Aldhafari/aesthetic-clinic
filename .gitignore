@@ -11,3 +11,4 @@ coverage/
 dist-test/
 *.log
 /var/clinic-assets/
+/var/backups/

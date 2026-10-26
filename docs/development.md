@@ -1,9 +1,46 @@
 # Development setup
 
-Step 1.9 adds audited clinic profile/branding/domain/staff administration and safe
-identity asset delivery to the existing patient/scheduling/queue/billing boundary. Current UI is Arabic RTL;
+Step 2.1 adds centralized immutable audit logging, AES-256-GCM encrypted database backups,
+and disaster recovery verification drills to the existing patient/scheduling/queue/billing/identity boundary. Current UI is Arabic RTL;
 only the dashboard overview and explicitly opened old workflows remain local demos.
 Use fictional data until operational, privacy and market-specific finance review.
+
+## Step 2.1 — Centralized Audit Logging, Secure Backups & Disaster Recovery (2026-10-26)
+
+Active branch: `Antigravity-Work`.
+All existing uncommitted changes and secrets were preserved. Development and test databases both migrated to migration 12 (`20261026000400_centralized_audit_logging`).
+
+### Commands & Workflows
+
+1. **Centralized Audit Trail**:
+   - Schema: `AuditEvent` model with `AuditCategory` and `AuditOutcome` enums.
+   - Append-only immutability enforced by PostgreSQL trigger `reject_audit_mutation()`.
+   - Tenant RLS isolation via `FORCE ROW LEVEL SECURITY`, `tenant_select`, and `tenant_insert`.
+   - Direct out-of-band security failure recording via `lamssa_security.record_audit_event(...)` `SECURITY DEFINER`.
+   - Automatic metadata sanitization stripping credentials, tokens, cookies, credit cards, national IDs, and clinical notes.
+   - Dual-mode Arabic RTL audit interface in `ClinicSettings.tsx` (Unified Central Audit vs Identity Hash Chain).
+
+2. **Encrypted Backups & Disaster Recovery**:
+   - `BACKUP_ENCRYPTION_KEY="your-passphrase" npm run db:backup`: Creates AES-256-GCM encrypted custom-format dump (`pg_dump -Fc --enable-row-security`) in `var/backups/` with mode `0600` permissions and `.meta.json`. Rejects unprivileged runtime users (`lamssa_dev_app`, `lamssa_test_app`). Dynamically baselines all 33 public tables and pre-verifies TOC before encryption.
+   - `BACKUP_ENCRYPTION_KEY="your-passphrase" npm run db:backup:drill`: Runs safe, non-destructive archive verification drill, verifying AES-256-GCM authentication tag, SHA-256 digest, and TOC (`pg_restore -l`) without database mutation (RTO: ~100ms, RPO: 0 min).
+   - `BACKUP_ENCRYPTION_KEY="your-passphrase" npm run db:restore -- --target-db=<target>`: Executes genuine pg_restore into isolated target database (e.g. `lamssa_restore_tmp`), verifying all 33 table counts, 29 RLS tables, triggers, constraints, functions, multi-clinic data, and runtime user access isolation (Genuine RTO: ~1.59s). Protected databases (`lamssa_dev`, `lamssa_test`) require `--force-destructive-overwrite` AND `--confirm=<dbname>`.
+   - `deploy/systemd/lamssa-backup.service` & `deploy/systemd/lamssa-backup.timer`: Scheduled nightly Linux systemd units with security sandboxing.
+
+### Verification Record
+
+| Command / Check | Result |
+|---|---|
+| `git branch --show-current` | Active branch `Antigravity-Work` confirmed; no commit, push, or branch switch |
+| `npm run check:boundaries` | Exit 0; architectural boundaries passed cleanly |
+| `npm run db:validate` | Exit 0; Prisma schema valid |
+| `npm run db:status` / `npm run db:status:test` | Exit 0; 12 migrations applied to both databases; schemas up to date |
+| `npm run build` | Exit 0; Vite production bundle and NestJS ESM API compiled cleanly |
+| `npm test` | Exit 0; **62 passed** (16 web + 46 API), zero failed/skipped |
+| `npm run test:db` | Exit 0; **177 passed**, zero failed across all 10 integration suites with actual restricted runtime credentials |
+| `node --test apps/api/test/backup-restore.test.ts` | Exit 0; **6 passed** (backup completeness, runtime user rejection, drill, genuine restore, tamper resistance, safety guards) |
+| `npm run test:browser` | Exit 0; **33 checks passed**, zero runtime errors; Arabic RTL, dual audit panes, branded views preserved |
+| `npm run db:backup:drill` | Exit 0; Archive Verification Drill RTO: **102ms**, RPO: 0 min; valid archive TOC, cryptographic integrity |
+| `npm run db:restore` (Isolated Real Restore) | Exit 0; Genuine Restore RTO: **1,592ms** (1.59s), RPO: 0 min; 1,169 rows across 33 tables, 29 RLS tables verified |
 
 ## Step 1.9 — identity administration setup and verification (2026-10-26)
 

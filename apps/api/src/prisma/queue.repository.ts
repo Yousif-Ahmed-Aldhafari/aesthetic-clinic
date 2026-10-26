@@ -8,10 +8,14 @@ import { plainDate, todayInZone } from '../appointments/scheduling-time.js';
 import { QueueError } from '../queue/queue-error.js';
 import type { CallNextInput, CheckInInput, QueueActionInput, QueueConfigurationInput, QueueQuery, TransferInput, WalkInInput } from '../queue/queue-input.js';
 import { activeQueue, checkInAppointment, finishTicket, makeVisit, queueAssignment, queueDoctor, queueHash, ticket, ticketProjection, ticketResponse } from './queue.helpers.js';
+import { AuditRepository } from './audit.repository.js';
 
 @Injectable()
 export class QueueRepository {
-  constructor(private readonly database:TenantDatabaseService){}
+  constructor(
+    private readonly database:TenantDatabaseService,
+    private readonly audit:AuditRepository,
+  ){}
   resources(proof:VerifiedPrincipal,clinicId:string){return this.database.withClinicContext(proof,clinicId,['queue.read'],async(tx,c)=>{
     const timezone=await clinicTimezone(tx,c.clinicId);
     const rows=await tx.bookableResource.findMany({where:{clinicId:c.clinicId,active:true,...(c.role==='DOCTOR'?{OR:[{kind:'ROOM'},{doctorMembershipId:c.membershipId}]}:{})},select:resourceSelect,orderBy:{id:'asc'},take:201});
@@ -41,12 +45,18 @@ export class QueueRepository {
     const state=await tx.schedulingState.findFirst({where:{clinicId:c.clinicId},select:{revision:true}});
     return {timezone,today,date,items:rows.slice(0,q.pageSize).map(ticketResponse),hasMore:rows.length>q.pageSize,nextCursor:rows.length>q.pageSize?rows[q.pageSize-1].id:null,revision:state?.revision.toString()??'0'};
   });}
-  checkIn(proof:VerifiedPrincipal,clinicId:string,input:CheckInInput,reconcile=false){return mutateScheduling(this.database,proof,clinicId,['queue.checkin'],async(tx,_id,c)=>ticketResponse(await checkInAppointment(tx,c,input.appointmentId,input.expectedVersion,reconcile)));}
+  checkIn(proof:VerifiedPrincipal,clinicId:string,input:CheckInInput,reconcile=false){return mutateScheduling(this.database,proof,clinicId,['queue.checkin'],async(tx,_id,c)=>{
+    const res = await checkInAppointment(tx,c,input.appointmentId,input.expectedVersion,reconcile);
+    await this.audit.record({clinicId:c.clinicId,actorId:c.userId,action:'queue.checkin',category:'QUEUE',targetType:'QueueTicket',targetId:res.id,outcome:'SUCCESS',metadata:{appointmentId:input.appointmentId}},tx);
+    return ticketResponse(res);
+  });}
   walkIn(proof:VerifiedPrincipal,clinicId:string,input:WalkInInput){return mutateScheduling(this.database,proof,clinicId,['queue.checkin'],async(tx,_id,c)=>{
     const hash=queueHash({kind:'WALK_IN',patientId:input.patientId,doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null});
     const existing=await tx.visit.findFirst({where:{clinicId:c.clinicId,checkInKey:input.requestKey},select:{requestHash:true,ticket:{select:ticketProjection}}});
     if(existing){if(existing.requestHash!==hash)throw new QueueError('QUEUE_RETRY');if(!existing.ticket)throw new QueueError('QUEUE_TRANSITION');return ticketResponse(existing.ticket);}
-    return ticketResponse(await makeVisit(tx,c,{...input,hash}));
+    const visit = await makeVisit(tx,c,{...input,hash});
+    await this.audit.record({clinicId:c.clinicId,actorId:c.userId,action:'queue.walkin',category:'QUEUE',targetType:'QueueTicket',targetId:visit.id,outcome:'SUCCESS',metadata:{patientId:input.patientId,doctorResourceId:input.doctorResourceId}},tx);
+    return ticketResponse(visit);
   });}
   callNext(proof:VerifiedPrincipal,clinicId:string,input:CallNextInput){return mutateScheduling(this.database,proof,clinicId,['queue.manage'],async(tx,_id,c)=>{
     await queueAssignment(tx,c,input.doctorResourceId);
@@ -61,6 +71,7 @@ export class QueueRepository {
     }
     const called=next?await tx.queueTicket.update({where:{clinicId_id:{clinicId:c.clinicId,id:next.id},version:next.version},data:{status:'CALLED',calledAt:new Date(),version:{increment:1}},select:ticketProjection}):null;
     await tx.queueCommand.create({data:{clinicId:c.clinicId,requestKey:input.requestKey,requestHash:hash,ticketId:called?.id??null}});
+    if(called)await this.audit.record({clinicId:c.clinicId,actorId:c.userId,action:'queue.call',category:'QUEUE',targetType:'QueueTicket',targetId:called.id,outcome:'SUCCESS',metadata:{doctorResourceId:input.doctorResourceId}},tx);
     return {ticket:called?ticketResponse(called):null};
   });}
   action(proof:VerifiedPrincipal,clinicId:string,id:string,input:QueueActionInput){
@@ -69,6 +80,7 @@ export class QueueRepository {
       const current=await ticket(tx,c,id);if(current.version!==input.expectedVersion)throw new QueueError('QUEUE_STALE');
       const allowed:Record<QueueActionInput['action'],readonly string[]>={RECALL:['CALLED'],START:['CALLED'],COMPLETE:['IN_SERVICE'],ABSENT:['CALLED'],CANCEL:['WAITING','CALLED']};
       if(!allowed[input.action].includes(current.status))throw new QueueError('QUEUE_TRANSITION');
+      await this.audit.record({clinicId:c.clinicId,actorId:c.userId,action:'queue.'+input.action.toLowerCase(),category:'QUEUE',targetType:'QueueTicket',targetId:id,outcome:'SUCCESS',metadata:{action:input.action}},tx);
       if(input.action==='RECALL')return ticketResponse(await tx.queueTicket.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{calledAt:new Date(),recallCount:{increment:1},version:{increment:1}},select:ticketProjection}));
       if(input.action==='START'){
         await queueAssignment(tx,c,current.doctor.id,current.room?.id);
@@ -83,7 +95,9 @@ export class QueueRepository {
     if(!['WAITING','CALLED'].includes(current.status))throw new QueueError('QUEUE_TRANSITION');
     await queueAssignment(tx,c,input.doctorResourceId,input.roomResourceId);
     if(current.visit.appointmentId){const a=await tx.appointment.findFirst({where:{clinicId:c.clinicId,id:current.visit.appointmentId},select:{service:{select:{requiresRoom:true}}}});if(a?.service.requiresRoom&&!input.roomResourceId)throw new BadRequestException();}
-    return ticketResponse(await tx.queueTicket.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null,status:'WAITING',queuedAt:new Date(),calledAt:null,version:{increment:1}},select:ticketProjection}));
+    const res = await tx.queueTicket.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null,status:'WAITING',queuedAt:new Date(),calledAt:null,version:{increment:1}},select:ticketProjection});
+    await this.audit.record({clinicId:c.clinicId,actorId:c.userId,action:'queue.transfer',category:'QUEUE',targetType:'QueueTicket',targetId:id,outcome:'SUCCESS',metadata:{doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null}},tx);
+    return ticketResponse(res);
   });}
   configure(proof:VerifiedPrincipal,clinicId:string,input:QueueConfigurationInput){return mutateScheduling(this.database,proof,clinicId,['clinic.settings.update'],async(tx,_id,c)=>{
     const current=await tx.queueConfiguration.findFirst({where:{clinicId:c.clinicId}});

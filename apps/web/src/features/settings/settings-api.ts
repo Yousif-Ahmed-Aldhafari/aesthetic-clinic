@@ -6,6 +6,27 @@ export interface Domain {id:string;hostname:string;verificationStatus:string;ver
 export interface DomainChallenge extends Domain {dnsRecord:{name:string;type:string;value:string}}
 export interface Page<T>{items:T[];hasMore:boolean;nextCursor:string|null}
 export interface AuditEvent{id:string;sequence:number;action:string;targetId:string;eventHash:string;previousHash:string;createdAt:string}
+export interface CentralAuditEvent {
+  id: string;
+  clinicId: string | null;
+  actorId: string | null;
+  actorEmail: string | null;
+  action: string;
+  category: 'AUTH' | 'IDENTITY' | 'STAFF' | 'PATIENTS' | 'SCHEDULING' | 'QUEUE' | 'FINANCE' | 'SECURITY' | 'PLATFORM';
+  targetType: string | null;
+  targetId: string | null;
+  outcome: 'SUCCESS' | 'DENIED' | 'FAILURE';
+  correlationId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+export interface CentralAuditResponse {
+  events: CentralAuditEvent[];
+  nextCursor: string | null;
+  totalCount: number;
+}
 export interface UploadedAsset {id:string;previewUrl:string;mimeType:string;width:number;height:number}
 export async function uploadAsset(clinicId:string,purpose:string,file:File,csrf:string,signal:AbortSignal):Promise<UploadedAsset>{
   const body=new FormData();body.append('file',file);

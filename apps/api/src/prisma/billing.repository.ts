@@ -7,11 +7,15 @@ import { BillingError } from '../billing/billing-error.js';
 import { calculate, currencyScale, fixed } from '../billing/money.js';
 import { searchName } from '../patients/patient-input.js';
 import type { BillingPage, BillingPatientsQuery, BillingProfileInput, BillingVisitsQuery, CreateInvoice, EditInvoice, FinancialCommand, InvoiceQuery, RecordPayment, ReversePayment, VoidInvoice } from '../billing/billing-input.js';
+import { AuditRepository } from './audit.repository.js';
 const literal=(s:string)=>s.replace(/[\\%_]/g,'\\$&');
 const profileSelect={address:true,registrationNumber:true,taxIdentifier:true,version:true} as const;
 @Injectable()
 export class BillingRepository {
-  constructor(private readonly database:TenantDatabaseService){}
+  constructor(
+    private readonly database:TenantDatabaseService,
+    private readonly auditRepo:AuditRepository,
+  ){}
 
   list(proof:VerifiedPrincipal,clinicId:string,q:InvoiceQuery){return this.database.withClinicContext(proof,clinicId,['invoices.read'],async(tx,c)=>{
     const where:Prisma.InvoiceWhereInput={clinicId:c.clinicId,...(q.status==='ALL'?{}:{status:q.status})};
@@ -32,6 +36,7 @@ export class BillingRepository {
     const row=await tx.invoice.create({data:{clinicId:c.clinicId,patientId:patient.id,visitId:input.visitId??null,currency:clinic.currency,currencyScale:scale,patientName:patient.fullName,patientNumber:patient.patientNumber,requestKey:input.requestKey,requestHash:hash,...computed.totals}});
     await tx.invoiceLine.createMany({data:computed.items.map(l=>({...l,clinicId:c.clinicId,invoiceId:row.id}))});
     await audit(tx,c,'DRAFT_CREATED',row.id,row.version,{totalMinor:row.totalMinor.toString(),linesHash:financialHash(computed.items)});
+    await this.auditRepo.record({clinicId:c.clinicId,actorId:c.userId,action:'invoices.draft',category:'FINANCE',targetType:'Invoice',targetId:row.id,outcome:'SUCCESS',metadata:{totalMinor:row.totalMinor.toString()}},tx);
     return invoiceDetail(tx,c.clinicId,row.id);
   });}
   edit(proof:VerifiedPrincipal,clinicId:string,id:string,input:EditInvoice){return financialWrite(this.database,proof,clinicId,['invoices.create'],async(tx,c)=>{
@@ -41,6 +46,7 @@ export class BillingRepository {
     await tx.invoiceLine.createMany({data:computed.items.map(l=>({...l,clinicId:c.clinicId,invoiceId:id}))});
     const row=await tx.invoice.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{...computed.totals,version:{increment:1}}});
     await audit(tx,c,'DRAFT_EDITED',id,row.version,{totalMinor:row.totalMinor.toString(),linesHash:financialHash(computed.items)});
+    await this.auditRepo.record({clinicId:c.clinicId,actorId:c.userId,action:'invoices.edit',category:'FINANCE',targetType:'Invoice',targetId:id,outcome:'SUCCESS',metadata:{version:row.version}},tx);
     return invoiceDetail(tx,c.clinicId,id);
   });}
   issue(proof:VerifiedPrincipal,clinicId:string,id:string,input:FinancialCommand){return financialWrite(this.database,proof,clinicId,['invoices.issue'],async(tx,c)=>{
@@ -55,6 +61,7 @@ export class BillingRepository {
     const issuer={typography:clinic.branding?.typography??'TAJAWAL',legalName:clinic.legalName,displayName:clinic.displayName,timezone:clinic.timezone,logoUrl:clinic.branding?.logoUrl??null,primaryColor:clinic.branding?.primaryColor??'#7854D9',secondaryColor:clinic.branding?.secondaryColor??'#F6F8FC',address:profile?.address??clinic.address??null,registrationNumber:profile?.registrationNumber??null,taxIdentifier:profile?.taxIdentifier??null};
     const row=await tx.invoice.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{status:'ISSUED',number:`INV-${String(counter.lastNumber).padStart(6,'0')}`,issuedAt:new Date(),issuerSnapshot:issuer,patientName:patient.fullName,patientNumber:patient.patientNumber,issueKey:input.requestKey,issueHash:hash,version:{increment:1}}});
     await audit(tx,c,'INVOICE_ISSUED',id,row.version,{number:row.number,totalMinor:row.totalMinor.toString(),currency:row.currency,snapshotHash:financialHash(issuer)});
+    await this.auditRepo.record({clinicId:c.clinicId,actorId:c.userId,action:'invoices.issue',category:'FINANCE',targetType:'Invoice',targetId:id,outcome:'SUCCESS',metadata:{number:row.number,totalMinor:row.totalMinor.toString()}},tx);
     return invoiceDetail(tx,c.clinicId,id);
   });}
   void(proof:VerifiedPrincipal,clinicId:string,id:string,input:VoidInvoice){return financialWrite(this.database,proof,clinicId,['invoices.manage'],async(tx,c)=>{
@@ -63,7 +70,9 @@ export class BillingRepository {
     if(current.version!==input.expectedVersion)throw new BillingError('BILLING_STALE');
     if(current.status!=='ISSUED'||current.netPaidMinor!==0n||await tx.payment.count({where:{clinicId:c.clinicId,invoiceId:id}}))throw new BillingError('BILLING_STATE');
     const row=await tx.invoice.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{status:'VOID',voidedAt:new Date(),voidReason:input.reason,voidKey:input.requestKey,voidHash:hash,version:{increment:1}}});
-    await audit(tx,c,'INVOICE_VOIDED',id,row.version,{reason:input.reason});return invoiceDetail(tx,c.clinicId,id);
+    await audit(tx,c,'INVOICE_VOIDED',id,row.version,{reason:input.reason});
+    await this.auditRepo.record({clinicId:c.clinicId,actorId:c.userId,action:'invoices.void',category:'FINANCE',targetType:'Invoice',targetId:id,outcome:'SUCCESS',metadata:{reason:input.reason}},tx);
+    return invoiceDetail(tx,c.clinicId,id);
   });}
 
   pay(proof:VerifiedPrincipal,clinicId:string,id:string,input:RecordPayment){return financialWrite(this.database,proof,clinicId,['payments.record'],async(tx,c)=>{
@@ -77,6 +86,7 @@ export class BillingRepository {
     const payment=await tx.payment.create({data:{clinicId:c.clinicId,invoiceId:id,amountMinor:amount,currency:current.currency,currencyScale:current.currencyScale,method:input.method,requestKey:input.requestKey,requestHash:hash},select:paymentSelect});
     const paid=current.netPaidMinor+amount,row=await tx.invoice.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{netPaidMinor:paid,status:paidStatus(paid,current.totalMinor),version:{increment:1}}});
     await audit(tx,c,'PAYMENT_RECORDED',id,row.version,{paymentId:payment.id,amountMinor:amount.toString(),method:input.method});
+    await this.auditRepo.record({clinicId:c.clinicId,actorId:c.userId,action:'payments.record',category:'FINANCE',targetType:'Invoice',targetId:id,outcome:'SUCCESS',metadata:{paymentId:payment.id,amountMinor:amount.toString()}},tx);
     return {invoice:await invoiceDetail(tx,c.clinicId,id),payment:paymentResponse(payment)};
   });}
   reverse(proof:VerifiedPrincipal,clinicId:string,id:string,paymentId:string,input:ReversePayment){return financialWrite(this.database,proof,clinicId,['payments.reverse'],async(tx,c)=>{
@@ -92,6 +102,7 @@ export class BillingRepository {
     const reversal=await tx.paymentReversal.create({data:{clinicId:c.clinicId,invoiceId:id,paymentId,amountMinor:amount,currency:current.currency,currencyScale:current.currencyScale,kind:input.kind,reason:input.reason,requestKey:input.requestKey,requestHash:hash}});
     const paid=current.netPaidMinor-amount,row=await tx.invoice.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{netPaidMinor:paid,status:paidStatus(paid,current.totalMinor),version:{increment:1}}});
     await audit(tx,c,input.kind==='REFUND'?'PAYMENT_REFUNDED':'PAYMENT_REVERSED',id,row.version,{paymentId,reversalId:reversal.id,amountMinor:amount.toString(),reason:input.reason});
+    await this.auditRepo.record({clinicId:c.clinicId,actorId:c.userId,action:input.kind==='REFUND'?'payments.refund':'payments.reverse',category:'FINANCE',targetType:'Invoice',targetId:id,outcome:'SUCCESS',metadata:{paymentId,amountMinor:amount.toString()}},tx);
     return {invoice:await invoiceDetail(tx,c.clinicId,id),payment:paymentResponse(await tx.payment.findFirstOrThrow({where:{clinicId:c.clinicId,id:paymentId},select:paymentSelect}))};
   });}
 
@@ -119,7 +130,9 @@ export class BillingRepository {
     const data={...(input.address===undefined?{}:{address:input.address||null}),...(input.registrationNumber===undefined?{}:{registrationNumber:input.registrationNumber||null}),...(input.taxIdentifier===undefined?{}:{taxIdentifier:input.taxIdentifier||null})};
     if(!Object.keys(data).length)throw new BadRequestException();
     const profile=current?await tx.clinicBillingProfile.update({where:{clinicId:c.clinicId},data:{...data,version:{increment:1}},select:profileSelect}):await tx.clinicBillingProfile.create({data:{clinicId:c.clinicId,...data},select:profileSelect});
-    await audit(tx,c,'PROFILE_UPDATED',null,null,{version:profile.version,profileHash:financialHash(profile)});return profile;
+    await audit(tx,c,'PROFILE_UPDATED',null,null,{version:profile.version,profileHash:financialHash(profile)});
+    await this.auditRepo.record({clinicId:c.clinicId,actorId:c.userId,action:'finance.profile_update',category:'FINANCE',targetType:'ClinicBillingProfile',targetId:c.clinicId,outcome:'SUCCESS',metadata:{version:profile.version}},tx);
+    return profile;
   });}
   patients(proof:VerifiedPrincipal,clinicId:string,q:BillingPatientsQuery){return this.database.withClinicContext(proof,clinicId,['invoices.create'],async(tx,c)=>{
     const where:Prisma.PatientWhereInput={clinicId:c.clinicId,status:'ACTIVE'};

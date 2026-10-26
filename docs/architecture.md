@@ -1146,3 +1146,18 @@ tested. The temporary comparison/smoke scripts and screenshots live outside the
 repository; no test dependencies or permanent test harness were added. These
 checks cover the exercised prototype flows, not production security or concurrent
 multi-device correctness. See the roadmap for future acceptance gates.
+
+## 8. Step 2.1: Centralized Audit Logging, Backups & Disaster Recovery
+
+### Centralized Audit Architecture
+- **Append-Only Immutability**: All tenant audit events are stored in `AuditEvent` with `FORCE ROW LEVEL SECURITY`. Updates and deletes are rejected at the database level by the `reject_audit_mutation()` trigger function.
+- **Tenant Context**: Reads and writes evaluate `lamssa_security.context_allows("clinicId")`. Only `CLINIC_OWNER` and `CLINIC_ADMIN` with `audit.read` permission can query clinic logs.
+- **Out-of-Band Security Auditing**: `lamssa_security.record_audit_event(...)` is a `SECURITY DEFINER` function with fixed `search_path = pg_catalog, pg_temp` used by exception filters to log 401/403/429 rejections even when request transactions abort.
+- **PII / PHI Redaction**: Pre-persistence sanitization (`sanitizeAuditMetadata`) redacts passwords, tokens, session cookies, payment cards, national IDs, and clinical notes.
+
+### Encrypted Backups & Disaster Recovery
+- **AES-256-GCM + scrypt KDF**: `scripts/backup-database.mjs` executes `pg_dump -Fc --enable-row-security`, deriving a 256-bit key using scrypt (32-byte salt). Ciphertext and metadata are written with `0600` permissions.
+- **Integrity Validation**: SHA-256 checksum and AES-GCM 16-byte authentication tags are verified before decryption. Tampered or corrupt files fail closed.
+- **Safe Drills**: `scripts/restore-database.mjs --drill` validates TOC and schema integrity in temporary schemas without overwriting live data.
+- **Safety Guards**: Active databases (`lamssa_dev`, `lamssa_test`) are blocked from accidental overwrite without `--force-destructive-overwrite` and `--confirm=<db>`.
+- **Systemd Automation**: Systemd unit and timer files in `deploy/systemd/` provide scheduled, sandboxed execution.

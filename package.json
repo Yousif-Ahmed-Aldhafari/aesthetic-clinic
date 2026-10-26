@@ -35,6 +35,9 @@
     "db:status:test": "node scripts/test-database-command.mjs status",
     "db:grant": "node scripts/grant-database-access.mjs",
     "auth:provision": "npm run auth:provision --workspace @lamssa/api --",
+    "db:backup": "node scripts/backup-database.mjs",
+    "db:restore": "node scripts/restore-database.mjs",
+    "db:backup:drill": "node scripts/restore-database.mjs --drill",
     "check:boundaries": "node scripts/check-database-boundaries.mjs",
     "test:web": "npm run test --workspace @lamssa/web --",
     "test:browser": "npm run build && npm run test:compile --workspace @lamssa/api && node scripts/patients-browser-smoke.mjs"

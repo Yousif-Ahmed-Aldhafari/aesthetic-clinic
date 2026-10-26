@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AuditService } from './audit/audit.service.js';
 import { SafeExceptionFilter } from './common/safe-exception.filter.js';
 import type { Environment } from './config/environment.js';
 import cookieParser from 'cookie-parser';
@@ -41,6 +42,8 @@ export function configureApp(app: INestApplication): void {
     whitelist: true, forbidNonWhitelisted: true, forbidUnknownValues: true,
     transform: true, validationError: { target: false, value: false },
   }));
-  app.useGlobalFilters(new SafeExceptionFilter());
+  let auditService: AuditService | undefined;
+  try { auditService = app.get(AuditService, { strict: false }); } catch {}
+  app.useGlobalFilters(new SafeExceptionFilter(auditService));
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 }

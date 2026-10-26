@@ -6,6 +6,7 @@ import {
 } from '../patients/patient-input.js';
 import { TenantDatabaseService } from './tenant-database.service.js';
 import type { VerifiedPrincipal } from './verified-sessions.js';
+import { AuditRepository } from './audit.repository.js';
 
 // Explicit response allowlist; ownership, search keys and allocator stay internal.
 const projection = {
@@ -33,7 +34,10 @@ const editableFields = (input: CreatePatient | UpdatePatient) => ({
 
 @Injectable()
 export class PatientRepository {
-  constructor(private readonly database: TenantDatabaseService) {}
+  constructor(
+    private readonly database: TenantDatabaseService,
+    private readonly audit: AuditRepository,
+  ) {}
 
   list(proof: VerifiedPrincipal, clinicId: string, query: PatientQuery) {
     const q = searchName(query.q);
@@ -99,6 +103,16 @@ export class PatientRepository {
             clinicId: context.clinicId, patientNumber: `P-${String(counter.lastNumber).padStart(6, '0')}`,
           }, select: projection,
         });
+        await this.audit.record({
+          clinicId: context.clinicId,
+          actorId: context.userId,
+          action: 'patients.create',
+          category: 'PATIENTS',
+          targetType: 'Patient',
+          targetId: patient.id,
+          outcome: 'SUCCESS',
+          metadata: { patientNumber: patient.patientNumber },
+        }, tx);
         return response(patient);
       });
     } catch (error) {
@@ -131,6 +145,19 @@ export class PatientRepository {
       // a version conflict; no cross-clinic existence signal reaches the caller.
       if (!patient) throw new NotFoundException();
       if (changed.count !== 1) throw new ConflictException();
+      await this.audit.record({
+        clinicId: context.clinicId,
+        actorId: context.userId,
+        action: 'status' in data ? 'patients.status_change' : 'patients.update',
+        category: 'PATIENTS',
+        targetType: 'Patient',
+        targetId: patient.id,
+        outcome: 'SUCCESS',
+        metadata: {
+          version: patient.version,
+          ...('status' in data ? { status: patient.status } : { changedFields: Object.keys(data).filter(k => k !== 'version') }),
+        },
+      }, tx);
       return response(patient);
     });
   }

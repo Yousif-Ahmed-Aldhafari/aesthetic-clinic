@@ -91,6 +91,7 @@ model Clinic {
   identityState ClinicIdentityState?
   identityAuditEvents ClinicIdentityAuditEvent[]
   slugReservations ClinicSlugReservation[]
+  auditEvents AuditEvent[]
 
   @@index([status, createdAt])
 }
@@ -705,3 +706,48 @@ model ClinicBillingProfile {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
   clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
 }
+
+enum AuditCategory {
+  AUTH
+  IDENTITY
+  STAFF
+  PATIENTS
+  SCHEDULING
+  QUEUE
+  FINANCE
+  SECURITY
+  PLATFORM
+}
+
+enum AuditOutcome {
+  SUCCESS
+  DENIED
+  FAILURE
+}
+
+// Centralized operational audit trail; append-only, tenant-scoped, and immutable.
+model AuditEvent {
+  id            String        @id @default(uuid()) @db.Uuid
+  clinicId      String?       @db.Uuid
+  actorId       String?       @db.Uuid
+  actorEmail    String?       @db.VarChar(254)
+  action        String        @db.VarChar(64)
+  category      AuditCategory
+  targetType    String?       @db.VarChar(64)
+  targetId      String?       @db.VarChar(64)
+  outcome       AuditOutcome  @default(SUCCESS)
+  correlationId String?       @db.VarChar(64)
+  ipAddress     String?       @db.VarChar(64)
+  userAgent     String?       @db.VarChar(256)
+  metadata      Json?
+  createdAt     DateTime      @default(now()) @db.Timestamptz(3)
+
+  clinic        Clinic?       @relation(fields: [clinicId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([clinicId, createdAt, id])
+  @@index([clinicId, category, createdAt])
+  @@index([clinicId, action, createdAt])
+  @@index([clinicId, actorId, createdAt])
+  @@index([correlationId])
+}
+

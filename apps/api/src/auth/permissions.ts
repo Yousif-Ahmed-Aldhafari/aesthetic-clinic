@@ -5,6 +5,7 @@ export const permissions = [
   'staff.read', 'staff.manage', 'patients.read', 'patients.create', 'patients.update',
   'appointments.read', 'appointments.create', 'appointments.update', 'appointments.cancel', 'appointments.complete', 'queue.read', 'queue.manage', 'queue.checkin', 'queue.transfer', 'queue.complete',
   'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read',
+  'audit.read',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -14,6 +15,7 @@ const operations: Permission[] = [
 const administration: Permission[] = [
   'clinic.settings.read', 'clinic.settings.update', 'clinic.branding.read', 'clinic.branding.update',
   'staff.read', 'staff.manage', ...operations, 'appointments.complete', 'queue.complete',
+  'audit.read',
 ];
 export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>> = {
   CLINIC_OWNER: [...administration, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read'],

@@ -129,6 +129,19 @@ production use remains gated on authentication, isolation and operational contro
     Clinical records, consent and protected media need their own reviewed scope;
     they must not reuse the intentionally public clinic-asset channel.
 
+11. **2.1 — Centralized Audit Logging, Secure Backups & Disaster Recovery (implemented).**
+    Append-only immutable audit trail with `FORCE ROW LEVEL SECURITY`, tenant isolation,
+    and PostgreSQL triggers rejecting mutation/deletion. Covers authentication (login/logout/failures),
+    clinic identity/branding, staff administration and role assignments, patient records, appointments,
+    queue/visits, and billing/invoicing. Automatic metadata redaction sanitizes PHI, credentials, tokens,
+    and payment card numbers. Out-of-band security failure recording via hardened `SECURITY DEFINER`
+    function. Dual-mode Arabic RTL audit management interface in clinic settings. Automated AES-256-GCM
+    encrypted database backups (`pg_dump -Fc --enable-row-security`) with scrypt KDF, SHA-256 checksums,
+    0600 file permissions, and systemd units (`deploy/systemd/`). Automated disaster recovery verification drills
+    (`npm run db:backup:drill`) measure RTO and RPO in isolated temporary schemas, with fail-closed tamper
+    detection and guards preventing accidental overwrite of active databases.
+    See [audit logging](audit-logging.md), [backup and recovery](backup-recovery.md), and [verification](development.md).
+
 ## Migration discipline
 
 - Preserve root development commands and the browser origin used for demo storage.

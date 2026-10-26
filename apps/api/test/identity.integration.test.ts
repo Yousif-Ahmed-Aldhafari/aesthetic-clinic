@@ -153,7 +153,8 @@ live('membership revocation invalidates all target sessions without deleting oth
 });
 live('concurrent owner removals preserve at least one active owner',async()=>{
  const second=await owner.clinicMembership.create({data:{clinicId:clinics[0],userId:users[5],role:'CLINIC_OWNER',status:'ACTIVE'}});const a=await new Browser().login(),b=await new Browser().login(5),first=(await members(a)).find(m=>m.user.email===emails[0])!;
- try{const results=await Promise.all([[a,first],[b,second]].map(async([browser,member])=>{const x=browser as Browser,y=member as Member;return x.request(x.path('/members/'+y.id),'PATCH',{expectedVersion:y.version,role:'DOCTOR',status:'ACTIVE'});}));assert.equal(results.filter(r=>r.status===200).length,1);assert.equal(await owner.clinicMembership.count({where:{clinicId:clinics[0],role:'CLINIC_OWNER',status:'ACTIVE'}}),1);}finally{await owner.clinicMembership.update({where:{id:first.id},data:{role:'CLINIC_OWNER',status:'ACTIVE',version:{increment:1}}});await owner.clinicMembership.delete({where:{id:second.id}});}
+  try{const results=await Promise.all([[a,first],[b,second]].map(async([browser,member])=>{const x=browser as Browser,y=member as Member;return x.request(x.path('/members/'+y.id),'PATCH',{expectedVersion:y.version,role:'DOCTOR',status:'ACTIVE'});}));
+   assert.equal(results.filter(r=>r.status===200).length,1);assert.equal(await owner.clinicMembership.count({where:{clinicId:clinics[0],role:'CLINIC_OWNER',status:'ACTIVE'}}),1);}finally{await owner.clinicMembership.update({where:{id:first.id},data:{role:'CLINIC_OWNER',status:'ACTIVE',version:{increment:1}}});await owner.clinicMembership.delete({where:{id:second.id}});}
 });
 live('actual runtime RLS denies missing/forged contexts and cross-clinic private assets/audit/state',async()=>{
  const a=await new Browser().login(),b=await new Browser().login(5,1);await upload(b);

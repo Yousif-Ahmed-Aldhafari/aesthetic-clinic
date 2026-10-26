@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import { api, ApiError, roleNames, type ClinicContext } from '../auth/api';
 import { RequestScope } from '../../lib/request-scope';
 import { brandStyle, readableColors } from './branding';
-import { uploadAsset, type AuditEvent, type Branding, type ClinicProfile, type Domain, type DomainChallenge, type Page, type StaffMember } from './settings-api';
+import { uploadAsset, type AuditEvent, type Branding, type ClinicProfile, type Domain, type DomainChallenge, type Page, type StaffMember, type CentralAuditResponse } from './settings-api';
+import { Modal } from '../../components/ui';
 import './settings.css';
 type Props={clinic:ClinicContext;csrfToken:string;onAuthError:(error:unknown)=>void;onUpdated:()=>Promise<void>};
 type Actions={busy:boolean;write:<T>(path:string,body:unknown,method?:string)=>Promise<T|undefined>;upload:(purpose:string,file:File)=>Promise<{id:string;previewUrl:string}|undefined>};
@@ -77,4 +78,151 @@ function StaffRow({member:m,owner,busy,save}:{member:StaffMember;owner:boolean;b
   const[role,setRole]=useState(m.role),[status,setStatus]=useState(m.status);const editable=owner||['DOCTOR','RECEPTIONIST'].includes(m.role),allowed=owner?Object.keys(roleNames):['DOCTOR'];
   return <form className="staff-row" onSubmit={e=>{e.preventDefault();void save({expectedVersion:m.version,role,status});}}><div><strong>{m.user.name}</strong><small><bdi>{m.user.email}</bdi></small><small>{m.user.status==='ACTIVE'?'حساب نشط':'حساب غير نشط أو مدعو'}</small></div><label>الدور<select aria-label={`دور ${m.user.name}`} disabled={!editable||busy} value={role} onChange={e=>setRole(e.target.value)}>{[...new Set([...allowed,m.role])].map(r=><option key={r} value={r}>{roleNames[r]}</option>)}</select></label><label>العضوية<select aria-label={`حالة ${m.user.name}`} disabled={!editable||busy} value={status} onChange={e=>setStatus(e.target.value)}><option value="ACTIVE" disabled={!owner&&role==='RECEPTIONIST'&&m.status!=='ACTIVE'}>نشطة</option><option value="SUSPENDED">معطّلة</option>{m.status==='INVITED'&&<option value="INVITED" disabled>مدعوة</option>}</select></label><button className="table-btn" disabled={!editable||busy||status==='INVITED'}>حفظ العضوية</button></form>;
 }
-function AuditPane({p,revision}:{p:Props;revision:number}){const[cursor,setCursor]=useState('');const{data,error}=useResource<Page<AuditEvent>>(p,`audit?pageSize=20${cursor?'&cursor='+cursor:''}`,revision);const names:Record<string,string>={Clinic:'بيانات العيادة',ClinicBranding:'الهوية البصرية',ClinicDomain:'النطاق',ClinicMembership:'العضوية',ClinicAsset:'ملف الهوية'},verbs:Record<string,string>={INSERT:'إضافة',UPDATE:'تحديث',DELETE:'تنظيف'};return <Resource error={error}><p className="settings-note">سجل متسلسل يولّد في قاعدة البيانات، مع بصمات مترابطة لا يمكن للتطبيق تعديلها. الأوقات بالتوقيت العالمي UTC. مراجعة الوصول الإداري المميّز والأرشفة الخارجية تظل مطلوبة قبل الإنتاج.</p>{!data&&!error&&<p role="status">جارٍ تحميل سجل التغييرات…</p>}<ol className="identity-audit-list">{data?.items.map(e=><li key={e.id}><b>{verbs[e.action.split('.')[1]]} · {names[e.action.split('.')[0]]}</b><time>{new Intl.DateTimeFormat('ar-YE',{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(new Date(e.createdAt))}</time><small>تسلسل {e.sequence} · البصمة <bdi>{e.eventHash.slice(0,16)}…</bdi></small></li>)}</ol>{data&&!data.items.length&&<p className="empty">لا توجد تغييرات مسجلة بعد.</p>}<div className="settings-actions"><button className="table-btn" disabled={!cursor} onClick={()=>setCursor('')}>أحدث التغييرات</button><button className="table-btn" disabled={!data?.hasMore} onClick={()=>setCursor(data?.nextCursor??'')}>تغييرات أقدم</button></div></Resource>;}
+function AuditPane({p,revision}:{p:Props;revision:number}){
+  const[viewMode,setViewMode]=useState<'central'|'chain'>('chain');
+  const[category,setCategory]=useState<string>('');
+  const[from,setFrom]=useState<string>('');
+  const[to,setTo]=useState<string>('');
+  const[cursor,setCursor]=useState<string>('');
+  const[selectedMetadata,setSelectedMetadata]=useState<Record<string,unknown>|null>(null);
+
+  const queryParts = [
+    'limit=20',
+    cursor ? `cursor=${encodeURIComponent(cursor)}` : '',
+    category ? `category=${encodeURIComponent(category)}` : '',
+    from ? `from=${encodeURIComponent(new Date(from).toISOString())}` : '',
+    to ? `to=${encodeURIComponent(new Date(to).toISOString())}` : '',
+  ].filter(Boolean).join('&');
+
+  const[centralData,setCentralData]=useState<CentralAuditResponse|null>(null);
+  const[centralError,setCentralError]=useState('');
+  const centralGate=useMemo(()=>new RequestScope(),[p.clinic.clinicId,queryParts]);
+
+  useEffect(()=>{
+    if(viewMode!=='central')return;
+    setCentralData(null);setCentralError('');
+    const token=centralGate.start();
+    void api<CentralAuditResponse>(`clinics/${p.clinic.clinicId}/audit/events?${queryParts}`,'GET',undefined,undefined,token.signal)
+      .then(v=>{if(token.current())setCentralData(v);})
+      .catch(e=>{
+        if(!token.current())return;
+        setCentralError(e instanceof ApiError?e.message:'تعذّر تحميل سجل التدقيق.');
+        if(e instanceof ApiError&&e.status===401)p.onAuthError(e);
+      });
+    return()=>centralGate.cancel();
+  },[centralGate,revision,viewMode]);
+
+  const{data:chainData,error:chainError}=useResource<Page<AuditEvent>>(p,`audit?pageSize=20${cursor?'&cursor='+cursor:''}`,revision);
+
+  const catLabels:Record<string,string>={AUTH:'المصادقة',IDENTITY:'الهوية',STAFF:'فريق العمل',PATIENTS:'المرضى',SCHEDULING:'المواعيد',QUEUE:'طابور الانتظار',FINANCE:'المالية',SECURITY:'الأمان',PLATFORM:'المنصة'};
+  const outLabels:Record<string,string>={SUCCESS:'ناجح',DENIED:'مرفوض',FAILURE:'فشل'};
+  const outClasses:Record<string,string>={SUCCESS:'outcome-success',DENIED:'outcome-denied',FAILURE:'outcome-failure'};
+  const names:Record<string,string>={Clinic:'بيانات العيادة',ClinicBranding:'الهوية البصرية',ClinicDomain:'النطاق',ClinicMembership:'العضوية',ClinicAsset:'ملف الهوية'},verbs:Record<string,string>={INSERT:'إضافة',UPDATE:'تحديث',DELETE:'تنظيف'};
+
+  return <section aria-label="سجل التدقيق والتغييرات">
+    <div className="audit-view-switch">
+      <button type="button" className={viewMode==='central'?'active':''} onClick={()=>{setViewMode('central');setCursor('');}}>السجل الموحد للعمليات</button>
+      <button type="button" className={viewMode==='chain'?'active':''} onClick={()=>{setViewMode('chain');setCursor('');}}>سلسلة بصمات الهوية (التشفيرية)</button>
+    </div>
+
+    {viewMode==='central'&&<>
+      <p className="settings-note">سجل تدقيق مركزي غير قابل للتعديل أو الحذف، مسجل بالتوقيت العالمي UTC مع عزل تام لكل عيادة عبر RLS. بيانات الاعتماد والبطاقات والتفاصيل الطبية محجوبة تلقائيًا.</p>
+      <div className="audit-toolbar">
+        <label>الفئة:
+          <select value={category} onChange={e=>{setCategory(e.target.value);setCursor('');}}>
+            <option value="">جميع الفئات</option>
+            {Object.entries(catLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        <label>من:
+          <input type="date" value={from} onChange={e=>{setFrom(e.target.value);setCursor('');}}/>
+        </label>
+        <label>إلى:
+          <input type="date" value={to} onChange={e=>{setTo(e.target.value);setCursor('');}}/>
+        </label>
+        {(category||from||to)&&<button type="button" className="table-btn" onClick={()=>{setCategory('');setFrom('');setTo('');setCursor('');}}>إعادة ضبط الفلاتر</button>}
+        {centralData&&<span style={{marginRight:'auto',fontSize:12,color:'#64748b'}}>إجمالي الأحداث: {centralData.totalCount.toLocaleString('ar-YE')}</span>}
+      </div>
+
+      <Resource error={centralError}>
+        {!centralData&&!centralError&&<p role="status">جارٍ تحميل سجل التدقيق…</p>}
+        {centralData&&(
+          centralData.events.length===0?<p className="empty">لا توجد أحداث تدقيق مطابقة للبحث.</p>:(
+            <div style={{overflowX:'auto'}}>
+              <table className="audit-table">
+                <thead>
+                  <tr>
+                    <th>الوقت (UTC)</th>
+                    <th>الفئة</th>
+                    <th>الإجراء</th>
+                    <th>المنفذ</th>
+                    <th>الهدف</th>
+                    <th>الحالة</th>
+                    <th>التفاصيل</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {centralData.events.map(ev=>(
+                    <tr key={ev.id}>
+                      <td style={{whiteSpace:'nowrap'}}>
+                        <time dateTime={ev.createdAt}>
+                          {new Intl.DateTimeFormat('ar-YE',{dateStyle:'short',timeStyle:'short',timeZone:'UTC'}).format(new Date(ev.createdAt))}
+                        </time>
+                      </td>
+                      <td><span className="audit-badge badge-category">{catLabels[ev.category]??ev.category}</span></td>
+                      <td><code>{ev.action}</code></td>
+                      <td><small>{ev.actorEmail??ev.actorId?.slice(0,8)??'النظام'}</small></td>
+                      <td><small>{ev.targetType ? `${ev.targetType}${ev.targetId ? ` (${ev.targetId.slice(0,6)}…)` : ''}` : '—'}</small></td>
+                      <td><span className={`audit-badge ${outClasses[ev.outcome]??''}`}>{outLabels[ev.outcome]??ev.outcome}</span></td>
+                      <td>
+                        {ev.metadata ? (
+                          <button type="button" className="table-btn" onClick={()=>setSelectedMetadata(ev.metadata)} title="عرض التفاصيل">
+                            عرض
+                          </button>
+                        ) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+        <div className="settings-actions">
+          <button type="button" className="table-btn" disabled={!cursor} onClick={()=>setCursor('')}>الأحدث</button>
+          <button type="button" className="table-btn" disabled={!centralData?.nextCursor} onClick={()=>setCursor(centralData?.nextCursor??'')}>أقدم</button>
+        </div>
+      </Resource>
+    </>}
+
+    {viewMode==='chain'&&<Resource error={chainError}>
+      <p className="settings-note">سجل متسلسل يولّد في قاعدة البيانات، مع بصمات مترابطة SHA-256 لا يمكن للتطبيق تعديلها. الأوقات بالتوقيت العالمي UTC.</p>
+      {!chainData&&!chainError&&<p role="status">جارٍ تحميل سجل البصمات…</p>}
+      <ol className="identity-audit-list">
+        {chainData?.items.map(e=>(
+          <li key={e.id}>
+            <b>{verbs[e.action.split('.')[1]]} · {names[e.action.split('.')[0]]}</b>
+            <time>{new Intl.DateTimeFormat('ar-YE',{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(new Date(e.createdAt))}</time>
+            <small>تسلسل {e.sequence} · البصمة <bdi>{e.eventHash.slice(0,16)}…</bdi></small>
+          </li>
+        ))}
+      </ol>
+      {chainData&&!chainData.items.length&&<p className="empty">لا توجد تغييرات مسجلة بعد.</p>}
+      <div className="settings-actions">
+        <button className="table-btn" disabled={!cursor} onClick={()=>setCursor('')}>أحدث التغييرات</button>
+        <button className="table-btn" disabled={!chainData?.hasMore} onClick={()=>setCursor(chainData?.nextCursor??'')}>تغييرات أقدم</button>
+      </div>
+    </Resource>}
+
+    {selectedMetadata&&(
+      <Modal title="تفاصيل بيانات التدقيق (محجوبة وآمنة)" onClose={()=>setSelectedMetadata(null)}>
+        <div className="metadata-dialog">
+          <pre>{JSON.stringify(selectedMetadata,null,2)}</pre>
+          <div style={{marginTop:12,textAlign:'left'}}>
+            <button type="button" className="primary-btn" onClick={()=>setSelectedMetadata(null)}>إغلاق</button>
+          </div>
+        </div>
+      </Modal>
+    )}
+  </section>;
+}
