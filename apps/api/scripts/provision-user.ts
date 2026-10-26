@@ -31,7 +31,7 @@ export async function provisionUser(prisma: PrismaClient, input: {
     for (const m of input.memberships) {
       const clinicId = clinics.find(c=>c.slug===m.clinicSlug)!.id;
       await tx.clinicMembership.upsert({ where: { clinicId_userId: { clinicId, userId: user.id } },
-        create: { clinicId, userId: user.id, role: m.role, status: 'ACTIVE' }, update: { role: m.role, status: 'ACTIVE' } });
+        create: { clinicId, userId: user.id, role: m.role, status: 'ACTIVE' }, update: { role: m.role, status: 'ACTIVE', version: { increment: 1 } } });
     }
     await tx.session.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
     return { id: user.id, email: user.email, memberships: input.memberships.length };

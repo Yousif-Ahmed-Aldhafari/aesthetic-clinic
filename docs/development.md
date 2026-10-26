@@ -1,11 +1,147 @@
 # Development setup
 
-Step 1.8 adds persistent invoices, manual payments and financial corrections to the
-existing protected patient/scheduling/visit/queue boundary. Current UI is Arabic RTL;
+Step 1.9 adds audited clinic profile/branding/domain/staff administration and safe
+identity asset delivery to the existing patient/scheduling/queue/billing boundary. Current UI is Arabic RTL;
 only the dashboard overview and explicitly opened old workflows remain local demos.
 Use fictional data until operational, privacy and market-specific finance review.
 
-## Step 1.8 — native PostgreSQL setup and verification
+## Step 1.9 — identity administration setup and verification (2026-10-26)
+
+Starting state was clean `main` at `c95606d`, aligned with origin/main. Step 1.8 was
+present. Before editing, independently reran 43 unit tests, 141 database tests and
+24 real-browser checks: all passed. No branch, commit or push is created by this step.
+
+One new pinned direct dependency: `sharp@0.35.5`, installed with
+`npm install --workspace @lamssa/api --save-exact sharp@0.35.5 --no-audit --no-fund`
+(exit 0; six packages added). Its Node engine supports the existing Node 24 and
+actual native decoding/re-encoding is covered by tests. Existing NestJS/Prisma/pg/
+React/Vite versions are unchanged. Use `npm ci` on another machine.
+
+The private `.env`, runtime/migration credentials and native PostgreSQL service are
+preserved. New settings in `.env.example` are nonsecret and optional in development:
+
+```dotenv
+PLATFORM_BASE_DOMAIN=lamssa.localhost
+# API_ALLOWED_HOSTS=localhost,127.0.0.1
+# ASSET_STORAGE_DIR=/absolute/private/lamssa-assets
+```
+
+Do not replace an existing `.env` to add these. Defaults derive trusted hosts from
+API_HOST/CORS hostnames (plus localhost in development); no wildcard or Host-based
+clinic authorization. ASSET_STORAGE_DIR defaults to ignored `var/clinic-assets` in
+development. Production uploads/reads require an explicit private persistent path.
+Never put private uploads under apps/web/public; its static default favicon is
+trusted app source and is separate from user uploads. Back up the asset volume with DB.
+
+From repository root:
+
+```bash
+npm run db:validate
+npm run db:generate
+npm run db:migrate:test
+npm run db:migrate
+npm run db:grant
+npm run db:status
+npm run db:status:test
+npm run check:boundaries
+npm test
+npm run test:db
+npm run test:browser
+```
+
+Three incremental migrations are applied in both environments:
+
+- `20261026000100_clinic_identity`: nullable business fields/versions, private asset
+  metadata and trigger-owned identity audit/state, ownership/role guards, managed
+  image publication, domain proof fields and narrow read functions. Retains legacy
+  HTTPS logos and issued invoice data; no uploaded SVG/HTML accepted.
+- `20261026000200_retained_subdomains`: current/former slug reservations, backfilled
+  from existing Clinic.slug without changing it. Runtime cannot release names.
+  Owner maintenance deletion of a fictional clinic cascades only its reservations;
+  there is no clinic-delete API, and business-record FK restrictions remain.
+
+- `20261026000300_staff_permission_ceiling`: reinforce that CLINIC_ADMIN cannot newly
+  assign/reactivate receptionist billing permissions they do not possess. Existing
+  reception access may be suspended or replaced by doctor; owner grants remain explicit.
+
+SQL was reviewed/executed in rolled-back test transactions before deploy. Guard
+branches were also exercised in a rolled-back owner review; actual runtime-login
+integration tests independently verify the deployed security controls. The owner
+correctly could not SET ROLE to the runtime account during review. Eleven migrations
+are now expected. Do not edit their bytes, use reset/force-push, disable guards/RLS
+or grant blanket identity writes to resolve setup problems.
+
+Start `npm run dev:api` and `npm run dev:web` in separate terminals; check health and
+readiness on `http://127.0.0.1:3000/api/v1/health` and `/api/v1/health/ready`.
+Provision a fictional owner/admin only through the existing `npm run auth:provision`
+interactive workflow. No default password or unrestricted registration was added.
+Owner/admin see **إعدادات العيادة**; clinic admins can manage existing doctor/receptionist targets without granting new
+finance permissions. Only owners newly assign/reactivate reception billing access. Accountant finance authority is not operational admin authority.
+Changes to a user's role/status revoke all their sessions; they can log in again to
+remaining clinics. Email invitations/acceptance/recovery are not implemented yet.
+
+To preview clinic-branded login, visit `http://localhost:5173/?clinic=ward-demo`.
+The slug supplies public identity only; it does not select/authorize a private clinic.
+Upload an administrative logo/favicon, inspect preview and explicitly save/publish.
+Choose readable colors; files are decoded, bounded and re-encoded, not served as
+original uploads. Published images are retained for immutable financial snapshots.
+
+Domain settings return the TXT record once. Add it at your DNS provider, then
+verify. PENDING/FAILED/VERIFIED refer only to ownership. Routing is always inactive;
+do not assume a custom URL or certificate exists. Actual DNS proof parsing uses
+controlled responses in tests; no real customer domain was activated or claimed.
+Retained former subdomains cannot be reassigned to another clinic. Domain release,
+disputes/proof renewal and deployment activation remain separate reviewed workflows.
+
+Troubleshooting:
+
+- 409 settings conflict: reload before editing again; do not force a stale version.
+- Locked currency/timezone: preserve existing records; a historical correction needs
+  a separately reviewed migration/workflow, not a different browser field or SQL bypass.
+- 409 last-owner denial: add an authorized second active owner through the controlled
+  workflow before removing the current owner. Admin cannot grant owner/finance authority.
+- 401 after role/status change: expected session invalidation. Reauthenticate.
+- Upload 400/413: use a static PNG/JPEG/WebP, ≤2 MiB, dimensions 16–4096 each; no SVG,
+  HTML, animations or arbitrary URL. File names are server-controlled.
+- Asset limit: explicitly clean only old unpublished drafts. Published assets are
+  retained; quota/retention changes and orphan reconciliation need maintenance review.
+- Missing published image: verify persistent storage/backup mount, active clinic,
+  published asset metadata and filesystem permissions. Never make the whole directory public.
+- Host rejected: explicitly configure a trusted hostname, not a wildcard, URL or
+  forwarded-header bypass. Custom proof verification does not activate host trust.
+- DNS proof fails: check exact TXT name/value, TTL, challenge expiration and matching
+  hostname; wait 30s between checks or rotate an expired challenge.
+
+Detailed API/storage/audit/RBAC assumptions: [clinic-identity.md](clinic-identity.md).
+Platform administration is explicitly read-only; `GET /api/v1/platform/me` requires
+global PLATFORM_ADMIN and provides no clinic bypass. Operator provisioning, MFA,
+global audit and lifecycle commands are not exposed or automatically provisioned.
+
+### Step 1.9 verification record
+
+| Executed command/check | Result |
+| --- | --- |
+| `npm run db:validate` / `npm run db:generate` | Passed; Prisma 7.10.1 schema/client |
+| `npm run db:migrate:test` / `npm run db:migrate` / `npm run db:grant` | All three migrations applied in both environments; restricted grants applied, exit 0 |
+| `npm run db:status` / `npm run db:status:test` | Eleven migrations; both databases up to date, exit 0 |
+| Read-only history/file checksum comparison | All eleven match; original eight unchanged; no reset/drop/old migration rewrite |
+| Runtime catalog audit | Four new tables have ENABLE/FORCE RLS and 20 command/maintenance policies; separate owners; runtime NOSUPERUSER/NOBYPASSRLS/NOCREATEDB/NOCREATEROLE |
+| New function ACL audit | Eight fixed-path functions; PUBLIC execute revoked; trigger definers not directly executable by runtime |
+| `npm run check:boundaries` | Passed; also runs during API build and test compilation |
+| `npm test` | 54 passed (16 web + 38 API), zero failures/skips |
+| `npm run test:db` | 166 passed, zero failures/cancellations/skips; 25 new identity cases plus all 141 previous DB cases |
+| `npm run test:browser` | 33 checks passed, zero runtime errors; includes web/API production builds, client generation and test compilation |
+| Real Chrome screenshots/print review | Arabic RTL settings/mobile, branded login/public board and retained invoice/receipt layouts; fictional artifacts in `/tmp/lamssa-step19-browser` |
+| Optional read-only `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` | Exit 2 reports only existing SQL-managed `invoice_patient_name_prefix` / `patient_number_prefix` indexes absent from Prisma annotations. The `--script` output proposes only their removal; **not applied**. Original SQL indexes remain intentionally intact |
+
+The schema comparison does not inspect RLS, triggers, function grants or custom
+constraints; review those migrations and actual runtime-credential tests separately.
+Early development assertions caught a Prisma void-result decoding issue (fixed with
+a text cast on advisory lock results), a native-Host test client issue (Node fetch
+does not send that forged header; verified with native HTTP), and a UI refresh wait
+in the browser harness. No security policy was disabled to make tests pass.
+
+## Historical Step 1.8 — native PostgreSQL setup and verification
 
 Work stays directly on `main`, as explicitly requested. Starting tree was clean at
 `e291522`, one commit ahead of origin/main. No branch, commit or push is created by

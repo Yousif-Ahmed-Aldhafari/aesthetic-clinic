@@ -1,3 +1,4 @@
+import { IdentityError, identityErrors } from '../identity/identity-error.js';
 import { BillingError, billingErrors } from '../billing/billing-error.js';
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException } from '@nestjs/common';
 import type { Response } from 'express';
@@ -11,6 +12,7 @@ const errors: Record<number, { code: string; message: string }> = {
   403: { code: 'FORBIDDEN', message: 'لا تملك صلاحية تنفيذ هذا الإجراء' },
   404: { code: 'NOT_FOUND', message: 'المورد غير موجود' },
   409: { code: 'CONFLICT', message: 'يتعارض الطلب مع الحالة الحالية' },
+  413: { code: 'IMAGE_TOO_LARGE', message: 'حجم الصورة يتجاوز الحد المسموح' },
   429: { code: 'RATE_LIMITED', message: 'يرجى المحاولة لاحقًا' },
   503: { code: 'SERVICE_UNAVAILABLE', message: 'الخدمة غير متاحة مؤقتًا' },
 };
@@ -19,7 +21,7 @@ const errors: Record<number, { code: string; message: string }> = {
 export class SafeExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
-    const error = exception instanceof BillingError ? {code:exception.code,message:billingErrors[exception.code][1]} : exception instanceof QueueError ? {code:exception.code,message:queueErrors[exception.code][1]} : exception instanceof SchedulingError ? { code: exception.code, message: schedulingErrors[exception.code][1] } : exception instanceof AuthError ? { code: exception.code, message: authErrors[exception.code].message } : errors[status] ?? (status >= 500
+    const error = exception instanceof IdentityError ? {code:exception.code,message:identityErrors[exception.code][1]} : exception instanceof BillingError ? {code:exception.code,message:billingErrors[exception.code][1]} : exception instanceof QueueError ? {code:exception.code,message:queueErrors[exception.code][1]} : exception instanceof SchedulingError ? { code: exception.code, message: schedulingErrors[exception.code][1] } : exception instanceof AuthError ? { code: exception.code, message: authErrors[exception.code].message } : errors[status] ?? (status >= 500
       ? { code: 'INTERNAL_ERROR', message: 'حدث خطأ داخلي' }
       : { code: 'REQUEST_REJECTED', message: 'تعذر تنفيذ الطلب' });
     // Do not serialize exception messages, request URLs, SQL, stacks or credentials.

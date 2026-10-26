@@ -1,6 +1,6 @@
 # Lamssa implementation roadmap
 
-Updated after Step 1.5, 2026-10-24. The user's current scope
+Updated after Step 1.9, 2026-10-26. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All
 production use remains gated on authentication, isolation and operational controls.
 
@@ -103,15 +103,18 @@ production use remains gated on authentication, isolation and operational contro
    Real-market statutory tax/e-invoice rules, credit notes, external gateways/webhooks,
    archival, reconciliation and privileged audit checkpoints remain separate work.
 
-9. **1.9 — Clinic identity administration and white-label delivery.**
-   Add authorized clinic settings/branding changes, IANA timezone/currency policy,
-   safe logo handling and publishing rules. Extend the selected-clinic branding already shown by Step 1.3 without mixing
-   demo data with operational records. Define ownership proof
-   before domain verification, subdomain/custom-domain routing and managed TLS.
-   Acceptance: themes remain Arabic RTL/accessibility compatible, suspended clinics
-   are not published, unique/verified-primary domain constraints hold, and changing
-   a host cannot grant private clinic access. Invoice/message branding is applied
-   only through each later feature's authorized clinic settings.
+9. **1.9 — Clinic identity administration and white-label delivery — implemented.**
+   Versioned private business profile, safe acknowledged/locked currency/timezone
+   policy, validated/re-encoded private image drafts and explicit immutable public
+   publication. Approved color/font preview, branded app/login/public board and
+   preserved issued invoice/receipt snapshots. Four new RLS tables include retained
+   subdomain reservations against takeover and trigger-owned configuration audit.
+   Custom domain TXT challenges establish ownership only; routing/TLS are deferred.
+   Scoped staff listing/role/status changes protect the last owner, prevent admin
+   escalation (including receptionist finance grants) and revoke affected sessions without deleting other memberships.
+   Platform administration is a distinct authorized read-only foundation. Invitation
+   delivery/acceptance and lifecycle commands require additional secure architecture.
+   See [identity contracts](clinic-identity.md) and [verification](development.md).
 
 10. **1.10 — Testing, security and release gates.**
     Add tests throughout the steps above, not only here: domain unit tests, real
@@ -120,7 +123,11 @@ production use remains gated on authentication, isolation and operational contro
     aware observability. Before real data, demonstrate backup restore, restricted
     deployment roles, audit/redaction, retention, incident response and session/CSRF
     controls. Resolve jurisdiction/hosting/consent requirements with stakeholders.
-    Clinical records, consent and protected media need their own reviewed scope.
+    Prioritize backup/restore drills for both database and managed assets, audited
+    operator provisioning/MFA, invitations/recovery, deployment/TLS/domain activation,
+    safe retention/incident response and financial/clinical compliance review.
+    Clinical records, consent and protected media need their own reviewed scope;
+    they must not reuse the intentionally public clinic-asset channel.
 
 ## Migration discipline
 

@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SafeExceptionFilter } from './common/safe-exception.filter.js';
 import type { Environment } from './config/environment.js';
 import cookieParser from 'cookie-parser';
-import { json } from 'express';
+import { json, type Request, type Response, type NextFunction } from 'express';
 
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService<Environment, true>);
@@ -17,6 +17,17 @@ export function configureApp(app: INestApplication): void {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     next();
+  });
+  // Hosts never supply tenant identity or absolute links. Ignore Forwarded-Host.
+  app.use((request:Request,response:Response,next:NextFunction)=>{
+    const host=request.headers.host;
+    try{
+      if(!host||/[\s/@#?\\]/.test(host))throw new Error();
+      const parsed=new URL('http://'+host);
+      const canonical=(value:string)=>value.toLowerCase().replace(/^\[|\]$/g,'');
+      if(!config.get('API_ALLOWED_HOSTS',{infer:true}).some(value=>canonical(value)===canonical(parsed.hostname)))throw new Error();
+      next();
+    }catch{response.status(400).json({statusCode:400,error:{code:'INVALID_REQUEST',message:'الطلب غير صالح'}});}
   });
   app.enableCors({
     origin: (origin: string | undefined, callback: (error: Error | null, allowed: boolean) => void) =>

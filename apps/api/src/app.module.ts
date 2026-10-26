@@ -1,3 +1,8 @@
+import { ClinicAdministrationController, PublicAssetController } from './identity/clinic-administration.controller.js';
+import { PlatformFoundationController } from './identity/platform-foundation.controller.js';
+import { AssetStore, LocalAssetStore } from './identity/asset-store.js';
+import { AssetService } from './identity/asset.service.js';
+import { DomainVerifier } from './identity/domain-verifier.js';
 import { BillingController } from './billing/billing.controller.js';
 import { QueueController } from './queue/queue.controller.js';
 import { PublicQueueController } from './queue/public-queue.controller.js';
@@ -27,7 +32,7 @@ import { ClinicContextController } from './clinics/clinic-context.controller.js'
     PrismaModule,
     AuthModule,
   ],
-  controllers: [BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController,HealthController, PublicBrandingController, ClinicContextController],
-  providers: [QueueStreams,PublicBrandingService],
+  controllers: [ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController,HealthController, PublicBrandingController, ClinicContextController],
+  providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],
 })
 export class AppModule {}

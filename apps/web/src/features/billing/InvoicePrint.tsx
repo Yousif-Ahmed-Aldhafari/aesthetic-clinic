@@ -1,3 +1,4 @@
+import { fontFamilies } from '../settings/branding';
 import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import type { InvoiceRecord, PaymentRecord } from './billing-api';
@@ -6,7 +7,7 @@ export function InvoicePrint({invoice:i,payment:p}:{invoice:InvoiceRecord;paymen
   const issuer=i.issuer;if(!issuer)return null;
   const money=(v:string)=>formatMoney(v,i.currency,i.currencyScale);
   const time=(v:string)=>new Intl.DateTimeFormat('ar-YE',{dateStyle:'medium',timeStyle:'short',timeZone:issuer.timezone}).format(new Date(v));
-  const paper=(id?:string)=><article id={id} className="invoice-paper" dir="rtl" lang="ar" style={{'--invoice-primary':issuer.primaryColor} as CSSProperties}>
+  const paper=(id?:string)=><article id={id} className="invoice-paper" dir="rtl" lang="ar" style={{'--invoice-primary':issuer.primaryColor,fontFamily:fontFamilies[issuer.typography??'TAJAWAL']??fontFamilies.TAJAWAL} as CSSProperties}>
     <header className="invoice-paper-header">{issuer.logoUrl&&<img src={issuer.logoUrl} alt="شعار العيادة" referrerPolicy="no-referrer"/>}<div><h2>{issuer.displayName}</h2><p>{issuer.legalName}</p>{issuer.address&&<p>{issuer.address}</p>}{issuer.registrationNumber&&<p>السجل التجاري: <bdi>{issuer.registrationNumber}</bdi></p>}{issuer.taxIdentifier&&<p>المعرّف الضريبي: <bdi>{issuer.taxIdentifier}</bdi></p>}</div><div><h3>{p?'إيصال استلام دفعة':'فاتورة'}</h3><bdi>{p?p.receiptNumber:i.number}</bdi><p>{time(p?p.createdAt:i.issuedAt!)}</p></div></header>
     <div className="invoice-recipient"><p>المريض: <b>{i.patientName}</b> · <bdi>{i.patientNumber}</bdi></p><p>رقم الفاتورة: <bdi>{i.number}</bdi></p><p>الحالة الحالية: {invoiceStatuses[i.status]}</p></div>
     {p?<section><h3>المبلغ المستلم: {money(p.amountMinor)}</h3><p>طريقة الدفع: {methodNames[p.method]}</p><p>المسترد من هذه الدفعة: {money(p.refundedMinor)}</p><p>صافي هذه الدفعة: {money((BigInt(p.amountMinor)-BigInt(p.refundedMinor)).toString())}</p><p>هذا إثبات تسجيل يدوي للدفع، وليس عملية بوابة دفع إلكترونية.</p></section>:<div className="table-wrap"><table><thead><tr><th>الخدمة / الوصف</th><th>الكمية</th><th>سعر الوحدة</th><th>الخصم</th><th>الضريبة</th><th>الإجمالي</th></tr></thead><tbody>{i.lines.map(l=><tr key={l.position}><td>{l.serviceName}{l.description&&<small>{l.description}</small>}</td><td><bdi>{decimal(String(l.quantityMilli),3)}</bdi></td><td>{money(l.unitPriceMinor)}</td><td>{money(l.discountMinor)}</td><td>{money(l.taxMinor)}</td><td>{money(l.totalMinor)}</td></tr>)}</tbody></table></div>}

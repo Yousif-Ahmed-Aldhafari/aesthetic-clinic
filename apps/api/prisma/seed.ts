@@ -24,7 +24,8 @@ export async function seedDemoClinics(prisma: PrismaClient): Promise<void> {
     for (const fixture of clinics) {
       const { hostname, primaryColor, secondaryColor, accentColor, ...data } = fixture;
       const clinic = await tx.clinic.upsert({ where: { id: data.id }, create: data, update: {} });
-      if (clinic.slug !== data.slug) throw new Error('Demo clinic identity collision');
+      // Existing names, slug reservations and branding belong to the clinic.
+      // A seed rerun never restores defaults over administrator edits.
       await tx.clinicBranding.upsert({
         where: { clinicId: clinic.id },
         create: { clinicId: clinic.id, primaryColor, secondaryColor, accentColor }, update: {},

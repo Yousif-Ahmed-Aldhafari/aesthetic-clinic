@@ -48,11 +48,11 @@ export class BillingRepository {
     if(current.issueKey===input.requestKey){if(current.issueHash!==hash)throw new BillingError('BILLING_RETRY');return invoiceDetail(tx,c.clinicId,id);}
     if(current.version!==input.expectedVersion)throw new BillingError('BILLING_STALE');
     if(current.status!=='DRAFT'||current.totalMinor<=0n)throw new BillingError('BILLING_STATE');
-    const clinic=await tx.clinic.findFirstOrThrow({where:{id:c.clinicId},select:{legalName:true,displayName:true,currency:true,timezone:true,branding:{select:{logoUrl:true,primaryColor:true,secondaryColor:true,accentColor:true}}}});
+    const clinic=await tx.clinic.findFirstOrThrow({where:{id:c.clinicId},select:{legalName:true,displayName:true,currency:true,timezone:true,address:true,branding:{select:{typography:true,logoUrl:true,primaryColor:true,secondaryColor:true,accentColor:true}}}});
     const profile=await tx.clinicBillingProfile.findFirst({where:{clinicId:c.clinicId},select:profileSelect});
     const patient=await tx.patient.findFirstOrThrow({where:{clinicId:c.clinicId,id:current.patientId},select:{fullName:true,patientNumber:true}});
     const counter=await tx.clinicInvoiceCounter.update({where:{clinicId:c.clinicId},data:{lastNumber:{increment:1},revision:{increment:1}},select:{lastNumber:true}});
-    const issuer={legalName:clinic.legalName,displayName:clinic.displayName,timezone:clinic.timezone,logoUrl:clinic.branding?.logoUrl??null,primaryColor:clinic.branding?.primaryColor??'#7854D9',secondaryColor:clinic.branding?.secondaryColor??'#F6F8FC',address:profile?.address??null,registrationNumber:profile?.registrationNumber??null,taxIdentifier:profile?.taxIdentifier??null};
+    const issuer={typography:clinic.branding?.typography??'TAJAWAL',legalName:clinic.legalName,displayName:clinic.displayName,timezone:clinic.timezone,logoUrl:clinic.branding?.logoUrl??null,primaryColor:clinic.branding?.primaryColor??'#7854D9',secondaryColor:clinic.branding?.secondaryColor??'#F6F8FC',address:profile?.address??clinic.address??null,registrationNumber:profile?.registrationNumber??null,taxIdentifier:profile?.taxIdentifier??null};
     const row=await tx.invoice.update({where:{clinicId_id:{clinicId:c.clinicId,id}},data:{status:'ISSUED',number:`INV-${String(counter.lastNumber).padStart(6,'0')}`,issuedAt:new Date(),issuerSnapshot:issuer,patientName:patient.fullName,patientNumber:patient.patientNumber,issueKey:input.requestKey,issueHash:hash,version:{increment:1}}});
     await audit(tx,c,'INVOICE_ISSUED',id,row.version,{number:row.number,totalMinor:row.totalMinor.toString(),currency:row.currency,snapshotHash:financialHash(issuer)});
     return invoiceDetail(tx,c.clinicId,id);
