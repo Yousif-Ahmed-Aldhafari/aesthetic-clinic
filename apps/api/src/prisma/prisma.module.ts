@@ -1,3 +1,4 @@
+import { ClinicAdministrationRepository } from './clinic-administration.repository.js';
 import { BillingRepository } from './billing.repository.js';
 import { QueueRepository } from './queue.repository.js';
 import { PublicQueueRepository } from './public-queue.repository.js';
@@ -14,8 +15,8 @@ import { ClinicRepository } from './clinic.repository.js';
 import { DatabaseHealthService } from './database-health.service.js';
 
 @Module({
-  providers:[BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService],
+  providers:[ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService],
   // Raw Prisma is private to database infrastructure, never exported to features.
-  exports:[BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService],
+  exports:[ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService],
 })
 export class PrismaModule {}

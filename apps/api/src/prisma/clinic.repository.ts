@@ -8,7 +8,7 @@ export class ClinicRepository {
   context(proof:VerifiedPrincipal,clinicId:string,required:readonly Permission[]) {
     return this.database.withClinicContext(proof,clinicId,required,async(tx,context)=>{
       const b=await tx.clinicBranding.findUnique({where:{clinicId:context.clinicId}});
-      return {...context,branding:b?{logoUrl:b.logoUrl,primaryColor:b.primaryColor,secondaryColor:b.secondaryColor,accentColor:b.accentColor}:null};
+      return {...context,branding:b?{logoUrl:b.logoUrl,primaryColor:b.primaryColor,secondaryColor:b.secondaryColor,accentColor:b.accentColor,faviconUrl:b.faviconUrl,typography:b.typography}:null};
     });
   }
   settings(proof:VerifiedPrincipal,clinicId:string) {

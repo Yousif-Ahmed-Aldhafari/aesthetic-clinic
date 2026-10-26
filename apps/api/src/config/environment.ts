@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { isAbsolute } from 'node:path';
 
 export type Environment = {
   NODE_ENV: 'development' | 'test' | 'production';
@@ -12,6 +13,9 @@ export type Environment = {
   AUTH_LOGIN_ACCOUNT_LIMIT: number;
   AUTH_LOGIN_IP_LIMIT: number;
   TRUST_PROXY_HOPS: number;
+  PLATFORM_BASE_DOMAIN: string;
+  API_ALLOWED_HOSTS: string[];
+  ASSET_STORAGE_DIR: string | null;
 };
 
 export function validateEnvironment(input: Record<string, unknown>): Environment {
@@ -54,6 +58,12 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
           (mode === 'production' && url.protocol !== 'https:')) errors.push('CORS_ORIGINS');
     } catch { errors.push('CORS_ORIGINS'); }
   }
+  const platformBase=String(input.PLATFORM_BASE_DOMAIN??'lamssa.localhost').toLowerCase();
+  if(platformBase.length>190||!/^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/.test(platformBase))errors.push('PLATFORM_BASE_DOMAIN');
+  const hosts=typeof input.API_ALLOWED_HOSTS==='string'?input.API_ALLOWED_HOSTS.split(',').map(v=>v.trim().toLowerCase()).filter(Boolean):[String(host),...(mode==='production'?[]:['localhost']),...origins.flatMap(o=>{try{return[new URL(o).hostname];}catch{return[];}})];
+  if(!hosts.length||hosts.some(h=>!isIP(h.replace(/^\[|\]$/g,''))&&!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(h)))errors.push('API_ALLOWED_HOSTS');
+  const assetDir=input.ASSET_STORAGE_DIR===undefined?null:input.ASSET_STORAGE_DIR;
+  if(assetDir!==null&&(typeof assetDir!=='string'||!isAbsolute(assetDir)||assetDir.includes('\0')))errors.push('ASSET_STORAGE_DIR');
   // Report variable names only; never interpolate secrets or raw validation input.
   if (errors.length) throw new Error(`Invalid environment variables: ${[...new Set(errors)].join(', ')}`);
   return {
@@ -61,5 +71,6 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     API_PORT: port, CORS_ORIGINS: origins, DATABASE_URL: databaseUrl,
     AUTH_CSRF_SECRET: csrfKey, AUTH_SESSION_HOURS: hours, AUTH_IDLE_MINUTES: idle,
     AUTH_LOGIN_ACCOUNT_LIMIT: accountLimit, AUTH_LOGIN_IP_LIMIT: ipLimit, TRUST_PROXY_HOPS: proxyHops,
+    PLATFORM_BASE_DOMAIN:platformBase,API_ALLOWED_HOSTS:[...new Set(hosts)],ASSET_STORAGE_DIR:assetDir as string|null,
   };
 }

@@ -213,7 +213,7 @@ live('CSRF rejects missing/foreign origins, missing/forged tokens and cross-site
 });
 live('public branding stays unauthenticated and contains no private fields',async()=>{
   const results=[];
-  for(const slug of slugs){const r=await new Browser().request(`public/clinics/${slug}/branding`);assert.equal(r.status,200);const data=await r.json() as {branding:{primaryColor:string}};assert.deepEqual(Object.keys(data).sort(),['branding','displayName','slug']);assert.deepEqual(Object.keys(data.branding).sort(),['accentColor','logoUrl','primaryColor','secondaryColor']);results.push(data);}
+  for(const slug of slugs){const r=await new Browser().request(`public/clinics/${slug}/branding`);assert.equal(r.status,200);const data=await r.json() as {branding:{primaryColor:string}};assert.deepEqual(Object.keys(data).sort(),['branding','displayName','slug']);assert.deepEqual(Object.keys(data.branding).sort(),['accentColor','faviconUrl','logoUrl','primaryColor','secondaryColor','typography']);results.push(data);}
   assert.notEqual(results[0].branding.primaryColor,results[1].branding.primaryColor);
 });
 live('login rate limit persists across fresh clients and ignores spoofed forwarding header',async()=>{

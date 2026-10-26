@@ -42,6 +42,8 @@ after(async()=>{
     await owner.user.deleteMany({where:{id:{in:users}}});
     await owner.clinicDomain.deleteMany({where:{clinicId:{in:clinics}}});
     await owner.clinicBranding.deleteMany({where:{clinicId:{in:clinics}}});
+    await owner.clinicIdentityAuditEvent.deleteMany({where:{clinicId:{in:clinics}}});
+    await owner.clinicIdentityState.deleteMany({where:{clinicId:{in:clinics}}});
     await owner.clinic.deleteMany({where:{id:{in:clinics}}});
   }
   await pool?.end();await runtime?.$disconnect();await owner?.$disconnect();
@@ -85,7 +87,7 @@ live('same-clinic domain INSERT/UPDATE/DELETE succeeds under runtime credentials
   const id=randomUUID();
   await scoped(0,async c=>{
     assert.equal((await c.query('INSERT INTO public."ClinicDomain" (id,"clinicId",hostname,"updatedAt") VALUES ($1,$2,$3,NOW())',[id,clinics[0],`own-${suffix}.example.invalid`])).rowCount,1);
-    assert.equal((await c.query('UPDATE public."ClinicDomain" SET hostname=$1 WHERE id=$2',[`updated-${suffix}.example.invalid`,id])).rowCount,1);
+    assert.equal((await c.query('UPDATE public."ClinicDomain" SET "verificationStatus"="verificationStatus",version=version+1 WHERE id=$2 AND hostname<>$1',[`updated-${suffix}.example.invalid`,id])).rowCount,1);
     assert.equal((await c.query('DELETE FROM public."ClinicDomain" WHERE id=$1',[id])).rowCount,1);
   });
 });
@@ -95,7 +97,7 @@ live('clinicId reassignment is rejected even by the maintenance owner',async()=>
   assert.equal((await owner.clinicDomain.findUniqueOrThrow({where:{id:domains[0]}})).clinicId,clinics[0]);
 });
 live('runtime cannot change global users, clinic roots, or membership roles',async()=>{
-  for(const sql of ['UPDATE public."User" SET status=status','UPDATE public."Clinic" SET status=status','UPDATE public."ClinicMembership" SET role=role'])await assert.rejects(pool.query(sql),denied);
+  for(const sql of ['UPDATE public."User" SET status=status','UPDATE public."Clinic" SET status=status','UPDATE public."ClinicMembership" SET "userId"="userId"'])await assert.rejects(pool.query(sql),denied);
 });
 live('RLS remains active under row_security=off and runtime cannot change policies or owner role',async()=>{
   await assert.rejects(scoped(0,async c=>{await c.query('SET LOCAL row_security=off');return c.query('SELECT * FROM public."ClinicBranding"');}),denied);
@@ -110,8 +112,8 @@ live('FORCE RLS, explicit command policies, and locked definer search paths are 
   assert.equal(tables.length,4);assert(tables.every(t=>t.relrowsecurity&&t.relforcerowsecurity));
   for(const t of tables){const policies=(await pool.query('SELECT cmd FROM pg_policies WHERE schemaname=$1 AND tablename=$2',['public',t.relname])).rows.map(r=>r.cmd).sort();assert.deepEqual(policies,['ALL','DELETE','INSERT','SELECT','UPDATE']);}
   const functions=(await pool.query(`SELECT p.proname,p.prosecdef,p.proconfig,EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE') AS public_execute FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='lamssa_security'`)).rows;
-  assert.equal(functions.length,14);assert(functions.every(f=>f.proconfig.includes('search_path=pg_catalog, pg_temp')&&!f.public_execute));
-  assert.deepEqual(functions.filter(f=>f.prosecdef).map(f=>f.proname).sort(),['context_allows','identity_memberships','public_branding','public_queue']);
+  assert.equal(functions.length,22);assert(functions.every(f=>f.proconfig.includes('search_path=pg_catalog, pg_temp')&&!f.public_execute));
+  assert.deepEqual(functions.filter(f=>f.prosecdef).map(f=>f.proname).sort(),['administration_locks','context_allows','identity_guard','identity_memberships','identity_record','membership_privilege_guard','public_brand_asset','public_branding','public_branding_details','public_queue','reserve_clinic_slug']);
 });
 live('concurrent runtime transactions use distinct connections without context contamination',async()=>{
   const results=await Promise.all([0,1,0,1].map(i=>scoped(i,async c=>{
@@ -148,7 +150,7 @@ live('central Prisma transactions isolate concurrent reads and roll back failed 
     const rows=await tx.clinicBranding.findMany();assert.deepEqual(rows.map(r=>r.clinicId),[clinics[i]]);return rows[0].primaryColor;
   })));
   assert.notEqual(results[0],results[1]);
-  await assert.rejects(database.withClinicContext(proofs[0],clinics[0],['clinic.branding.update'],async tx=>{await tx.clinicBranding.update({where:{clinicId:clinics[0]},data:{primaryColor:'#123456'}});throw new Error('intentional fixture rollback');}));
+  await assert.rejects(database.withClinicContext(proofs[0],clinics[0],['clinic.branding.update'],async tx=>{await tx.clinicBranding.update({where:{clinicId:clinics[0]},data:{primaryColor:'#123456',version:{increment:1}}});throw new Error('intentional fixture rollback');}));
   assert.equal((await owner.clinicBranding.findUniqueOrThrow({where:{clinicId:clinics[0]}})).primaryColor,'#7854D9');
   assert.equal(await runtime.clinicBranding.count(),0);
 });
@@ -182,7 +184,7 @@ live('public branding function exposes only approved fields without tenant GUCs'
 live('migrations remain applied and maintenance seed stays idempotent under FORCE RLS',async()=>{
   // Roll back the seed exercise so the test DB retains no extra seed records.
   const {owner:ownerUrl}=testUrls();const setup=new Pool({connectionString:ownerUrl,max:1});
-  try{const rows=(await setup.query('SELECT migration_name FROM public._prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name')).rows;assert.equal(rows.length,8);}finally{await setup.end();}
+  try{const rows=(await setup.query('SELECT migration_name FROM public._prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name')).rows;assert.equal(rows.length,11);}finally{await setup.end();}
   const before=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true}});
   await seedDemoClinics(owner);const once=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true},orderBy:{slug:'asc'}});
   await seedDemoClinics(owner);const twice=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true},orderBy:{slug:'asc'}});assert.deepEqual(twice,once);assert.notEqual(twice[0].branding!.primaryColor,twice[1].branding!.primaryColor);

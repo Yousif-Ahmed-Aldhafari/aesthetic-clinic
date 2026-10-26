@@ -1,6 +1,6 @@
 export interface ClinicContext {
   clinicId: string; slug: string; displayName: string; role: string; permissions: string[];
-  branding: { logoUrl: string | null; primaryColor: string; secondaryColor: string; accentColor: string | null } | null;
+  branding: { logoUrl: string | null; primaryColor: string; secondaryColor: string; accentColor: string | null; faviconUrl?:string|null; typography?:string } | null;
 }
 export interface SessionInfo {
   user: { id: string; name: string; email: string }; selectedClinicId: string | null; csrfToken: string; expiresAt: string;

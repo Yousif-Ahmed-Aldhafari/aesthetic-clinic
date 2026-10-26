@@ -10,3 +10,4 @@ apps/api/src/generated/
 coverage/
 dist-test/
 *.log
+/var/clinic-assets/

@@ -1,6 +1,6 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.8 — current implementation, 2026-10-25.
+Phase 1, Steps 1.1–1.9 — current implementation, 2026-10-26.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
 appointment scheduling, visits, live queues, invoices and payments now persist per clinic through mandatory tenant transactions,
@@ -10,6 +10,51 @@ Dashboard metrics and explicitly selected legacy workflows retain browser demo d
 remains an explicitly separate optional demo. No clinical records, photographs or automatic demo import are
 implemented. Use only fictional data until production privacy and operational controls
 are reviewed.
+
+## Step 1.9: clinic identity administration
+
+Clinic settings, branding publication and staff management extend the existing
+tenant transaction boundary. Four new tenant-owned tables are ENABLE/FORCE RLS:
+ClinicAsset, ClinicSlugReservation, ClinicIdentityState and ClinicIdentityAuditEvent.
+Clinic remains tenant-root metadata; User/Session/LoginBucket remain global security.
+Root/branding/domain/membership fields gain explicit versions, nullable private
+business details, managed assets and hashed expiring domain proof metadata.
+
+Every tenant transaction takes a shared transaction-local identity advisory lock;
+validated administration writes take it exclusively. Currency/timezone changes
+require acknowledgment and are locked after relevant records exist. SQL triggers
+additionally reject unsafe changes and serialize last-owner checks. No issued
+invoice snapshot is rewritten; future issuance captures current legal identity,
+approved typography and a stable managed logo URL. Finance permissions stay separate.
+
+Audited writes use one repository, enforced by the expanded AST boundary checker.
+Narrow fixed-path trigger definers publish owned assets, validate role transitions,
+allocate audit sequences and revoke affected sessions; runtime cannot execute these
+functions directly or manufacture audit records. Read helpers expose only allowed
+branding, published derivative metadata and administrative boolean lock flags.
+Actor/configuration hash chains provide application-level tamper evidence; privileged
+maintenance remains an explicitly trusted, separate boundary.
+
+Image signatures/decoder/size/dimension checks and Sharp re-encoding produce immutable
+PNG/WebP derivatives. AssetStore supports a private local development directory and
+future object storage; private drafts require authorization, public publication is
+explicit. New immutable URLs invalidate caches on replacement; retained published
+assets preserve historical print identity. No binary database storage or arbitrary
+uploaded SVG/HTML/external asset URL is accepted. Legacy logo URLs are preserved.
+
+Platform subdomains retain former reservations against takeover. Custom domains use
+one-time hashed TXT proof and accurate pending/failed/verified ownership states;
+routingActive is always false. Host allowlists do not authorize clinic membership.
+DNS routing/TLS/production redirects and domain dispute/release flows are deferred.
+Staff administration cannot delete global accounts, remove the last owner or let an
+admin grant owner/admin/finance authority. Electronic invitations remain deferred.
+The separate PLATFORM_ADMIN-only interface is read-only: lifecycle commands need
+MFA, scoped operations and global audit before implementation, with no clinic bypass.
+
+Arabic settings/preview, branded login by explicit slug, refreshed app/public board,
+favicon cleanup, print snapshots and stale-request protection are implemented. There
+is no new browser persistence. See [clinic identity contracts and limits](clinic-identity.md)
+and [actual verification](development.md).
 
 ## Step 1.8: persistent financial records
 

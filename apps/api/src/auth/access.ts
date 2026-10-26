@@ -13,4 +13,4 @@ import type { AuthUser } from '../prisma/identity.database.js';
 import type { VerifiedPrincipal } from '../prisma/verified-sessions.js';
 export type AuthSession = Prisma.SessionGetPayload<{}>;
 export type AuthRequest = Request & { auth?: { user: AuthUser; session: AuthSession; principal: VerifiedPrincipal }; clinicContext?: ClinicContext };
-export type ClinicContext = { clinicId: string; slug: string; displayName: string; role: AuthUser['memberships'][number]['role']; permissions: readonly Permission[]; branding: { logoUrl: string | null; primaryColor: string; secondaryColor: string; accentColor: string | null } | null };
+export type ClinicContext = { clinicId: string; slug: string; displayName: string; role: AuthUser['memberships'][number]['role']; permissions: readonly Permission[]; branding: { logoUrl: string | null; primaryColor: string; secondaryColor: string; accentColor: string | null; faviconUrl?:string|null; typography?:string } | null };
