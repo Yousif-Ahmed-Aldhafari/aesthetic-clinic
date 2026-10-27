@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { api, ApiError, roleNames, type ClinicContext } from '../auth/api';
 import { RequestScope } from '../../lib/request-scope';
 import { brandStyle, readableColors } from './branding';
@@ -17,18 +17,19 @@ const nullable=(v:FormDataEntryValue|null)=>typeof v==='string'&&v.trim()?v.trim
 export function ClinicSettings(p:Props){
   const[tab,setTab]=useState('profile'),[revision,setRevision]=useState(0),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
   const gate=useMemo(()=>new RequestScope(),[p.clinic.clinicId]);useEffect(()=>()=>gate.cancel(),[gate]);
-  const execute=async<T,>(work:(signal:AbortSignal)=>Promise<T>)=>{if(busy)return;const token=gate.start();setBusy(true);setError('');setMessage('');try{const value=await work(token.signal);if(token.current()){setMessage('تم حفظ التغيير.');return value;}}catch(e){if(token.current()){setError(e instanceof ApiError?e.message:'تعذّر تأكيد العملية. حدّث السجل قبل إعادة الإرسال.');if(e instanceof ApiError&&e.status===401)p.onAuthError(e);}}finally{if(token.current())setBusy(false);}};
+  const execute=async<T,>(work:(signal:AbortSignal)=>Promise<T>)=>{if(busy)return;const token=gate.start();setBusy(true);setError('');setMessage('');try{const value=await work(token.signal);if(token.current()){setMessage('تم حفظ التغيير.');return value;}}catch(e){if(token.current()){setError(e instanceof ApiError?e.message:'تعذّر تأكيد العملية. حدّث السجل قبل إعادة الإرسال.');if(e instanceof ApiError&&(e.status===401||e.code==='MFA_STEP_UP_REQUIRED'||e.code==='MFA_SETUP_REQUIRED'))p.onAuthError(e);}}finally{if(token.current())setBusy(false);}};
   const actions:Actions={busy,write:<T,>(path:string,body:unknown,method='PATCH')=>execute<T>(signal=>api<T>(`clinics/${p.clinic.clinicId}/identity/${path}`,method,body,p.csrfToken,signal)),upload:(purpose,file)=>execute(signal=>uploadAsset(p.clinic.clinicId,purpose,file,p.csrfToken,signal))};
   const refresh=()=>setRevision(n=>n+1),updated=async()=>{refresh();try{await p.onUpdated();}catch(e){setError('حُفظ التغيير، وتعذّر تحديث هوية الصفحة. أعد تحميل الصفحة.');if(e instanceof ApiError&&e.status===401)p.onAuthError(e);}};
   if(!p.clinic.permissions.includes('clinic.settings.read'))return <p role="alert">لا تملك صلاحية إدارة إعدادات هذه العيادة.</p>;
   return <section className="clinic-settings" dir="rtl"><div className="settings-intro"><span className="auth-kicker">هوية مستقلة لكل عيادة</span><h3>{p.clinic.displayName}</h3><p>هذه إعدادات العيادة المختارة. إدارة المنصة منفصلة ولا تمنح وصولًا إلى سجلات العيادات.</p></div>
-    <nav className="settings-tabs" aria-label="أقسام إعدادات العيادة">{[['profile','بيانات العيادة'],['branding','الهوية البصرية'],['domains','النطاقات'],['members','فريق العمل'],['audit','سجل التغييرات']].map(([id,label])=><button key={id} className={tab===id?'selected':''} aria-pressed={tab===id} disabled={busy} onClick={()=>{setTab(id);setMessage('');setError('');}}>{label}</button>)}</nav>
+    <nav className="settings-tabs" aria-label="أقسام إعدادات العيادة">{[['profile','بيانات العيادة'],['branding','الهوية البصرية'],['domains','النطاقات'],['members','فريق العمل'],['audit','سجل التغييرات'],['security','الأمان والجلسات']].map(([id,label])=><button key={id} className={tab===id?'selected':''} aria-pressed={tab===id} disabled={busy} onClick={()=>{setTab(id);setMessage('');setError('');}}>{label}</button>)}</nav>
     {error&&<p className="patient-error" role="alert">{error}</p>}{message&&<p className="settings-success" role="status">{message}</p>}<div aria-busy={busy}>
     {tab==='profile'&&<ProfilePane key={tab} p={p} actions={actions} revision={revision} saved={updated}/>}
     {tab==='branding'&&<BrandingPane key={tab} p={p} actions={actions} revision={revision} saved={updated}/>}
     {tab==='domains'&&<DomainsPane key={tab} p={p} actions={actions} revision={revision} saved={updated}/>}
     {tab==='members'&&<StaffPane key={tab} p={p} actions={actions} revision={revision} saved={refresh}/>}
     {tab==='audit'&&<AuditPane key={tab} p={p} revision={revision}/>}
+    {tab==='security'&&<SecurityPane key={tab} p={p} revision={revision}/>}
     </div><button className="auth-text-button" disabled={busy} onClick={refresh}>تحديث البيانات</button>
   </section>;
 }
@@ -225,4 +226,408 @@ function AuditPane({p,revision}:{p:Props;revision:number}){
       </Modal>
     )}
   </section>;
+}
+
+interface MfaStatusDto {
+  enrolled: boolean;
+  status: string;
+  enrolledAt: string | null;
+  remainingRecoveryCodes: number;
+  required: boolean;
+}
+
+interface SessionItemDto {
+  id: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  isCurrent: boolean;
+  ipAddress: string;
+  deviceSummary: string;
+  mfaVerifiedAt: string | null;
+}
+
+function SecurityPane({ p, revision }: { p: Props; revision: number }) {
+  const [mfa, setMfa] = useState<MfaStatusDto | null>(null);
+  const [sessions, setSessions] = useState<SessionItemDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [actionMsg, setActionMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const [setupStep, setSetupStep] = useState<'idle' | 'password' | 'verify'>('idle');
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupData, setSetupData] = useState<{ base32Secret: string; otpauthUri: string; recoveryCodes: string[] } | null>(null);
+  const [verifyOtp, setVerifyOtp] = useState('');
+
+  const [showDisableModal, setShowDisableModal] = useState(false);
+  const [disablePassword, setDisablePassword] = useState('');
+  const [disableOtp, setDisableOtp] = useState('');
+
+  const [newCodes, setNewCodes] = useState<string[] | null>(null);
+
+  const loadData = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const [mfaData, sessData] = await Promise.all([
+        api<MfaStatusDto>('auth/mfa/status'),
+        api<SessionItemDto[]>('auth/sessions'),
+      ]);
+      setMfa(mfaData);
+      setSessions(sessData);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'تعذّر تحميل بيانات الأمان');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadData(); }, [loadData, revision]);
+
+  async function startSetup(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setError('');
+    try {
+      const res = await api<{ base32Secret: string; otpauthUri: string; recoveryCodes: string[] }>('auth/mfa/setup', 'POST', { password: setupPassword }, p.csrfToken);
+      setSetupData(res);
+      setSetupStep('verify');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'تعذّر بدء إعداد التحقق بخطوتين');
+    } finally {
+      setBusy(false); setSetupPassword('');
+    }
+  }
+
+  async function completeSetup(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setError('');
+    try {
+      await api('auth/mfa/verify-setup', 'POST', { code: verifyOtp.trim() }, p.csrfToken);
+      setActionMsg('تم تفعيل التحقق بخطوتين بنجاح!');
+      setSetupStep('idle'); setSetupData(null); setVerifyOtp('');
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'رمز التحقق غير صحيح');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disableMfa(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setError('');
+    try {
+      await api('auth/mfa/disable', 'POST', { password: disablePassword, code: disableOtp.trim() }, p.csrfToken);
+      setShowDisableModal(false); setDisablePassword(''); setDisableOtp('');
+      setActionMsg('تم تعطيل التحقق بخطوتين.');
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'تعذّر تعطيل التحقق بخطوتين');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function regenerateCodes() {
+    const pass = window.prompt('أدخل كلمة المرور الحالية لتجديد رموز الاسترداد:');
+    if (!pass) return;
+    setBusy(true); setError('');
+    try {
+      const res = await api<{ recoveryCodes: string[] }>('auth/mfa/recovery-codes/regenerate', 'POST', { password: pass }, p.csrfToken);
+      setNewCodes(res.recoveryCodes);
+      await loadData();
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'MFA_STEP_UP_REQUIRED') {
+        p.onAuthError(err);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'تعذّر تجديد رموز الاسترداد');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeSession(id: string) {
+    if (!window.confirm('هل تريد إنهاء هذه الجلسة؟')) return;
+    setBusy(true); setError('');
+    try {
+      await api(`auth/sessions/${id}`, 'DELETE', undefined, p.csrfToken);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'تعذّر إنهاء الجلسة');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeOtherSessions() {
+    if (!window.confirm('هل تريد إنهاء جميع الجلسات الأخرى المسجلة لهذا الحساب؟')) return;
+    setBusy(true); setError('');
+    try {
+      const res = await api<{ revokedCount: number }>('auth/sessions', 'DELETE', undefined, p.csrfToken);
+      setActionMsg(`تم إنهاء ${res.revokedCount} جلسة نشطة أخرى.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'تعذّر إنهاء الجلسات');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) return <p role="status">جارٍ تحميل إعدادات الأمان…</p>;
+
+  return (
+    <section className="security-settings">
+      {error && <p className="patient-error" role="alert">{error}</p>}
+      {actionMsg && <p className="settings-success" role="status">{actionMsg}</p>}
+
+      <div className="security-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h4>التحقق بخطوتين (TOTP MFA)</h4>
+            <p style={{ margin: '4px 0', fontSize: 13, color: '#5f6e83' }}>
+              تأمين الحساب باستخدام تطبيق المصادقة (Google Authenticator, Microsoft Authenticator أو 1Password).
+            </p>
+          </div>
+          <div>
+            {mfa?.enrolled ? (
+              <span className="security-badge-active">مفعّل ✓</span>
+            ) : (
+              <span className="security-badge-disabled">غير مفعّل</span>
+            )}
+          </div>
+        </div>
+
+        {mfa?.required && !mfa.enrolled && (
+          <div className="auth-message" style={{ margin: '12px 0' }}>
+            التحقق بخطوتين إلزامي لدورك في هذه العيادة. يرجى تفعيله للمتابعة والوصول إلى العمليات الحساسة.
+          </div>
+        )}
+
+        {mfa?.enrolled ? (
+          <div style={{ marginTop: 16 }}>
+            <p style={{ fontSize: 13, color: '#334155' }}>
+              تم تفعيل التحقق بخطوتين لحسابك. الرموز المتبقية للاسترداد: <strong>{mfa.remainingRecoveryCodes}</strong> من 8.
+            </p>
+            <div className="settings-actions">
+              <button type="button" className="table-btn" disabled={busy} onClick={() => void regenerateCodes()}>
+                تجديد رموز الاسترداد
+              </button>
+              <button
+                type="button"
+                className="table-btn"
+                style={{ color: '#b91c1c' }}
+                disabled={busy}
+                onClick={() => setShowDisableModal(true)}
+              >
+                تعطيل التحقق بخطوتين
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginTop: 16 }}>
+            {setupStep === 'idle' && (
+              <button type="button" className="primary-btn" disabled={busy} onClick={() => setSetupStep('password')}>
+                بدء إعداد التحقق بخطوتين ←
+              </button>
+            )}
+
+            {setupStep === 'password' && (
+              <form onSubmit={(e) => void startSetup(e)} style={{ maxWidth: 360, marginTop: 12 }}>
+                <label className="settings-field">
+                  أدخل كلمة المرور الحالية لتأكيد الهوية:
+                  <input
+                    type="password"
+                    dir="ltr"
+                    autoComplete="current-password"
+                    required
+                    value={setupPassword}
+                    onChange={(e) => setSetupPassword(e.target.value)}
+                    disabled={busy}
+                  />
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="submit" className="primary-btn" disabled={busy}>
+                    متابعة ←
+                  </button>
+                  <button type="button" className="table-btn" onClick={() => setSetupStep('idle')}>
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {setupStep === 'verify' && setupData && (
+              <div style={{ marginTop: 12 }}>
+                <p style={{ fontSize: 13 }}>
+                  1. انسخ المفتاح السري التالي أو أضفه في تطبيق المصادقة:
+                </p>
+                <div className="totp-secret-box">{setupData.base32Secret}</div>
+                <small style={{ color: '#64748b' }}>
+                  رابط المصادقة: <bdi dir="ltr">{setupData.otpauthUri}</bdi>
+                </small>
+
+                <p style={{ fontSize: 13, marginTop: 16, fontWeight: 'bold' }}>
+                  2. احفظ رموز الاسترداد التالية في مكان آمن (تُعرض مرة واحدة فقط):
+                </p>
+                <div className="recovery-grid">
+                  {setupData.recoveryCodes.map((code, idx) => (
+                    <div key={idx} className="recovery-code-box">
+                      {code}
+                    </div>
+                  ))}
+                </div>
+
+                <form onSubmit={(e) => void completeSetup(e)} style={{ maxWidth: 360, marginTop: 16 }}>
+                  <label className="settings-field">
+                    3. أدخل رمز التحقق المكوّن من 6 أرقام لتأكيد التفعيل:
+                    <input
+                      type="text"
+                      dir="ltr"
+                      maxLength={6}
+                      placeholder="000000"
+                      required
+                      value={verifyOtp}
+                      onChange={(e) => setVerifyOtp(e.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="submit" className="primary-btn" disabled={busy}>
+                      تأكيد وتفعيل التحقق بخطوتين ✓
+                    </button>
+                    <button type="button" className="table-btn" onClick={() => setSetupStep('idle')}>
+                      إلغاء
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="security-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <h4>الجلسات النشطة والأجهزة</h4>
+            <p style={{ margin: '4px 0', fontSize: 13, color: '#5f6e83' }}>
+              إدارة الأجهزة والجلسات المسجلة حاليًا لحسابك مع حجب عناوين IP لحماية الخصوصية.
+            </p>
+          </div>
+          {sessions.length > 1 && (
+            <button type="button" className="table-btn" disabled={busy} onClick={() => void revokeOtherSessions()}>
+              إنهاء جميع الجلسات الأخرى
+            </button>
+          )}
+        </div>
+
+        <table className="audit-table">
+          <thead>
+            <tr>
+              <th>الجهاز والبيئة</th>
+              <th>عنوان IP</th>
+              <th>آخر ظهور</th>
+              <th>الإجراء</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sessions.map((s) => (
+              <tr key={s.id}>
+                <td>
+                  <strong>{s.deviceSummary}</strong>
+                  {s.isCurrent && <span className="session-current-badge">هذه الجلسة</span>}
+                </td>
+                <td dir="ltr" style={{ textAlign: 'right' }}>
+                  {s.ipAddress}
+                </td>
+                <td>
+                  {new Intl.DateTimeFormat('ar-YE', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                    timeZone: 'UTC',
+                  }).format(new Date(s.lastSeenAt))}
+                </td>
+                <td>
+                  {!s.isCurrent && (
+                    <button
+                      type="button"
+                      className="table-btn"
+                      style={{ color: '#b91c1c' }}
+                      disabled={busy}
+                      onClick={() => void revokeSession(s.id)}
+                    >
+                      إنهاء
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showDisableModal && (
+        <Modal title="تعطيل التحقق بخطوتين" onClose={() => setShowDisableModal(false)}>
+          <form onSubmit={(e) => void disableMfa(e)} style={{ padding: 12 }}>
+            <p style={{ fontSize: 13, color: '#b91c1c' }}>
+              تحذير: تعطيل التحقق بخطوتين يقلل من أمان حسابك وسيلغي جميع رموز الاسترداد السابقة.
+            </p>
+            <label className="settings-field">
+              كلمة المرور الحالية:
+              <input
+                type="password"
+                dir="ltr"
+                required
+                value={disablePassword}
+                onChange={(e) => setDisablePassword(e.target.value)}
+                disabled={busy}
+              />
+            </label>
+            <label className="settings-field">
+              رمز التحقق (6 أرقام) أو رمز استرداد:
+              <input
+                type="text"
+                dir="ltr"
+                required
+                value={disableOtp}
+                onChange={(e) => setDisableOtp(e.target.value)}
+                disabled={busy}
+              />
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                type="submit"
+                className="primary-btn"
+                style={{ background: '#b91c1c' }}
+                disabled={busy}
+              >
+                تأكيد التعطيل
+              </button>
+              <button type="button" className="table-btn" onClick={() => setShowDisableModal(false)}>
+                إلغاء
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {newCodes && (
+        <Modal title="رموز الاسترداد الجديدة" onClose={() => setNewCodes(null)}>
+          <div style={{ padding: 12 }}>
+            <p style={{ fontSize: 13, fontWeight: 'bold', color: '#1e293b' }}>
+              تم تجديد رموز الاسترداد بنجاح. احفظها في مكان آمن، لن تظهر مرة أخرى:
+            </p>
+            <div className="recovery-grid">
+              {newCodes.map((code, idx) => (
+                <div key={idx} className="recovery-code-box">
+                  {code}
+                </div>
+              ))}
+            </div>
+            <button type="button" className="primary-btn" onClick={() => setNewCodes(null)}>
+              تم حفظ الرموز
+            </button>
+          </div>
+        </Modal>
+      )}
+    </section>
+  );
 }

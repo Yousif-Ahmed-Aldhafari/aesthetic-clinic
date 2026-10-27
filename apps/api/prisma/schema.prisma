@@ -59,6 +59,7 @@ model Clinic {
   version        Int                @default(1)
   slug           String             @unique @db.VarChar(63)
   status         ClinicStatus       @default(ACTIVE)
+  mfaPolicy      ClinicMfaPolicy    @default(OWNER_ONLY)
   timezone       String             @default("UTC") @db.VarChar(100)
   currency       String             @db.Char(3)
   createdAt      DateTime           @default(now()) @db.Timestamptz(3)
@@ -200,8 +201,10 @@ model User {
   createdAt    DateTime           @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime           @updatedAt @db.Timestamptz(3)
   memberships  ClinicMembership[]
-  authVersion  Int                @default(0)
-  sessions     Session[]
+  authVersion   Int                @default(0)
+  sessions      Session[]
+  mfa           UserMfa?
+  mfaChallenges MfaChallenge[]
 }
 
 // Tenant resource and identity bridge: scoped SELECT, maintenance-only writes.
@@ -239,11 +242,69 @@ model Session {
   lastSeenAt        DateTime  @default(now()) @db.Timestamptz(3)
   expiresAt         DateTime  @db.Timestamptz(3)
   revokedAt         DateTime? @db.Timestamptz(3)
+  mfaVerifiedAt     DateTime? @db.Timestamptz(3)
+  userAgent         String?   @db.VarChar(255)
+  ipAddress         String?   @db.VarChar(45)
+  deviceSummary     String?   @db.VarChar(100)
   user              User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   selectedClinic    Clinic?   @relation(fields: [selectedClinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([userId, revokedAt])
   @@index([expiresAt])
+}
+
+enum ClinicMfaPolicy {
+  OWNER_ONLY
+  ADMINS_AND_OWNER
+  ALL_STAFF
+  OPTIONAL
+}
+
+enum MfaStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+model UserMfa {
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String            @unique @db.Uuid
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totpSecretEnc  String            @db.Text
+  totpIv         String            @db.VarChar(32)
+  totpTag        String            @db.VarChar(32)
+  status         MfaStatus         @default(PENDING)
+  enrolledAt     DateTime?         @db.Timestamptz(3)
+  lastUsedAt     DateTime?         @db.Timestamptz(3)
+  lastReplayStep BigInt?           @db.BigInt
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime          @updatedAt @db.Timestamptz(3)
+  recoveryCodes  MfaRecoveryCode[]
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  mfaId     String    @db.Uuid
+  mfa       UserMfa   @relation(fields: [mfaId], references: [id], onDelete: Cascade)
+  codeHash  String    @db.Char(64)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([mfaId, usedAt])
+}
+
+model MfaChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique @db.Char(64)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  attempts   Int       @default(0)
+  consumedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([tokenHash, expiresAt])
+  @@index([userId, consumedAt])
 }
 
 // Global security infrastructure; no tenant access grant.

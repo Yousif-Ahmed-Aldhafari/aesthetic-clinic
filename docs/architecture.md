@@ -1,15 +1,73 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.9 — current implementation, 2026-10-26.
+Phase 2, Steps 2.1–2.2 — current implementation, 2026-10-27.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
-appointment scheduling, visits, live queues, invoices and payments now persist per clinic through mandatory tenant transactions,
-RBAC and PostgreSQL FORCE RLS. Arabic RTL directory and appointment calendar screens
-use the protected API, as do reception/doctor queue and billing workspaces.
+appointment scheduling, visits, live queues, invoices, payments, centralized immutable audit logs,
+encrypted backups, TOTP Multi-Factor Authentication (MFA), hashed recovery codes, server-enforced
+step-up authorization, and active session device management now persist per clinic through mandatory tenant transactions,
+RBAC, PostgreSQL FORCE RLS, and security hardening. Arabic RTL directory and appointment calendar screens
+use the protected API, as do reception/doctor queue, billing, audit and security workspaces.
 Dashboard metrics and explicitly selected legacy workflows retain browser demo data. The original queue
 remains an explicitly separate optional demo. No clinical records, photographs or automatic demo import are
 implemented. Use only fictional data until production privacy and operational controls
 are reviewed.
+
+## Step 2.2: security hardening, multi-factor authentication (MFA) & step-up authorization
+
+Multi-factor authentication (MFA) and step-up authorization provide defense-in-depth across global security
+and clinic tenant boundaries:
+
+1. **TOTP Core Engine (RFC 6238 & RFC 4648)**:
+   - Built with native Node.js `crypto` primitives: HMAC-SHA1 with 30-second steps and 6-digit zero-padded decimal codes.
+   - Bounded clock drift tolerance: $\pm 1$ step window ($\pm 30$ seconds) handles minor client clock skew while rejecting larger disparities.
+   - Replay protection: `UserMfa.lastReplayStep` prevents replay attacks within the same or prior time steps.
+   - Timing-attack resistance: constant-time comparison via `timingSafeEqual`.
+   - Setup verification: requires current password reauthentication before generating pending enrollment secret; enrollment remains in `PENDING` status until an OTP is verified.
+   - Encryption at rest: TOTP secret encrypted using AES-256-GCM with 12-byte random IVs and 16-byte authentication tags. Keys derived via HKDF-SHA256 from `MFA_ENCRYPTION_KEY` or `AUTH_CSRF_SECRET`. Secrets are never stored plaintext, never logged, never exposed via API after setup, and never saved in browser localStorage.
+
+2. **Single-Use Recovery Codes**:
+   - Generates 8 cryptographically secure Base32 recovery codes.
+   - Shown once to the user upon setup or password-authenticated regeneration.
+   - Verifiers stored only as SHA-256 hashes (`MfaRecoveryCode.codeHash`).
+   - Constant-time verification; each code is single-use and immediately marked with `usedAt = now()`.
+   - Regeneration revokes all previously issued recovery codes.
+
+3. **MFA Policy & Clinic Membership Governance**:
+   - Platform administrators and clinic owners are strictly required to have active MFA.
+   - Clinic-level configurable policy stored in `Clinic.mfaPolicy` (`OWNER_ONLY`, `ADMINS_AND_OWNER`, `ALL_STAFF`).
+   - Evaluated dynamically against user memberships and active clinic context. Users cannot bypass MFA by changing clinics or roles.
+
+4. **Server-Enforced Step-Up Authorization**:
+   - `@RequireStepUp(15)` decorator in `AccessGuard` enforces a 15-minute re-authentication window (`Session.mfaVerifiedAt`) on high-risk operations:
+     - Staff role escalation: `PATCH /api/v1/clinics/:clinicId/identity/members/:membershipId`
+     - Custom domain verification: `POST /api/v1/clinics/:clinicId/identity/domains/:domainId/verify`
+     - Financial reversals and refunds: `POST /api/v1/clinics/:clinicId/billing/invoices/:invoiceId/payments/:paymentId/reversals`
+     - Financial invoice voiding: `POST /api/v1/clinics/:clinicId/billing/invoices/:invoiceId/void`
+     - Recovery code regeneration: `POST /api/v1/auth/mfa/recovery-codes/regenerate`
+   - When required and missing/expired, returns HTTP 403 `MFA_STEP_UP_REQUIRED`. Frontend displays an in-context step-up modal without logging out.
+
+5. **Session Management & Device Privacy**:
+   - `GET /api/v1/auth/sessions`: Lists active sessions with masked IP addresses (`192.168.***.***` or `2001:db8:****`), Arabic localized device summaries (e.g. `Chrome على Linux`), creation and last active timestamps.
+   - `DELETE /api/v1/auth/sessions/:id`: Revokes specific device session.
+   - `DELETE /api/v1/auth/sessions`: Revokes all other sessions.
+
+6. **HTTP Security Headers**:
+   - Content-Security-Policy: `default-src 'self'; frame-ancestors 'none';`
+   - X-Frame-Options: `DENY`
+   - X-Content-Type-Options: `nosniff`
+   - Referrer-Policy: `no-referrer`
+   - Anti-caching: `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`, `Pragma: no-cache`
+   - Strict-Transport-Security: `max-age=31536000; includeSubDomains; preload` (production)
+   - CORS methods: explicit allowlist including `GET, POST, PATCH, DELETE, OPTIONS, HEAD`.
+
+## Step 2.1: centralized immutable audit logging, secure backups & disaster recovery
+
+Centralized immutable audit trail (`AuditEvent`) and encrypted disaster recovery subsystem:
+- Immutable append-only audit trail protected by PostgreSQL trigger `reject_audit_mutation()` and FORCE RLS.
+- Dedicated `lamssa_security.record_audit_event(...)` `SECURITY DEFINER` function for out-of-band security logging.
+- AES-256-GCM encrypted database backups (`pg_dump -Fc --enable-row-security`) with mode `0600` filesystem permissions.
+- Non-destructive archive verification drill (`npm run db:backup:drill`) and isolated genuine restore (`npm run db:restore`).
 
 ## Step 1.9: clinic identity administration
 

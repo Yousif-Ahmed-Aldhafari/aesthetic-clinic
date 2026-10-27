@@ -1,9 +1,84 @@
 # Development setup
 
-Step 2.1 adds centralized immutable audit logging, AES-256-GCM encrypted database backups,
-and disaster recovery verification drills to the existing patient/scheduling/queue/billing/identity boundary. Current UI is Arabic RTL;
-only the dashboard overview and explicitly opened old workflows remain local demos.
+Step 2.2 adds standards-compliant TOTP Multi-Factor Authentication (MFA), hashed single-use recovery codes,
+server-enforced step-up authorization for high-risk operations, active session device management and revocation,
+and comprehensive HTTP security headers to the existing patient/scheduling/queue/billing/identity/audit boundary.
+Current UI is Arabic RTL; only the dashboard overview and explicitly opened old workflows remain local demos.
 Use fictional data until operational, privacy and market-specific finance review.
+
+## Step 2.2 — Security Hardening, Multi-Factor Authentication (MFA) & Step-Up Authorization (2026-10-27)
+
+Active branch: `Antigravity-Work`.
+All existing uncommitted changes and secrets were preserved. Development and test databases both migrated with 14 migrations applied (including `20261026000500_mfa_and_session_security` and `20261026000600_clinic_mfa_policy_function`).
+
+### Security Architecture & Senior Review Remediations
+
+1. **Standards-Compliant TOTP MFA (RFC 6238)**:
+   - Algorithms: RFC 6238 TOTP using HMAC-SHA1, 30-second timestep, 6-digit verification codes.
+   - Bounded clock drift: strict $\pm 1$ step window ($\pm 30$ seconds) tolerance.
+   - Replay protection: `UserMfa.lastReplayStep` prevents reuse of codes within the same or prior time steps.
+   - Throttling: `MfaChallenge` limits verification to at most 5 attempts before locking (`MFA_CHALLENGE_LOCKED`, HTTP 429).
+   - Atomic challenge consumption: conditional `updateMany({ where: { id, consumedAt: null }, data: { consumedAt: now } })` prevents challenge replay under concurrent requests.
+   - Constant-time comparison: `timingSafeEqual` prevents side-channel timing attacks.
+   - Enrollment workflow: requires current password reauthentication before generating pending secret. Pending secrets are never active until confirmed with a valid OTP.
+   - Secret encryption at rest: AES-256-GCM authenticated encryption using 12-byte random IVs and 16-byte tags. Key derivation via HKDF-SHA256 from `MFA_ENCRYPTION_KEY`.
+   - Production key validation & rotation: in production (`NODE_ENV === 'production'`), `MFA_ENCRYPTION_KEY` is strictly required ($\ge 32$ characters) and fails closed on startup. Dual-key rotation is supported via optional `MFA_ENCRYPTION_KEY_PREVIOUS` (encrypts with primary, decrypts with primary falling back to previous keys in order).
+   - Safe development account onboarding: developer accounts provisioned via scripts can log in initially without lockouts; owners and admins are directed to enroll MFA from "الأمان والجلسات" in Clinic Settings.
+
+2. **High-Entropy Single-Use Recovery Codes**:
+   - Generates 8 high-entropy single-use recovery codes formatted as 16 Base32 characters (`XXXX-XXXX-XXXX-XXXX`, 80 bits of cryptographically secure entropy, $\ge 64$ bits requirement).
+   - Plaintext codes revealed exactly once during enrollment or password-authenticated regeneration.
+   - Only SHA-256 verifier hashes stored in `MfaRecoveryCode`. Constant-time comparison on verification.
+   - Backwards compatibility: supports both modern 16-character codes and legacy 8-character codes without invalidating existing verifiers.
+   - Strictly atomic redemption under concurrency: conditional `updateMany({ where: { id: match.id, usedAt: null }, data: { usedAt: now } })` guarantees that simultaneous requests redeeming the same recovery code result in exactly one success and all others rejected.
+   - Regeneration requires current password reauthentication, enforces step-up, and revokes all previously issued codes.
+   - Audit trail records `auth.mfa_recovery_code_used` and `auth.mfa_recovery_codes_generated`.
+
+3. **Multi-Clinic MFA Policy & RLS-Safe Enforcement**:
+   - Platform administrators and clinic owners strictly required to have active MFA.
+   - Clinic-level configurable policy stored in `Clinic.mfaPolicy` (`OWNER_ONLY`, `ADMINS_AND_OWNER`, `ALL_STAFF`, `OPTIONAL`).
+   - Security Definer Bootstrap: `lamssa_security.clinic_mfa_policy(uuid)` allows the uncontextualized identity layer to evaluate clinic policy safely under PostgreSQL `FORCE ROW LEVEL SECURITY`.
+   - Multi-clinic users are evaluated against their active selected clinic and memberships. Clinic switching cannot bypass MFA requirements or downgrade verification state.
+   - Required-but-unenrolled users receive HTTP 403 `MFA_SETUP_REQUIRED` when attempting privileged operations, while retaining safe access to `/api/v1/auth/mfa/setup` and `/api/v1/auth/mfa/verify-setup`.
+
+4. **Server-Enforced Step-Up Authorization (Strict Second-Factor Step-Up)**:
+   - High-risk operations require recent second-factor verification (`Session.mfaVerifiedAt` within 15 minutes):
+     - Staff role escalation / membership edits: `PATCH /api/v1/clinics/:clinicId/identity/members/:membershipId`
+     - Custom domain verification: `POST /api/v1/clinics/:clinicId/identity/domains/:domainId/verify`
+     - Financial reversals and refunds: `POST /api/v1/clinics/:clinicId/billing/invoices/:invoiceId/payments/:paymentId/reversals`
+     - Financial invoice voiding: `POST /api/v1/clinics/:clinicId/billing/invoices/:invoiceId/void`
+     - Recovery codes regeneration: `POST /api/v1/auth/mfa/recovery-codes/regenerate`
+     - MFA disablement: `POST /api/v1/auth/mfa/disable`
+   - Enforced server-side via `@RequireStepUp(15)` and `AccessGuard`. If window has expired or is missing, returns HTTP 403 `MFA_STEP_UP_REQUIRED` (or `MFA_SETUP_REQUIRED` for required-but-unenrolled users).
+   - **No Step-Up Password Bypass**: Submitting account password alone cannot update `Session.mfaVerifiedAt` or satisfy `@RequireStepUp`. Password reauthentication confirms the knowledge factor but never masquerades as second-factor verification. Step-up strictly requires a valid TOTP code or unused recovery code.
+   - Disabling MFA requires current password AND a valid TOTP code; on disablement, `Session.mfaVerifiedAt` is cleared across all active user sessions and unused recovery codes are purged.
+
+5. **Active Session Management & Privacy-Preserving Device Summaries**:
+   - Active session listing: `GET /api/v1/auth/sessions` returns active sessions with IP masking (`192.168.***.***` or `2001:db8:****`), localized Arabic browser and OS summaries (e.g. `Chrome على Linux`, `Safari على iOS`), creation timestamp, last active timestamp, and current session flag.
+   - Session revocation: `DELETE /api/v1/auth/sessions/:id` revokes a specific device session, and `DELETE /api/v1/auth/sessions` revokes all other sessions.
+   - Reverse-proxy client IP resolution: configured via Express `trust proxy` in `configure-app.ts`.
+
+6. **HTTP Security Hardening Headers**:
+   - Content-Security-Policy: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';`
+   - X-Frame-Options: `DENY`
+   - X-Content-Type-Options: `nosniff`
+   - Referrer-Policy: `no-referrer`
+   - Anti-caching: `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`, `Pragma: no-cache`
+   - HTTP Strict Transport Security: `max-age=31536000; includeSubDomains; preload` (enforced in production)
+   - CORS methods: explicit allowlist including `GET, POST, PATCH, DELETE, OPTIONS, HEAD`.
+
+### Verification Record
+
+| Command / Check | Result |
+|---|---|
+| `git branch --show-current` | Active branch `Antigravity-Work` confirmed; no commit, push, or branch switch |
+| `npm run check:boundaries` | Exit 0; architectural boundaries passed cleanly |
+| `npm run db:validate` | Exit 0; Prisma schema valid with 14 migrations applied |
+| `npm run build` | Exit 0; `@lamssa/web` (Vite) and `@lamssa/api` (NestJS ESM) compiled cleanly |
+| `npm test` | Exit 0; **72 passed** (16 web + 56 API unit tests including TOTP, Base32, drift, replay, 16-char recovery codes, production fail-closed key validation, key rotation, and crypto) |
+| `npm run test:db` | Exit 0; **185 passed**, zero failed across all 11 database integration suites with actual restricted runtime credentials |
+| `node --test apps/api/test/mfa.integration.test.js` | Exit 0; **8 passed** (enrollment lifecycle, challenge without session cookie, single-use recovery code, 15-min step-up, atomic concurrent recovery redemption, unenrolled owner blocking, session revocation, disablement) |
+| `npm run test:browser` | Exit 0; **33 browser checks passed**, zero runtime errors; Arabic RTL, MFA screens, step-up modal, session management verified |
 
 ## Step 2.1 — Centralized Audit Logging, Secure Backups & Disaster Recovery (2026-10-26)
 

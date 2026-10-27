@@ -18,3 +18,13 @@
 .audit-view-switch button.active{background:#1e293b;color:#fff;border-color:transparent}
 .metadata-dialog pre{background:#0f172a;color:#f8fafc;padding:12px;border-radius:8px;overflow:auto;max-height:260px;font-size:12px;direction:ltr;text-align:left}
 .asset-picker{position:relative;display:block;border:1px dashed var(--clinic-primary,#7854d9);border-radius:10px;text-align:center;background:#fff;padding:12px;cursor:pointer}.settings-field input.asset-file-input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;padding:0}.asset-picker:focus-within{outline:2px solid var(--clinic-primary);outline-offset:2px}
+.security-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px}
+.security-card h4{margin:0 0 8px 0;font-size:16px;color:#1e293b}
+.security-badge-active{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:#edf9f3;color:#175c40}
+.security-badge-disabled{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:#fef2f2;color:#991b1b}
+.recovery-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0;direction:ltr}
+.recovery-code-box{background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;font-family:monospace;font-size:13px;text-align:center;color:#0f172a;user-select:all}
+.session-current-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#e0e7ff;color:#3730a3;margin-right:6px}
+.totp-secret-box{background:#fff;border:1px dashed #7854d9;border-radius:10px;padding:12px;margin:12px 0;font-family:monospace;font-size:14px;letter-spacing:2px;direction:ltr;text-align:center;color:#1e1b4b;user-select:all}
+.step-up-dialog{padding:10px}
+.step-up-dialog input{min-height:44px;font-size:18px;letter-spacing:4px;text-align:center;direction:ltr}

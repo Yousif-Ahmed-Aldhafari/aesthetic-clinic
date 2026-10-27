@@ -16,6 +16,8 @@ export type Environment = {
   PLATFORM_BASE_DOMAIN: string;
   API_ALLOWED_HOSTS: string[];
   ASSET_STORAGE_DIR: string | null;
+  MFA_ENCRYPTION_KEY?: string;
+  MFA_ENCRYPTION_KEY_PREVIOUS?: string;
 };
 
 export function validateEnvironment(input: Record<string, unknown>): Environment {
@@ -64,6 +66,19 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
   if(!hosts.length||hosts.some(h=>!isIP(h.replace(/^\[|\]$/g,''))&&!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(h)))errors.push('API_ALLOWED_HOSTS');
   const assetDir=input.ASSET_STORAGE_DIR===undefined?null:input.ASSET_STORAGE_DIR;
   if(assetDir!==null&&(typeof assetDir!=='string'||!isAbsolute(assetDir)||assetDir.includes('\0')))errors.push('ASSET_STORAGE_DIR');
+
+  const mfaKey = typeof input.MFA_ENCRYPTION_KEY === 'string' ? input.MFA_ENCRYPTION_KEY : '';
+  if (mode === 'production') {
+    if (!mfaKey || mfaKey.length < 32 || !/^[A-Za-z0-9_-]{32,128}$/.test(mfaKey)) errors.push('MFA_ENCRYPTION_KEY');
+  } else if (mfaKey && (mfaKey.length < 16 || !/^[A-Za-z0-9_-]{16,128}$/.test(mfaKey))) {
+    errors.push('MFA_ENCRYPTION_KEY');
+  }
+
+  const mfaPrevKey = typeof input.MFA_ENCRYPTION_KEY_PREVIOUS === 'string' ? input.MFA_ENCRYPTION_KEY_PREVIOUS : '';
+  if (mfaPrevKey && (mfaPrevKey.length < 16 || !/^[A-Za-z0-9_-]{16,128}$/.test(mfaPrevKey))) {
+    errors.push('MFA_ENCRYPTION_KEY_PREVIOUS');
+  }
+
   // Report variable names only; never interpolate secrets or raw validation input.
   if (errors.length) throw new Error(`Invalid environment variables: ${[...new Set(errors)].join(', ')}`);
   return {
@@ -72,5 +87,7 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     AUTH_CSRF_SECRET: csrfKey, AUTH_SESSION_HOURS: hours, AUTH_IDLE_MINUTES: idle,
     AUTH_LOGIN_ACCOUNT_LIMIT: accountLimit, AUTH_LOGIN_IP_LIMIT: ipLimit, TRUST_PROXY_HOPS: proxyHops,
     PLATFORM_BASE_DOMAIN:platformBase,API_ALLOWED_HOSTS:[...new Set(hosts)],ASSET_STORAGE_DIR:assetDir as string|null,
+    MFA_ENCRYPTION_KEY: mfaKey || undefined,
+    MFA_ENCRYPTION_KEY_PREVIOUS: mfaPrevKey || undefined,
   };
 }

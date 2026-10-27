@@ -14,9 +14,15 @@ export function configureApp(app: INestApplication): void {
   app.use(json({ limit: '16kb' }));
   app.getHttpAdapter().getInstance().set('trust proxy', config.get('TRUST_PROXY_HOPS', { infer: true }) || false);
   app.use((_request: unknown, response: { setHeader: (name: string, value: string) => void }, next: () => void) => {
-    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.setHeader('Pragma', 'no-cache');
     response.setHeader('X-Content-Type-Options', 'nosniff');
-    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.setHeader('X-Frame-Options', 'DENY');
+    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';");
+    response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    if (config.get('NODE_ENV', { infer: true }) === 'production') {
+      response.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+    }
     next();
   });
   // Hosts never supply tenant identity or absolute links. Ignore Forwarded-Host.
@@ -33,7 +39,7 @@ export function configureApp(app: INestApplication): void {
   app.enableCors({
     origin: (origin: string | undefined, callback: (error: Error | null, allowed: boolean) => void) =>
       callback(null, Boolean(origin && origins.includes(origin))),
-    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept', 'X-CSRF-Token'],
     credentials: true,
     maxAge: 600,

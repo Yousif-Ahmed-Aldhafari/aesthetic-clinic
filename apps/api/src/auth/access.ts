@@ -4,10 +4,13 @@ import type { Prisma } from '../generated/prisma/client.js';
 import type { Permission } from './permissions.js';
 
 export const ACCESS = 'lamssa.access';
+export const STEP_UP = 'lamssa.step_up';
 export type AccessPolicy = { kind: 'public' | 'authenticated' | 'clinic'; permissions?: Permission[] };
+export type StepUpPolicy = { maxAgeMinutes: number };
 export const PublicRoute = () => SetMetadata(ACCESS, { kind: 'public' } satisfies AccessPolicy);
 export const Authenticated = () => SetMetadata(ACCESS, { kind: 'authenticated' } satisfies AccessPolicy);
 export const ClinicPermissions = (...required: Permission[]) => SetMetadata(ACCESS, { kind: 'clinic', permissions: required } satisfies AccessPolicy);
+export const RequireStepUp = (maxAgeMinutes = 15) => SetMetadata(STEP_UP, { maxAgeMinutes } satisfies StepUpPolicy);
 export type { AuthUser } from '../prisma/identity.database.js';
 import type { AuthUser } from '../prisma/identity.database.js';
 import type { VerifiedPrincipal } from '../prisma/verified-sessions.js';

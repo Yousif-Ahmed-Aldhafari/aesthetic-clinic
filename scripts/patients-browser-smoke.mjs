@@ -23,7 +23,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const port=s.address().port;await new Promise(r=>s.close(r));return port;}
 let apiProcess,web,chrome,socket;
 try{
-  for(const [i,id] of clinics.entries())await owner.clinic.create({data:{id,slug:slugs[i],legalName:'عيادة وهمية لاختبار المتصفح',displayName:i?'عيادة نور الاختبار':'عيادة ورد الاختبار',currency:'YER',timezone:'Asia/Aden',branding:{create:{primaryColor:i?'#087F8C':'#7854D9'}}}});
+  for(const [i,id] of clinics.entries())await owner.clinic.create({data:{id,slug:slugs[i],legalName:'عيادة وهمية لاختبار المتصفح',displayName:i?'عيادة نور الاختبار':'عيادة ورد الاختبار',currency:'YER',timezone:'Asia/Aden',mfaPolicy:'OPTIONAL',branding:{create:{primaryColor:i?'#087F8C':'#7854D9'}}}});
   const user=await provisionUser(owner,{email,name:'مستخدم اختبار المتصفح',password,memberships:[{clinicSlug:slugs[0],role:'CLINIC_OWNER'},{clinicSlug:slugs[1],role:'DOCTOR'}]});users.push(user.id);
   await owner.patientCounter.create({data:{clinicId:clinics[1],lastNumber:1}});
   await owner.patient.create({data:{clinicId:clinics[1],patientNumber:'P-000001',fullName:otherName,searchName:otherName}});
@@ -154,7 +154,7 @@ try{
   await field('#clinic-hostname',`browser-${suffix}.example.com`);await button('طلب إثبات ملكية النطاق');await waitFor("document.querySelector('.domain-challenge code')?.textContent.includes('lamssa-verification=')");await waitFor("document.querySelector('.domain-list').textContent.includes('التوجيه غير مفعّل')");assert(await evaluate("document.querySelector('.domain-list').textContent.includes('التوجيه غير مفعّل')"));
   await button('فريق العمل');await waitFor("document.querySelectorAll('.staff-row').length===3");
   const doctorStatus='select[aria-label="حالة طبيب متصفح وهمي 2"]';await field(doctorStatus,'SUSPENDED');await act(`[...document.querySelectorAll('.staff-row')].find(r=>r.textContent.includes('طبيب متصفح وهمي 2')).querySelector('button').click()`);await waitFor(`document.querySelector(${JSON.stringify(doctorStatus)})?.value==='SUSPENDED' && !document.querySelector('.clinic-settings [aria-busy=true]')`);assert.equal((await owner.clinicMembership.findFirstOrThrow({where:{clinicId:clinics[0],user:{email:`browser-doc-1-${suffix}@example.invalid`}}})).status,'SUSPENDED');
-  await field(doctorStatus,'ACTIVE');await act("[...document.querySelectorAll('.staff-row')].find(r=>r.textContent.includes('طبيب متصفح وهمي 2')).querySelector('button').click()");await waitFor("!document.querySelector('.clinic-settings [aria-busy=true]')");
+  await waitFor(`document.querySelector(${JSON.stringify(doctorStatus)})`);await field(doctorStatus,'ACTIVE');await act("[...document.querySelectorAll('.staff-row')].find(r=>r.textContent.includes('طبيب متصفح وهمي 2')).querySelector('button').click()");await waitFor("!document.querySelector('.clinic-settings [aria-busy=true]')");
   await waitFor("document.querySelector('select[aria-label=\"حالة مستخدم اختبار المتصفح\"]')");
   await field('select[aria-label="حالة مستخدم اختبار المتصفح"]','SUSPENDED');await act("[...document.querySelectorAll('.staff-row')].find(r=>r.textContent.includes('مستخدم اختبار المتصفح')).querySelector('button').click()");await waitFor("document.querySelector('.clinic-settings > [role=alert]')?.textContent.includes('مالك')");
   await button('سجل التغييرات');await waitFor("document.querySelectorAll('.identity-audit-list li').length>5");await capture('identity-audit');

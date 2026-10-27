@@ -5,6 +5,11 @@ export interface ClinicContext {
 export interface SessionInfo {
   user: { id: string; name: string; email: string }; selectedClinicId: string | null; csrfToken: string; expiresAt: string;
 }
+export interface MfaChallengeResponse {
+  mfaRequired: true;
+  challengeToken: string;
+  methods: string[];
+}
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
 }
@@ -15,7 +20,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown, csrfT
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const data = await response.json().catch(()=>null);
-  if (!response.ok) throw new ApiError(response.status, data?.error?.code ?? 'UNAVAILABLE', data?.error?.message ?? 'تعذّر الاتصال بالخدمة');
+  if (!response.ok) throw new ApiError(response.status, data?.error?.code ?? data?.code ?? 'UNAVAILABLE', data?.error?.message ?? data?.message ?? 'تعذّر الاتصال بالخدمة');
   return data as T;
 }
 export const roleNames: Record<string,string> = {

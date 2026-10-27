@@ -33,3 +33,14 @@ test('invalid configuration fails without echoing secret values', () => {
     });
   }
 });
+
+test('production requires MFA_ENCRYPTION_KEY and valid origins', () => {
+  const prodConfig = validateEnvironment({
+    ...valid,
+    NODE_ENV: 'production',
+    CORS_ORIGINS: 'https://clinic.example.com',
+    MFA_ENCRYPTION_KEY: randomBytes(32).toString('base64url'),
+  });
+  assert.equal(prodConfig.NODE_ENV, 'production');
+  assert.ok(prodConfig.MFA_ENCRYPTION_KEY);
+});
