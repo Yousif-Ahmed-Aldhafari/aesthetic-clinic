@@ -12,6 +12,7 @@ export const auditCategories = [
   'FINANCE',
   'SECURITY',
   'PLATFORM',
+  'PRIVACY',
 ] as const;
 
 export class AuditQueryDto {

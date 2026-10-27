@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -105,7 +105,7 @@ export function verifyTotp(
   return { valid: false, error: 'INVALID_CODE' };
 }
 
-export function generateRecoveryCodes(count = 8): { plaintextCodes: string[]; hashedCodes: string[] } {
+export function generateRecoveryCodes(count = 8, salt?: string): { plaintextCodes: string[]; hashedCodes: string[] } {
   const charset = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const plaintextCodes: string[] = [];
   const hashedCodes: string[] = [];
@@ -118,7 +118,7 @@ export function generateRecoveryCodes(count = 8): { plaintextCodes: string[]; ha
     }
     const formatted = `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8, 12)}-${code.slice(12, 16)}`;
     plaintextCodes.push(formatted);
-    hashedCodes.push(hashRecoveryCode(formatted));
+    hashedCodes.push(hashRecoveryCode(formatted, salt));
   }
 
   return { plaintextCodes, hashedCodes };
@@ -128,14 +128,36 @@ export function normalizeRecoveryCode(code: string): string {
   return code.toUpperCase().replace(/[\s-]/g, '').trim();
 }
 
-export function hashRecoveryCode(code: string): string {
+/**
+ * Hash a recovery code. When salt is provided, applies NIST SP 800-63B §5.1.2
+ * salt-and-stretch hashing (PBKDF2-HMAC-SHA256, 10,000 iterations, 32 bytes)
+ * which generates a 64-character hex string fitting within CHAR(64).
+ * If salt is omitted, uses SHA-256 for backward compatibility.
+ */
+export function hashRecoveryCode(code: string, salt?: string): string {
   const normalized = normalizeRecoveryCode(code);
+  if (salt) {
+    return pbkdf2Sync(normalized, salt, 10000, 32, 'sha256').toString('hex');
+  }
   return createHash('sha256').update(normalized, 'utf8').digest('hex');
 }
 
-export function verifyRecoveryCode(plaintext: string, expectedHash: string): boolean {
-  const computed = hashRecoveryCode(plaintext);
-  const bufA = Buffer.from(computed, 'hex');
+/**
+ * Constant-time verification of a recovery code against its stored verifier.
+ * Checks salted PBKDF2 hash first (if salt provided), falling back to legacy
+ * unsalted SHA-256 to ensure existing accounts are not silently invalidated.
+ */
+export function verifyRecoveryCode(plaintext: string, expectedHash: string, salt?: string): boolean {
+  if (salt) {
+    const computedSalted = hashRecoveryCode(plaintext, salt);
+    const bufA = Buffer.from(computedSalted, 'hex');
+    const bufB = Buffer.from(expectedHash, 'hex');
+    if (bufA.length === bufB.length && timingSafeEqual(bufA, bufB)) {
+      return true;
+    }
+  }
+  const computedLegacy = hashRecoveryCode(plaintext);
+  const bufA = Buffer.from(computedLegacy, 'hex');
   const bufB = Buffer.from(expectedHash, 'hex');
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);

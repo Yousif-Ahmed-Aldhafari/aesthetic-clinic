@@ -1,3 +1,4 @@
+import { PrivacyModule } from './privacy/privacy.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { ClinicAdministrationController, PublicAssetController } from './identity/clinic-administration.controller.js';
 import { PlatformFoundationController } from './identity/platform-foundation.controller.js';
@@ -33,6 +34,7 @@ import { ClinicContextController } from './clinics/clinic-context.controller.js'
     PrismaModule,
     AuthModule,
     AuditModule,
+    PrivacyModule,
   ],
   controllers: [ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController,HealthController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],

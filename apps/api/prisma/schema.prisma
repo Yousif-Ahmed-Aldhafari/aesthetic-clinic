@@ -93,6 +93,9 @@ model Clinic {
   identityAuditEvents ClinicIdentityAuditEvent[]
   slugReservations ClinicSlugReservation[]
   auditEvents AuditEvent[]
+  privacyRequests PrivacyRequest[]
+  patientExports PatientExport[]
+  retentionPolicy RetentionPolicy?
 
   @@index([status, createdAt])
 }
@@ -778,6 +781,7 @@ enum AuditCategory {
   FINANCE
   SECURITY
   PLATFORM
+  PRIVACY
 }
 
 enum AuditOutcome {
@@ -812,3 +816,106 @@ model AuditEvent {
   @@index([correlationId])
 }
 
+// ============================================================
+// Privacy, Data Governance and Retention Framework
+// ============================================================
+
+enum PrivacyRequestType {
+  ACCESS
+  CORRECTION
+  RESTRICTION
+  EXPORT
+  ERASURE
+}
+
+enum PrivacyRequestStatus {
+  OPEN
+  IN_REVIEW
+  APPROVED
+  DENIED
+  COMPLETED
+  WITHDRAWN
+  HELD
+}
+
+// Tenant-scoped patient privacy rights request. Append-only status transitions via controller.
+model PrivacyRequest {
+  id               String               @id @default(uuid()) @db.Uuid
+  clinicId         String               @db.Uuid
+  patientId        String?              @db.Uuid
+  patientName      String               @db.VarChar(200)
+  patientContact   String?              @db.VarChar(254)
+  requestType      PrivacyRequestType
+  status           PrivacyRequestStatus @default(OPEN)
+  subject          String               @db.VarChar(500)
+  notes            String?              @db.Text
+  decisionReason   String?              @db.VarChar(2000)
+  decisionBy       String?              @db.Uuid
+  decisionAt       DateTime?            @db.Timestamptz(3)
+  completedAt      DateTime?            @db.Timestamptz(3)
+  legalHold        Boolean              @default(false)
+  legalHoldReason  String?              @db.VarChar(500)
+  requestedAt      DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @db.Timestamptz(3)
+  version          Int                  @default(1)
+
+  clinic           Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  exports          PatientExport[]
+
+  @@index([clinicId, status, requestedAt])
+  @@index([clinicId, patientId])
+  @@index([clinicId, requestType])
+}
+
+enum ExportStatus {
+  PENDING
+  READY
+  EXPIRED
+  REVOKED
+}
+
+// Tracks generated patient data exports with expiry and download limits.
+model PatientExport {
+  id                String         @id @default(uuid()) @db.Uuid
+  clinicId          String         @db.Uuid
+  privacyRequestId  String?        @db.Uuid
+  patientId         String         @db.Uuid
+  generatedBy       String         @db.Uuid
+  status            ExportStatus   @default(PENDING)
+  purpose           String         @db.VarChar(200)
+  tokenHash         String?        @unique @db.Char(64)
+  expiresAt         DateTime?      @db.Timestamptz(3)
+  downloadCount     Int            @default(0)
+  maxDownloads      Int            @default(3)
+  revokedAt         DateTime?      @db.Timestamptz(3)
+  revokeReason      String?        @db.VarChar(200)
+  fileSizeBytes     BigInt?
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
+
+  clinic            Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  privacyRequest    PrivacyRequest? @relation(fields: [privacyRequestId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([clinicId, patientId, createdAt])
+  @@index([clinicId, status])
+  @@index([privacyRequestId])
+}
+
+// Per-clinic retention configuration. Dry-run only; dryRunOnly must remain TRUE until legal review.
+model RetentionPolicy {
+  clinicId            String    @id @db.Uuid
+  policyVersion       Int       @default(1)
+  dryRunOnly          Boolean   @default(true)
+  patientRecordDays   Int?
+  appointmentDays     Int?
+  visitDays           Int?
+  auditEventDays      Int?
+  backupRetentionDays Int?
+  exportRetentionDays Int       @default(7)
+  privacyRequestDays  Int?
+  configuredBy        String?   @db.Uuid
+  configuredAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+
+  clinic              Clinic    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}

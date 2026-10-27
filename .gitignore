@@ -12,3 +12,4 @@ dist-test/
 *.log
 /var/clinic-assets/
 /var/backups/
+/var/exports/

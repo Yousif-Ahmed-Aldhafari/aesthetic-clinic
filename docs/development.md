@@ -1,10 +1,46 @@
 # Development setup
 
-Step 2.2 adds standards-compliant TOTP Multi-Factor Authentication (MFA), hashed single-use recovery codes,
-server-enforced step-up authorization for high-risk operations, active session device management and revocation,
-and comprehensive HTTP security headers to the existing patient/scheduling/queue/billing/identity/audit boundary.
+Step 2.3 adds privacy rights requests management, secure patient data export with formula injection sanitization,
+retention policies with dry-run simulation engine, granular privacy permissions, and data governance controls to the
+existing multi-factor authentication, audit logging, and tenant boundary.
 Current UI is Arabic RTL; only the dashboard overview and explicitly opened old workflows remain local demos.
-Use fictional data until operational, privacy and market-specific finance review.
+
+## Step 2.3 — Privacy, Data Retention & Data Governance (2026-10-27)
+
+Active branch: `Antigravity-Work`.
+All existing uncommitted changes and secrets were preserved. Development and test databases both migrated with 15 migrations applied (including `20261027000100_privacy_governance`).
+
+### Core Features & Architecture
+
+1. **Data Classification & Inventory**:
+   - Comprehensive inventory across 6 security tiers (`AUTH_SECRET`, `FINANCIAL`, `SENSITIVE_PERSONAL`, `PERSONAL`, `INTERNAL`, `PUBLIC`).
+   - Administrative patient profiles isolated from future clinical data.
+
+2. **Data Minimization & Formula Sanitization**:
+   - `sanitizeFormulaField` and `sanitizeObjectForExport` prevent CSV/Excel injection attacks by escaping `=`, `+`, `-`, `@`, `\t`, `\r` with `'`.
+   - Anonymous public queue boards and SSE streams.
+   - Out-of-band audit trail recording with automatic metadata credential redaction.
+
+3. **Retention Policy Framework & Dry-Run Engine**:
+   - Governed by `RetentionPolicy` per clinic.
+   - Platform minimums: Audit $\ge 90$d, Backups $\ge 30$d, Patients $\ge 180$d, Appointments $\ge 90$d, Exports $\ge 1$d.
+   - Strictly non-destructive: `dryRunOnly` enforced at schema level; reports generated via `lamssa_security.retention_dry_run`.
+
+4. **Privacy Rights Requests (Access, Rectification, Restriction, Export, Erasure)**:
+   - Request tracking under `PrivacyRequest` table with optimistic concurrency control (`expectedVersion`).
+   - Granular RBAC permissions: `privacy.requests.read`, `privacy.requests.manage`, `privacy.export`.
+   - Denied to DOCTOR, RECEPTIONIST, and ACCOUNTANT by default.
+
+5. **Patient Data Export & Revocation**:
+   - Requires 15-minute step-up authentication (`@RequireStepUp(15)`).
+   - Single-use, expiring 256-bit download tokens verified via SHA-256 hashes (`PatientExport.tokenHash`).
+   - Immediate revocation and secure local disk storage permissions (`0600`).
+
+6. **Backup and Financial Immutability Interaction**:
+   - Statutory retention exemptions for immutable financial ledger chains and audit logs under Saudi tax law.
+   - Point-in-time encrypted backup archives are immutable.
+
+For full architecture details, refer to `docs/privacy-data-governance.md`.
 
 ## Step 2.2 — Security Hardening, Multi-Factor Authentication (MFA) & Step-Up Authorization (2026-10-27)
 

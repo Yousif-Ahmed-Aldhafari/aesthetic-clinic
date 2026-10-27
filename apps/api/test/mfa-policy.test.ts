@@ -119,12 +119,26 @@ test('Recovery codes generate high-entropy verifiers and verify constant-time', 
     assert.equal(verifyRecoveryCode(tampered, hashedCodes[i]), false);
   }
 
+  // Salted PBKDF2 verification (NIST SP 800-63B §5.1.2)
+  const salt = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+  const { plaintextCodes: saltedPlain, hashedCodes: saltedHashed } = generateRecoveryCodes(8, salt);
+  assert.equal(saltedPlain.length, 8);
+  assert.equal(saltedHashed.length, 8);
+  for (let i = 0; i < 8; i++) {
+    assert.equal(saltedHashed[i].length, 64, 'Salted PBKDF2 verifier must be 64 hex characters');
+    assert.equal(verifyRecoveryCode(saltedPlain[i], saltedHashed[i], salt), true);
+    // Wrong salt fails
+    assert.equal(verifyRecoveryCode(saltedPlain[i], saltedHashed[i], 'different-salt'), false);
+  }
+
   // Backwards compatibility: verify previously generated 8-character codes still verify cleanly
   const legacyPlain = 'ABCD-EFGH';
   const legacyHash = '9ac2197d9258257b1ae8463e4214e4cd0a578bc1517f2415928b91be4283fc48'; // sha256('ABCDEFGH')
   assert.equal(verifyRecoveryCode(legacyPlain, legacyHash), true);
   assert.equal(verifyRecoveryCode('abcd-efgh', legacyHash), true);
   assert.equal(verifyRecoveryCode('ABCDEFGH', legacyHash), true);
+  // Legacy unsalted code still verifies even when salt is provided to verifier
+  assert.equal(verifyRecoveryCode(legacyPlain, legacyHash, salt), true);
 });
 
 test('generateOtpauthUri formats RFC standard URI with issuer and email', () => {

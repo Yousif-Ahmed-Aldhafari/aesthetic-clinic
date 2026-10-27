@@ -1,17 +1,51 @@
 # Lamssa architecture
 
-Phase 2, Steps 2.1–2.2 — current implementation, 2026-10-27.
+Phase 2, Steps 2.1–2.3 — current implementation, 2026-10-27.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
 appointment scheduling, visits, live queues, invoices, payments, centralized immutable audit logs,
 encrypted backups, TOTP Multi-Factor Authentication (MFA), hashed recovery codes, server-enforced
-step-up authorization, and active session device management now persist per clinic through mandatory tenant transactions,
+step-up authorization, active session device management, privacy rights requests (Access, Correction,
+Restriction, Export, Erasure), formula injection sanitization, export revocation, and versioned
+retention policies with dry-run verification now persist per clinic through mandatory tenant transactions,
 RBAC, PostgreSQL FORCE RLS, and security hardening. Arabic RTL directory and appointment calendar screens
-use the protected API, as do reception/doctor queue, billing, audit and security workspaces.
+use the protected API, as do reception/doctor queue, billing, audit, privacy and security workspaces.
 Dashboard metrics and explicitly selected legacy workflows retain browser demo data. The original queue
 remains an explicitly separate optional demo. No clinical records, photographs or automatic demo import are
-implemented. Use only fictional data until production privacy and operational controls
-are reviewed.
+implemented.
+
+## Step 2.3: privacy, data retention & data governance
+
+Phase 2, Step 2.3 establishes formal privacy engineering and governance:
+
+1. **Data Inventory & 6-Tier Classification**:
+   - `AUTH_SECRET`, `FINANCIAL`, `SENSITIVE_PERSONAL`, `PERSONAL`, `INTERNAL`, `PUBLIC`.
+   - Distinct boundaries separating current administrative patient data from future clinical data.
+
+2. **Data Minimization & Formula Injection Sanitization**:
+   - Neutralizes CSV/Excel formula injection risks by prefixing `=, +, -, @, \t, \r` with single quotes (`'`).
+   - Anonymous public queue board display and SSE feed without patient identity leakage.
+   - Recursive metadata sanitization stripping credentials and sensitive keys from `AuditEvent`.
+
+3. **Retention Policy & Dry-Run Framework**:
+   - Versioned per-clinic `RetentionPolicy` enforcing platform minimums (Audit $\ge 90$d, Backups $\ge 30$d, Patients $\ge 180$d, Appointments $\ge 90$d, Exports $\ge 1$d).
+   - `dryRunOnly` permanently enforced (`CHECK (dry_run_only = TRUE)`); NO automated deletion.
+   - Simulation engine via locked search-path security definer function `lamssa_security.retention_dry_run`.
+
+4. **Privacy Rights Lifecycle (Access, Correction, Restriction, Export, Erasure)**:
+   - Atomic review and decision tracking with documented justification, legal hold flags, and optimistic concurrency versioning.
+   - Scoped permissions: `privacy.requests.read`, `privacy.requests.manage`, `privacy.export`.
+
+5. **Secure Patient Data Export**:
+   - Protected by `@RequireStepUp(15)`.
+   - Single-use/expiring 256-bit download tokens verified via SHA-256 hashes (`PatientExport.tokenHash`).
+   - Bounded download counts (max 3), 24-hour expiration, `0600` disk file permissions, and instant revocation.
+
+6. **Legal & Compliance Boundary with Cryptographic Chains**:
+   - Cryptographic financial ledger hash chains and append-only audit trails take statutory precedence over erasure requests.
+   - Historical point-in-time encrypted backup archives remain immutable.
+
+For detailed specifications, see [privacy-data-governance.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/privacy-data-governance.md).
 
 ## Step 2.2: security hardening, multi-factor authentication (MFA) & step-up authorization
 

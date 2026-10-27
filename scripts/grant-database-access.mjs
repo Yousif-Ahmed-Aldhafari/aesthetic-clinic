@@ -2,7 +2,7 @@ import { config } from 'dotenv';
 import { resolve } from 'node:path';
 import pg from 'pg';
 config({ path: resolve(import.meta.dirname, '../.env'), quiet: true });
-const tables=['Clinic','ClinicBranding','ClinicDomain','User','ClinicMembership','Session','LoginBucket','Patient','PatientCounter','ClinicService','BookableResource','ResourceAvailability','ResourceTimeOff','SchedulingState','Appointment','Visit','QueueTicket','QueueCounter','QueueConfiguration','QueueCommand','Invoice','InvoiceLine','Payment','PaymentReversal','FinancialAuditEvent','ClinicInvoiceCounter','ClinicBillingProfile','ClinicAsset','ClinicIdentityState','ClinicIdentityAuditEvent','ClinicSlugReservation','AuditEvent','UserMfa','MfaRecoveryCode','MfaChallenge'];
+const tables=['Clinic','ClinicBranding','ClinicDomain','User','ClinicMembership','Session','LoginBucket','Patient','PatientCounter','ClinicService','BookableResource','ResourceAvailability','ResourceTimeOff','SchedulingState','Appointment','Visit','QueueTicket','QueueCounter','QueueConfiguration','QueueCommand','Invoice','InvoiceLine','Payment','PaymentReversal','FinancialAuditEvent','ClinicInvoiceCounter','ClinicBillingProfile','ClinicAsset','ClinicIdentityState','ClinicIdentityAuditEvent','ClinicSlugReservation','AuditEvent','UserMfa','MfaRecoveryCode','MfaChallenge','PrivacyRequest','PatientExport','RetentionPolicy'];
 try {
   for(const [key,role] of [['MIGRATION_DATABASE_URL','lamssa_dev_app'],['TEST_MIGRATION_DATABASE_URL','lamssa_test_app']]) {
     if(!process.env[key])throw new Error('Missing migration URL');
@@ -29,8 +29,12 @@ try {
       await client.query(`GRANT SELECT,INSERT,DELETE ON public."InvoiceLine" TO ${role}`);
       await client.query(`GRANT SELECT,INSERT ON public."Payment",public."PaymentReversal",public."FinancialAuditEvent",public."AuditEvent" TO ${role}`);
       await client.query(`GRANT DELETE ON public."ResourceAvailability" TO ${role}`);
+      // Privacy, governance and retention tables
+      await client.query(`GRANT SELECT,INSERT,UPDATE ON public."PrivacyRequest" TO ${role}`);
+      await client.query(`GRANT SELECT,INSERT,UPDATE ON public."PatientExport" TO ${role}`);
+      await client.query(`GRANT SELECT,INSERT,UPDATE ON public."RetentionPolicy" TO ${role}`);
       await client.query(`REVOKE ALL ON ALL FUNCTIONS IN SCHEMA lamssa_security FROM ${role}`);
-      await client.query(`GRANT EXECUTE ON FUNCTION lamssa_security.context_uuid(text),lamssa_security.context_allows(uuid),lamssa_security.identity_memberships(uuid),lamssa_security.clinic_mfa_policy(uuid),lamssa_security.public_branding(text),lamssa_security.public_queue(text),lamssa_security.finance_allows(uuid,boolean),lamssa_security.administration_allows(uuid,boolean),lamssa_security.administration_locks(uuid),lamssa_security.public_branding_details(text),lamssa_security.public_brand_asset(uuid),lamssa_security.record_audit_event(uuid,uuid,uuid,text,text,"AuditCategory",text,text,"AuditOutcome",text,text,text,jsonb) TO ${role}`);
+      await client.query(`GRANT EXECUTE ON FUNCTION lamssa_security.context_uuid(text),lamssa_security.context_allows(uuid),lamssa_security.identity_memberships(uuid),lamssa_security.clinic_mfa_policy(uuid),lamssa_security.public_branding(text),lamssa_security.public_queue(text),lamssa_security.finance_allows(uuid,boolean),lamssa_security.administration_allows(uuid,boolean),lamssa_security.administration_locks(uuid),lamssa_security.public_branding_details(text),lamssa_security.public_brand_asset(uuid),lamssa_security.record_audit_event(uuid,uuid,uuid,text,text,"AuditCategory",text,text,"AuditOutcome",text,text,text,jsonb),lamssa_security.retention_dry_run(uuid) TO ${role}`);
       await client.query('COMMIT');
     }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{await client.end();}
   }

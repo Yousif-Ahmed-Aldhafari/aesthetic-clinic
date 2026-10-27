@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { IdentityDatabase, type AuthUser } from '../prisma/identity.database.js';
 import { MfaCryptoService } from './mfa-crypto.service.js';
@@ -9,7 +10,7 @@ import {
   generateOtpauthUri,
   verifyTotp,
   generateRecoveryCodes,
-  hashRecoveryCode,
+  verifyRecoveryCode,
 } from './totp.js';
 import { AuditService } from '../audit/audit.service.js';
 
@@ -107,13 +108,13 @@ export class MfaService {
       throw new AuthError('MFA_ALREADY_ACTIVE');
     }
 
+    const mfaId = existing?.id ?? randomUUID();
     const { secretBytes, base32Secret } = generateTotpSecret(20);
     const { ciphertext, iv, tag } = this.crypto.encryptSecret(secretBytes);
-    const { plaintextCodes, hashedCodes } = generateRecoveryCodes(8);
+    const { plaintextCodes, hashedCodes } = generateRecoveryCodes(8, mfaId);
     const otpauthUri = generateOtpauthUri(userEmail, base32Secret);
 
     await this.prisma.transaction(async (tx) => {
-      let mfaId = existing?.id;
       if (existing) {
         await tx.userMfa.update({
           where: { id: existing.id },
@@ -127,8 +128,9 @@ export class MfaService {
           },
         });
       } else {
-        const created = await tx.userMfa.create({
+        await tx.userMfa.create({
           data: {
+            id: mfaId,
             userId,
             totpSecretEnc: ciphertext,
             totpIv: iv,
@@ -136,13 +138,12 @@ export class MfaService {
             status: 'PENDING',
           },
         });
-        mfaId = created.id;
       }
 
-      await tx.mfaRecoveryCode.deleteMany({ where: { mfaId: mfaId! } });
+      await tx.mfaRecoveryCode.deleteMany({ where: { mfaId } });
       await tx.mfaRecoveryCode.createMany({
         data: hashedCodes.map((codeHash) => ({
-          mfaId: mfaId!,
+          mfaId,
           codeHash,
         })),
       });
@@ -251,8 +252,7 @@ export class MfaService {
     } catch {}
 
     if (!verified) {
-      const hash = hashRecoveryCode(otp);
-      const found = mfa.recoveryCodes.find((c) => c.codeHash === hash && !c.usedAt);
+      const found = mfa.recoveryCodes.find((c) => !c.usedAt && verifyRecoveryCode(otp, c.codeHash, mfa.id));
       if (found) verified = true;
     }
 
@@ -310,7 +310,7 @@ export class MfaService {
       throw new AuthError('MFA_NOT_ACTIVE');
     }
 
-    const { plaintextCodes, hashedCodes } = generateRecoveryCodes(8);
+    const { plaintextCodes, hashedCodes } = generateRecoveryCodes(8, mfa.id);
 
     await this.prisma.transaction(async (tx) => {
       await tx.mfaRecoveryCode.deleteMany({ where: { mfaId: mfa.id } });
@@ -424,8 +424,7 @@ export class MfaService {
     }
 
     if (recoveryCode) {
-      const hash = hashRecoveryCode(recoveryCode);
-      const match = userMfa.recoveryCodes.find((c) => c.codeHash === hash && !c.usedAt);
+      const match = userMfa.recoveryCodes.find((c) => !c.usedAt && verifyRecoveryCode(recoveryCode, c.codeHash, userMfa.id));
       if (match) {
         const redeemed = await this.prisma.transaction(async (tx) => {
           const codeRes = await tx.mfaRecoveryCode.updateMany({
@@ -516,8 +515,7 @@ export class MfaService {
         });
       }
     } else if (recoveryCode) {
-      const hash = hashRecoveryCode(recoveryCode);
-      const matched = userMfa.recoveryCodes.find((c) => c.codeHash === hash && !c.usedAt);
+      const matched = userMfa.recoveryCodes.find((c) => !c.usedAt && verifyRecoveryCode(recoveryCode, c.codeHash, userMfa.id));
       if (matched) {
         const redeemed = await this.prisma.transaction(async (tx) => {
           const updateRes = await tx.mfaRecoveryCode.updateMany({

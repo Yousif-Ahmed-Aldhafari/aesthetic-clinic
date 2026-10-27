@@ -4,6 +4,7 @@ import { RequestScope } from '../../lib/request-scope';
 import { brandStyle, readableColors } from './branding';
 import { uploadAsset, type AuditEvent, type Branding, type ClinicProfile, type Domain, type DomainChallenge, type Page, type StaffMember, type CentralAuditResponse } from './settings-api';
 import { Modal } from '../../components/ui';
+import { PrivacyPane } from './PrivacyPane';
 import './settings.css';
 type Props={clinic:ClinicContext;csrfToken:string;onAuthError:(error:unknown)=>void;onUpdated:()=>Promise<void>};
 type Actions={busy:boolean;write:<T>(path:string,body:unknown,method?:string)=>Promise<T|undefined>;upload:(purpose:string,file:File)=>Promise<{id:string;previewUrl:string}|undefined>};
@@ -22,7 +23,7 @@ export function ClinicSettings(p:Props){
   const refresh=()=>setRevision(n=>n+1),updated=async()=>{refresh();try{await p.onUpdated();}catch(e){setError('حُفظ التغيير، وتعذّر تحديث هوية الصفحة. أعد تحميل الصفحة.');if(e instanceof ApiError&&e.status===401)p.onAuthError(e);}};
   if(!p.clinic.permissions.includes('clinic.settings.read'))return <p role="alert">لا تملك صلاحية إدارة إعدادات هذه العيادة.</p>;
   return <section className="clinic-settings" dir="rtl"><div className="settings-intro"><span className="auth-kicker">هوية مستقلة لكل عيادة</span><h3>{p.clinic.displayName}</h3><p>هذه إعدادات العيادة المختارة. إدارة المنصة منفصلة ولا تمنح وصولًا إلى سجلات العيادات.</p></div>
-    <nav className="settings-tabs" aria-label="أقسام إعدادات العيادة">{[['profile','بيانات العيادة'],['branding','الهوية البصرية'],['domains','النطاقات'],['members','فريق العمل'],['audit','سجل التغييرات'],['security','الأمان والجلسات']].map(([id,label])=><button key={id} className={tab===id?'selected':''} aria-pressed={tab===id} disabled={busy} onClick={()=>{setTab(id);setMessage('');setError('');}}>{label}</button>)}</nav>
+    <nav className="settings-tabs" aria-label="أقسام إعدادات العيادة">{[['profile','بيانات العيادة'],['branding','الهوية البصرية'],['domains','النطاقات'],['members','فريق العمل'],['audit','سجل التغييرات'],['security','الأمان والجلسات'],['privacy','الخصوصية والحوكمة']].map(([id,label])=><button key={id} className={tab===id?'selected':''} aria-pressed={tab===id} disabled={busy} onClick={()=>{setTab(id);setMessage('');setError('');}}>{label}</button>)}</nav>
     {error&&<p className="patient-error" role="alert">{error}</p>}{message&&<p className="settings-success" role="status">{message}</p>}<div aria-busy={busy}>
     {tab==='profile'&&<ProfilePane key={tab} p={p} actions={actions} revision={revision} saved={updated}/>}
     {tab==='branding'&&<BrandingPane key={tab} p={p} actions={actions} revision={revision} saved={updated}/>}
@@ -30,6 +31,7 @@ export function ClinicSettings(p:Props){
     {tab==='members'&&<StaffPane key={tab} p={p} actions={actions} revision={revision} saved={refresh}/>}
     {tab==='audit'&&<AuditPane key={tab} p={p} revision={revision}/>}
     {tab==='security'&&<SecurityPane key={tab} p={p} revision={revision}/>}
+    {tab==='privacy'&&<PrivacyPane key={tab} clinic={p.clinic} csrfToken={p.csrfToken} revision={revision} onAuthError={p.onAuthError}/>}
     </div><button className="auth-text-button" disabled={busy} onClick={refresh}>تحديث البيانات</button>
   </section>;
 }
