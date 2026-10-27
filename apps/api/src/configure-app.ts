@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditService } from './audit/audit.service.js';
 import { SafeExceptionFilter } from './common/safe-exception.filter.js';
+import { ErrorTrackerService } from './observability/error-tracker.service.js';
+import { StructuredLoggerService } from './observability/structured-logger.service.js';
 import type { Environment } from './config/environment.js';
 import cookieParser from 'cookie-parser';
 import { json, type Request, type Response, type NextFunction } from 'express';
@@ -13,6 +16,26 @@ export function configureApp(app: INestApplication): void {
   app.use(cookieParser());
   app.use(json({ limit: '16kb' }));
   app.getHttpAdapter().getInstance().set('trust proxy', config.get('TRUST_PROXY_HOPS', { infer: true }) || false);
+
+  // Early Correlation & Request ID assignment
+  app.use((request: Request, response: Response, next: NextFunction) => {
+    const rawReqId = request.headers['x-request-id'];
+    const requestId = typeof rawReqId === 'string' && rawReqId.length > 0 && rawReqId.length <= 128
+      ? rawReqId
+      : randomUUID();
+
+    const rawCorrId = request.headers['x-correlation-id'];
+    const correlationId = typeof rawCorrId === 'string' && rawCorrId.length > 0 && rawCorrId.length <= 128
+      ? rawCorrId
+      : requestId;
+
+    (request as unknown as { requestId: string; correlationId: string }).requestId = requestId;
+    (request as unknown as { requestId: string; correlationId: string }).correlationId = correlationId;
+
+    response.setHeader('X-Request-Id', requestId);
+    response.setHeader('X-Correlation-Id', correlationId);
+    next();
+  });
   app.use((_request: unknown, response: { setHeader: (name: string, value: string) => void }, next: () => void) => {
     response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     response.setHeader('Pragma', 'no-cache');
@@ -50,6 +73,10 @@ export function configureApp(app: INestApplication): void {
   }));
   let auditService: AuditService | undefined;
   try { auditService = app.get(AuditService, { strict: false }); } catch {}
-  app.useGlobalFilters(new SafeExceptionFilter(auditService));
+  let errorTracker: ErrorTrackerService | undefined;
+  try { errorTracker = app.get(ErrorTrackerService, { strict: false }); } catch {}
+  let loggerService: StructuredLoggerService | undefined;
+  try { loggerService = app.get(StructuredLoggerService, { strict: false }); } catch {}
+  app.useGlobalFilters(new SafeExceptionFilter(auditService, errorTracker, loggerService));
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 }

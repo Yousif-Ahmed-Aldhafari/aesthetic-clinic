@@ -13,6 +13,7 @@ import {
   verifyRecoveryCode,
 } from './totp.js';
 import { AuditService } from '../audit/audit.service.js';
+import { MetricsService } from '../observability/metrics.service.js';
 
 export interface SetupMfaResponse {
   base32Secret: string;
@@ -26,6 +27,7 @@ export class MfaService {
     private readonly prisma: IdentityDatabase,
     private readonly crypto: MfaCryptoService,
     @Optional() private readonly audit?: AuditService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async hasActiveMfa(userId: string): Promise<boolean> {
@@ -464,6 +466,7 @@ export class MfaService {
       }
     }
 
+    this.metrics?.recordFailedLogin();
     await this.audit?.recordDirectSafe({
       action: 'auth.mfa_challenge_failed',
       category: 'AUTH',

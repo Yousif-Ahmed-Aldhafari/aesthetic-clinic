@@ -1,9 +1,52 @@
 # Development setup
 
-Step 2.3 adds privacy rights requests management, secure patient data export with formula injection sanitization,
-retention policies with dry-run simulation engine, granular privacy permissions, and data governance controls to the
-existing multi-factor authentication, audit logging, and tenant boundary.
+Step 2.4 establishes production monitoring, metrics, decoupled error tracking, alerting with deduplication,
+and Arabic RTL frontend error boundaries, building upon the established privacy governance, multi-factor
+authentication, audit logging, and tenant boundary.
 Current UI is Arabic RTL; only the dashboard overview and explicitly opened old workflows remain local demos.
+
+## Step 2.4 — Monitoring, Error Tracking & Reliability (2026-10-28)
+
+Active branch: `phase/2-security-reliability`.
+All existing uncommitted changes and database schemas were preserved.
+
+### Core Features & Implementation Details
+
+1. **Structured JSON Logging & PII/Secret Scrubbing**:
+   - `StructuredLoggerService` outputs single-line JSON entries with timestamps, levels, request IDs, correlation IDs, and timing.
+   - Automatic IP masking (`maskIpAddress`): IPv4 to `/24`, IPv6 to `/48`, localhost to `127.0.0.0/24`.
+   - Automatic header sanitization (`sanitizeHeadersForLogging`): masks `authorization`, `cookie`, `set-cookie`, `x-csrf-token`, and API keys.
+   - Recursive PII/PHI scrubbing (`redactSensitiveData`): masks passwords, tokens, cards, CVVs, IBANs, national IDs, and medical notes.
+
+2. **In-Memory Rolling Metrics & Prometheus Format**:
+   - `MetricsService` tracks HTTP request counts by status class (`2xx`, `3xx`, `4xx`, `5xx`), in-flight requests, and rolling latency percentiles ($p50$, $p95$, $p99$, $max$).
+   - Failed authentication attempts tracked for brute-force monitoring.
+   - Backup health reader parses `/var/backups` metadata to report last successful backup age and status.
+   - Dual-format exposition: JSON for API diagnostics, text format for Prometheus scraping (`GET /api/v1/metrics`).
+
+3. **Protected Diagnostic Endpoints**:
+   - `GET /api/v1/health`: Public liveness (`{ "status": "ok" }`).
+   - `GET /api/v1/health/live`: Public liveness (`{ "status": "ok" }`).
+   - `GET /api/v1/health/ready`: Public readiness probe returning `200 { "status": "ready" }` or `503 Service Unavailable`.
+   - `GET /api/v1/metrics`: Protected by `PLATFORM_ADMIN`/`CLINIC_ADMIN` session or `X-Metrics-Key` header matching `METRICS_SECRET_KEY`.
+   - `GET /api/v1/health/diagnostics`: Protected diagnostic summary including current metrics, active alerts, error groups, and recent log entries.
+   - `GET /api/v1/alerts/active`: Active operational alerts with severity and trigger timestamps.
+
+4. **Decoupled Error Tracking & Fingerprinting**:
+   - `ErrorTrackerService` normalizes error messages (stripping UUIDs, timestamps, phone numbers, numeric IDs) and generates deterministic 64-character SHA-256 fingerprints.
+   - Groups duplicate occurrences without table bloat.
+   - Pluggable `ErrorReportingProvider` interface for zero-friction integration with external monitoring systems (Sentry, Datadog) in the future.
+
+5. **Actionable Alerting with Cooldown**:
+   - `AlertingService` evaluates operational rules (`DATABASE_DOWN`, `HIGH_5XX_ERROR_RATE`, `BACKUP_STALE`, `BACKUP_FAILED`, `AUTH_BRUTE_FORCE_SPIKE`).
+   - 15-minute deduplication cooldown prevents alert flooding. Auto-resolves when health status returns to normal.
+
+6. **Frontend Arabic RTL Error Boundary**:
+   - `<ErrorBoundary>` wraps the web application in `main.tsx`.
+   - Native Arabic RTL design with incident correlation code (`ERR-XXXXXX`).
+   - Safe retry and recovery actions without exposing internals or stack traces.
+
+For complete architectural specifications, see `docs/monitoring-reliability.md`.
 
 ## Step 2.3 — Privacy, Data Retention & Data Governance (2026-10-27)
 

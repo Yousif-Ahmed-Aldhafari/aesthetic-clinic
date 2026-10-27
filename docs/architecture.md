@@ -1,18 +1,57 @@
 # Lamssa architecture
 
-Phase 2, Steps 2.1–2.3 — current implementation, 2026-10-27.
+Phase 2, Steps 2.1–2.4 — current implementation, 2026-10-28.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
 appointment scheduling, visits, live queues, invoices, payments, centralized immutable audit logs,
 encrypted backups, TOTP Multi-Factor Authentication (MFA), hashed recovery codes, server-enforced
 step-up authorization, active session device management, privacy rights requests (Access, Correction,
-Restriction, Export, Erasure), formula injection sanitization, export revocation, and versioned
-retention policies with dry-run verification now persist per clinic through mandatory tenant transactions,
-RBAC, PostgreSQL FORCE RLS, and security hardening. Arabic RTL directory and appointment calendar screens
-use the protected API, as do reception/doctor queue, billing, audit, privacy and security workspaces.
-Dashboard metrics and explicitly selected legacy workflows retain browser demo data. The original queue
-remains an explicitly separate optional demo. No clinical records, photographs or automatic demo import are
-implemented.
+Restriction, Export, Erasure), formula injection sanitization, export revocation, versioned
+retention policies with dry-run verification, structured JSON logging with IP and PII redaction,
+in-memory rolling operational metrics with Prometheus exposition, decoupled error tracking and SHA-256
+fingerprinting, actionable alerting with 15-minute deduplication, and Arabic RTL frontend error boundaries
+now persist per clinic through mandatory tenant transactions, RBAC, PostgreSQL FORCE RLS, and security hardening.
+Arabic RTL directory and appointment calendar screens use the protected API, as do reception/doctor queue, billing,
+audit, privacy, observability and security workspaces. Dashboard metrics and explicitly selected legacy workflows
+retain browser demo data. The original queue remains an explicitly separate optional demo. No clinical records,
+photographs or automatic demo import are implemented.
+
+## Step 2.4: monitoring, error tracking & reliability
+
+Phase 2, Step 2.4 establishes production-grade observability and reliability:
+
+1. **Zero-Dependency & Zero-Cost Telemetry**:
+   - Native Node.js `crypto`, in-memory ring buffers, and NestJS services provide comprehensive observability without external subscriptions or recurring SaaS costs.
+   - Prometheus metrics exposition (`GET /api/v1/metrics`) with `# TYPE`, `# HELP`, and custom quantiles ($p50$, $p95$, $p99$, $max$).
+   - Multi-tenant data isolation: operational metrics omit patient identifiers, clinic names, and financial amounts. Protected endpoints require `PLATFORM_ADMIN` / `CLINIC_ADMIN` session or `X-Metrics-Key` header.
+
+2. **Structured JSON Logging & Automated PII/PHI Redaction**:
+   - Single-line JSON logging format for seamless log aggregation (Vector, Fluentbit, Loki).
+   - Network IP masking: IPv4 addresses masked to `/24`, IPv6 addresses masked to `/48`, localhost mapped to `127.0.0.0/24`.
+   - Recursive redaction of sensitive credentials, payment cards, national IDs, and medical notes (`[REDACTED]`).
+   - Header sanitization: `[REDACTED_AUTHORIZATION]`, `[REDACTED_COOKIE]`, `[REDACTED_CSRF_TOKEN]`, `[REDACTED_HEADER]`.
+   - Correlation ID propagation (`X-Request-Id` / `X-Correlation-Id`) across middleware, filters, and client responses.
+
+3. **Decoupled Error Tracking & Deterministic Fingerprinting**:
+   - `ErrorTrackerService` computes 64-character SHA-256 fingerprints normalizing UUIDs, numbers, and timestamps.
+   - Error grouping aggregates identical failure root causes into frequency-ranked records.
+   - Pluggable provider interface (`ErrorReportingProvider`) allows future zero-touch integration with Sentry, Datadog, or AWS CloudWatch.
+
+4. **Actionable Alerting Engine**:
+   - `AlertingService` continuously evaluates operational health rules:
+     - `DATABASE_DOWN` (critical): PostgreSQL unreachable or connection pool exhausted.
+     - `HIGH_5XX_ERROR_RATE` (critical): $\ge 10$ internal server errors.
+     - `BACKUP_STALE` (warning): Last successful encrypted backup $> 24$ hours old.
+     - `BACKUP_FAILED` (critical): Last backup or restore drill failed.
+     - `AUTH_BRUTE_FORCE_SPIKE` (warning): $\ge 30$ failed login/MFA attempts.
+   - Built-in 15-minute deduplication cooldown prevents alert fatigue.
+
+5. **Arabic RTL Frontend Error Boundary**:
+   - React Error Boundary with native Arabic RTL typography and design matching the Lamssa design system.
+   - Incident tracking correlation IDs (`ERR-XXXXXX`) displayed for user technical support.
+   - Safe user recovery actions: "إعادة المحاولة" (retry tree) and "العودة للرئيسية" (safe home navigation).
+
+For detailed specifications, runbooks, and Prometheus scraping instructions, see [monitoring-reliability.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/monitoring-reliability.md).
 
 ## Step 2.3: privacy, data retention & data governance
 

@@ -15,6 +15,7 @@ import { permissionsFor } from './permissions.js';
 import { AuditService } from '../audit/audit.service.js';
 import { MfaService } from './mfa.service.js';
 import { summarizeDevice } from './session-manager.service.js';
+import { MetricsService } from '../observability/metrics.service.js';
 
 @Injectable()
 export class AuthService {
@@ -28,6 +29,7 @@ export class AuthService {
     private readonly branding: PublicBrandingRepository,
     @Optional() private readonly audit?: AuditService,
     @Optional() private readonly mfa?: MfaService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   private rawToken(request: AuthRequest): string | undefined {
@@ -76,6 +78,7 @@ export class AuthService {
     const user = await this.prisma.credentialsByEmail(email);
     const valid = await verifyPassword(user?.passwordHash ?? await this.dummyHash, password);
     if (!user || !valid || user.status !== 'ACTIVE' || !user.passwordHash) {
+      this.metrics?.recordFailedLogin();
       await this.audit?.recordDirectSafe({
         action: 'auth.failed_login',
         category: 'AUTH',
