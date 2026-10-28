@@ -5,6 +5,8 @@ import { MetricsService } from '../src/observability/metrics.service.js';
 import { ErrorTrackerService } from '../src/observability/error-tracker.service.js';
 import { AlertingService } from '../src/observability/alerting.service.js';
 import { StructuredLoggerService } from '../src/observability/structured-logger.service.js';
+import { isPlatformOperator, validMonitoringCredential } from '../src/observability/operational-access.js';
+import { requestId } from '../src/observability/request-id.js';
 
 test('redactSensitiveData recursively masks secrets, credentials, tokens and sensitive health info', () => {
   const sensitivePayload = {
@@ -207,4 +209,29 @@ test('AlertingService triggers alerts, respects 15-minute deduplication, and res
   const bruteAlert = active.find((a) => a.ruleId === 'AUTH_BRUTE_FORCE_SPIKE');
   assert.ok(bruteAlert, 'AUTH_BRUTE_FORCE_SPIKE should trigger after >= 30 failed logins');
   assert.equal(bruteAlert?.severity, 'warning');
+});
+
+test('global telemetry denies clinic administrators and accepts only platform operators', () => {
+  const clinicAdmin = { status: 'ACTIVE', platformRole: null, memberships: [{ role: 'CLINIC_ADMIN', status: 'ACTIVE' }] } as any;
+  const otherClinicOwner = { status: 'ACTIVE', platformRole: null, memberships: [{ role: 'CLINIC_OWNER', status: 'ACTIVE' }] } as any;
+  const platformOperator = { status: 'ACTIVE', platformRole: 'PLATFORM_ADMIN', memberships: [] } as any;
+  assert.equal(isPlatformOperator(clinicAdmin), false);
+  assert.equal(isPlatformOperator(otherClinicOwner), false);
+  assert.equal(isPlatformOperator(platformOperator), true);
+  assert.equal(isPlatformOperator({ ...platformOperator, status: 'DISABLED' }), false);
+});
+
+test('monitoring service credential is scoped, bounded and compared without plaintext equality', () => {
+  const key = 'A'.repeat(48);
+  assert.equal(validMonitoringCredential(key, key), true);
+  assert.equal(validMonitoringCredential('B'.repeat(48), key), false);
+  assert.equal(validMonitoringCredential(undefined, key), false);
+  assert.equal(validMonitoringCredential(key, undefined), false);
+  assert.equal(validMonitoringCredential('A'.repeat(513), key), false);
+});
+
+test('request identifiers reject header injection and unbounded attacker-controlled values', () => {
+  assert.equal(requestId('safe.req-1:trace'), 'safe.req-1:trace');
+  assert.equal(requestId('line\r\ninjection', 'server-generated'), 'server-generated');
+  assert.equal(requestId('x'.repeat(129), 'server-generated'), 'server-generated');
 });

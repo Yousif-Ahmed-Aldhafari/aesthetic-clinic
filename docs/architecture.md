@@ -1,6 +1,6 @@
 # Lamssa architecture
 
-Phase 2, Steps 2.1–2.4 — current implementation, 2026-10-28.
+Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-28.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
 appointment scheduling, visits, live queues, invoices, payments, centralized immutable audit logs,
@@ -12,9 +12,37 @@ in-memory rolling operational metrics with Prometheus exposition, decoupled erro
 fingerprinting, actionable alerting with 15-minute deduplication, and Arabic RTL frontend error boundaries
 now persist per clinic through mandatory tenant transactions, RBAC, PostgreSQL FORCE RLS, and security hardening.
 Arabic RTL directory and appointment calendar screens use the protected API, as do reception/doctor queue, billing,
-audit, privacy, observability and security workspaces. Dashboard metrics and explicitly selected legacy workflows
+audit, privacy, observability, deployment and security workspaces. Dashboard metrics and explicitly selected legacy workflows
 retain browser demo data. The original queue remains an explicitly separate optional demo. No clinical records,
 photographs or automatic demo import are implemented.
+
+## Step 2.5: deployment and production verification
+
+The deployment unit remains a simple modular monolith: an unprivileged static web
+container, a non-root NestJS container, one PostgreSQL 16 database and a private asset
+volume behind Caddy TLS termination. PostgreSQL has no public network attachment.
+Runtime and migration identities are separate; the runtime role remains a non-owner
+without `BYPASSRLS`. Migrations run as an explicit one-shot release operation before
+application traffic, never automatically inside each API replica.
+
+Environment validation fails production startup without strong CSRF, MFA and monitoring
+secrets, HTTPS origins, an absolute persistent asset directory, an explicit Host allowlist
+and exactly one trusted proxy hop. Caddy rejects operational endpoints publicly and
+routes only the API prefix and static web application. Platform subdomain wildcarding is
+limited to the configured base domain; verified custom names require a separate reviewed
+routing/TLS activation and never become tenant authorization.
+
+Global observability has a distinct authorization boundary. `/metrics` accepts only a
+dedicated machine credential and is intended for the internal monitoring network.
+Diagnostics and active alerts require an active global `PLATFORM_ADMIN`. Clinic owner
+or admin membership alone always fails. Operational output remains global and has no
+clinic-scoped variant in this phase.
+
+PostgreSQL and assets have paired but separate encrypted recovery paths. The asset
+archive validates UUID keys, refuses links, hashes every file and restores to a new
+volume. Off-site object storage, immutable retention and key management are operator
+gates. See [deployment](deployment.md) and the
+[production checklist](production-readiness-checklist.md).
 
 ## Step 2.4: monitoring, error tracking & reliability
 
@@ -23,7 +51,7 @@ Phase 2, Step 2.4 establishes production-grade observability and reliability:
 1. **Zero-Dependency & Zero-Cost Telemetry**:
    - Native Node.js `crypto`, in-memory ring buffers, and NestJS services provide comprehensive observability without external subscriptions or recurring SaaS costs.
    - Prometheus metrics exposition (`GET /api/v1/metrics`) with `# TYPE`, `# HELP`, and custom quantiles ($p50$, $p95$, $p99$, $max$).
-   - Multi-tenant data isolation: operational metrics omit patient identifiers, clinic names, and financial amounts. Protected endpoints require `PLATFORM_ADMIN` / `CLINIC_ADMIN` session or `X-Metrics-Key` header.
+   - Multi-tenant data isolation: operational metrics omit patient identifiers, clinic names, and financial amounts. Metrics require a private machine key; diagnostics/alerts require an active `PLATFORM_ADMIN`. Clinic roles have no global telemetry access.
 
 2. **Structured JSON Logging & Automated PII/PHI Redaction**:
    - Single-line JSON logging format for seamless log aggregation (Vector, Fluentbit, Loki).
@@ -131,7 +159,7 @@ and clinic tenant boundaries:
    - X-Content-Type-Options: `nosniff`
    - Referrer-Policy: `no-referrer`
    - Anti-caching: `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`, `Pragma: no-cache`
-   - Strict-Transport-Security: `max-age=31536000; includeSubDomains; preload` (production)
+   - Strict-Transport-Security: `max-age=31536000` (production; no blanket subdomain/preload assertion on custom clinic domains)
    - CORS methods: explicit allowlist including `GET, POST, PATCH, DELETE, OPTIONS, HEAD`.
 
 ## Step 2.1: centralized immutable audit logging, secure backups & disaster recovery

@@ -1,5 +1,58 @@
 # Development setup
 
+## Step 2.5 — Deployment Infrastructure & Production Verification (2026-10-28)
+
+Active branch: `phase/2-security-reliability`. Production deployment is not performed.
+The existing native PostgreSQL workflow remains supported. Docker and Caddy were absent
+from the verification host, so container build/runtime and real TLS proxy checks are
+explicit launch blockers; static deployment invariants and an equivalent production-mode
+NestJS smoke are provided by:
+
+```bash
+npm run check:deployment
+npm run build
+npm run test:production-smoke
+```
+
+Production startup now requires `METRICS_SECRET_KEY`, `ASSET_STORAGE_DIR`, explicit
+`API_ALLOWED_HOSTS`, `TRUST_PROXY_HOPS=1`, the existing CSRF/MFA secrets and HTTPS CORS
+origins. Do not add real values to `.env.example` or `deploy/staging.env.example`.
+
+The security review found and removed clinic-owner/admin access to global telemetry.
+Metrics uses only the scoped internal monitoring credential. Diagnostics and alerts use
+only an active platform-administrator session. The public proxy denies all three paths.
+Negative HTTP/integration tests cover ordinary clinic administrators and owners.
+
+Clinic file recovery now has encrypted backup, verification and restore commands:
+
+```bash
+BACKUP_ENCRYPTION_KEY="$SECRET" npm run assets:backup
+BACKUP_ENCRYPTION_KEY="$SECRET" npm run assets:restore -- --file=/secure/assets.assets.meta.json
+BACKUP_ENCRYPTION_KEY="$SECRET" npm run assets:restore -- --file=/secure/assets.assets.meta.json --restore=true --target=/new/asset-volume
+```
+
+### Step 2.5 verification record
+
+| Command/check | Observed result |
+| --- | --- |
+| Starting `npm test` | 78 passed before changes (16 web + 62 API) |
+| `npm run check:boundaries` | Passed |
+| `npm run check:deployment` | Passed all static container/network/migration/proxy/artifact invariants |
+| `npm run db:validate` / `npm run db:generate` | Passed with Prisma 7.10.1 |
+| `npm run db:status` / `npm run db:status:test` | Development and test are current at all 15 migrations |
+| `npm run build` | Web and API production builds passed |
+| Final `npm test` | 86 passed (16 web + 70 API), zero failures/skips |
+| Final `npm run test:db` | 192 passed under isolated test/runtime credentials, zero failures/skips |
+| `npm run test:browser` | 34 Arabic RTL checks passed, zero runtime errors |
+| `npm run test:production-smoke` | Passed liveness/readiness, HSTS, telemetry denial, secure cookie, DB outage/restart and graceful shutdown checks |
+| Asset backup/restore tests | Exact-byte encrypted restoration passed; wrong key, symlink and malformed-key paths fail closed |
+| `docker --version`, `caddy version`, `nginx -v` | Each unavailable (`command not found`, exit 127); image builds, Compose rendering and actual proxy/TLS runtime remain blocked on this host |
+
+The database integration suite includes a genuine encrypted PostgreSQL restore drill.
+Asset restoration is independently demonstrated into a new target directory; a paired
+database-plus-assets recovery rehearsal and immutable off-site copy remain launch gates.
+See the full operational design in the [deployment guide](deployment.md).
+
 Step 2.4 establishes production monitoring, metrics, decoupled error tracking, alerting with deduplication,
 and Arabic RTL frontend error boundaries, building upon the established privacy governance, multi-factor
 authentication, audit logging, and tenant boundary.
@@ -28,9 +81,9 @@ All existing uncommitted changes and database schemas were preserved.
    - `GET /api/v1/health`: Public liveness (`{ "status": "ok" }`).
    - `GET /api/v1/health/live`: Public liveness (`{ "status": "ok" }`).
    - `GET /api/v1/health/ready`: Public readiness probe returning `200 { "status": "ready" }` or `503 Service Unavailable`.
-   - `GET /api/v1/metrics`: Protected by `PLATFORM_ADMIN`/`CLINIC_ADMIN` session or `X-Metrics-Key` header matching `METRICS_SECRET_KEY`.
-   - `GET /api/v1/health/diagnostics`: Protected diagnostic summary including current metrics, active alerts, error groups, and recent log entries.
-   - `GET /api/v1/alerts/active`: Active operational alerts with severity and trigger timestamps.
+   - `GET /api/v1/metrics`: Dedicated `X-Metrics-Key` machine credential on the private monitoring network only.
+   - `GET /api/v1/health/diagnostics`: Active `PLATFORM_ADMIN` session only; clinic roles are denied.
+   - `GET /api/v1/alerts/active`: Active `PLATFORM_ADMIN` session only; clinic roles are denied.
 
 4. **Decoupled Error Tracking & Fingerprinting**:
    - `ErrorTrackerService` normalizes error messages (stripping UUIDs, timestamps, phone numbers, numeric IDs) and generates deterministic 64-character SHA-256 fingerprints.
@@ -143,7 +196,7 @@ All existing uncommitted changes and secrets were preserved. Development and tes
    - X-Content-Type-Options: `nosniff`
    - Referrer-Policy: `no-referrer`
    - Anti-caching: `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`, `Pragma: no-cache`
-   - HTTP Strict Transport Security: `max-age=31536000; includeSubDomains; preload` (enforced in production)
+   - HTTP Strict Transport Security: `max-age=31536000` (production; custom clinic domains make global subdomain/preload assertions unsafe)
    - CORS methods: explicit allowlist including `GET, POST, PATCH, DELETE, OPTIONS, HEAD`.
 
 ### Verification Record

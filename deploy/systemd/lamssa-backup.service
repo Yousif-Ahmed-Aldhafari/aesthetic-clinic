@@ -1,5 +1,5 @@
 [Unit]
-Description=Lamssa Aesthetic Clinic - Automated Encrypted PostgreSQL Backup
+Description=Lamssa Aesthetic Clinic - Automated Encrypted Database and Asset Backup
 Documentation=file:///opt/lamssa/docs/backup-recovery.md
 After=network.target postgresql.service
 Wants=postgresql.service
@@ -12,9 +12,12 @@ WorkingDirectory=/opt/lamssa
 
 # Secure credentials must be stored in a root-owned 0600 env file
 EnvironmentFile=-/etc/lamssa/backup.env
+Environment=BACKUP_OUTPUT_DIR=/var/backups/lamssa
+Environment=BACKUP_RETENTION_DAYS=30
 
 # Execute backup using restricted node script without leaking secrets in process arguments
 ExecStart=/usr/bin/node /opt/lamssa/scripts/backup-database.mjs --target=prod --outdir=/var/backups/lamssa
+ExecStart=/usr/bin/node /opt/lamssa/scripts/asset-backup.mjs
 
 # Systemd Security Hardening
 ProtectSystem=strict

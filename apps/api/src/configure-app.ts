@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditService } from './audit/audit.service.js';
@@ -8,6 +7,7 @@ import { StructuredLoggerService } from './observability/structured-logger.servi
 import type { Environment } from './config/environment.js';
 import cookieParser from 'cookie-parser';
 import { json, type Request, type Response, type NextFunction } from 'express';
+import { requestId as safeRequestId } from './observability/request-id.js';
 
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService<Environment, true>);
@@ -19,15 +19,8 @@ export function configureApp(app: INestApplication): void {
 
   // Early Correlation & Request ID assignment
   app.use((request: Request, response: Response, next: NextFunction) => {
-    const rawReqId = request.headers['x-request-id'];
-    const requestId = typeof rawReqId === 'string' && rawReqId.length > 0 && rawReqId.length <= 128
-      ? rawReqId
-      : randomUUID();
-
-    const rawCorrId = request.headers['x-correlation-id'];
-    const correlationId = typeof rawCorrId === 'string' && rawCorrId.length > 0 && rawCorrId.length <= 128
-      ? rawCorrId
-      : requestId;
+    const requestId = safeRequestId(request.headers['x-request-id']);
+    const correlationId = safeRequestId(request.headers['x-correlation-id'], requestId);
 
     (request as unknown as { requestId: string; correlationId: string }).requestId = requestId;
     (request as unknown as { requestId: string; correlationId: string }).correlationId = correlationId;
@@ -44,7 +37,9 @@ export function configureApp(app: INestApplication): void {
     response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';");
     response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     if (config.get('NODE_ENV', { infer: true }) === 'production') {
-      response.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+      // Custom clinic domains may have unrelated subdomains; do not assert preload or
+      // includeSubDomains until ownership and rollout are reviewed per hostname.
+      response.setHeader('Strict-Transport-Security', 'max-age=31536000');
     }
     next();
   });
@@ -55,7 +50,15 @@ export function configureApp(app: INestApplication): void {
       if(!host||/[\s/@#?\\]/.test(host))throw new Error();
       const parsed=new URL('http://'+host);
       const canonical=(value:string)=>value.toLowerCase().replace(/^\[|\]$/g,'');
-      if(!config.get('API_ALLOWED_HOSTS',{infer:true}).some(value=>canonical(value)===canonical(parsed.hostname)))throw new Error();
+      const hostname=canonical(parsed.hostname);
+      const allowed=config.get('API_ALLOWED_HOSTS',{infer:true}).some(value=>{
+        const expected=canonical(value);
+        if(!expected.startsWith('*.'))return expected===hostname;
+        const suffix=expected.slice(2);
+        const prefix=hostname.slice(0,-suffix.length-1);
+        return hostname.endsWith(`.${suffix}`)&&prefix.length>0&&!prefix.includes('.');
+      });
+      if(!allowed)throw new Error();
       next();
     }catch{response.status(400).json({statusCode:400,error:{code:'INVALID_REQUEST',message:'الطلب غير صالح'}});}
   });

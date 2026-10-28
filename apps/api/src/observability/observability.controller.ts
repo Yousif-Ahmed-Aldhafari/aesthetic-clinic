@@ -8,6 +8,7 @@ import {
   Res,
   ServiceUnavailableException,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { PublicRoute, Authenticated, type AuthRequest } from '../auth/access.js';
@@ -16,6 +17,7 @@ import { MetricsService } from './metrics.service.js';
 import { ErrorTrackerService } from './error-tracker.service.js';
 import { AlertingService } from './alerting.service.js';
 import { StructuredLoggerService } from './structured-logger.service.js';
+import { isPlatformOperator, validMonitoringCredential } from './operational-access.js';
 
 @Controller()
 export class ObservabilityController {
@@ -85,7 +87,7 @@ export class ObservabilityController {
     @Headers('x-metrics-key') metricsKey?: string,
     @Query('format') format?: string,
   ) {
-    this.assertAuthorizedForOperationalTelemetry(req, metricsKey);
+    this.assertMonitoringCredential(metricsKey);
 
     if (format === 'prometheus' || req.headers.accept?.includes('text/plain')) {
       res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
@@ -100,7 +102,7 @@ export class ObservabilityController {
   @Authenticated()
   @Header('Cache-Control', 'no-store')
   getDiagnostics(@Req() req: AuthRequest) {
-    this.assertAuthorizedForOperationalTelemetry(req);
+    this.assertPlatformOperator(req);
 
     // Evaluate current rules before returning diagnostics
     const activeAlerts = this.alerting.evaluateRules();
@@ -117,35 +119,25 @@ export class ObservabilityController {
   @Authenticated()
   @Header('Cache-Control', 'no-store')
   getActiveAlerts(@Req() req: AuthRequest) {
-    this.assertAuthorizedForOperationalTelemetry(req);
+    this.assertPlatformOperator(req);
     return {
       alerts: this.alerting.evaluateRules(),
     };
   }
 
-  private assertAuthorizedForOperationalTelemetry(req: AuthRequest, metricsKey?: string): void {
-    // 1. Secret header match (for Prometheus scrapers / external monitoring systems)
-    const configuredKey = process.env.METRICS_SECRET_KEY;
-    if (configuredKey && metricsKey && metricsKey === configuredKey) {
-      return;
-    }
-
-    // 2. Authenticated session check
-    if (req.auth?.user) {
-      const user = req.auth.user;
-      const isPlatformAdmin = user.platformRole === 'PLATFORM_ADMIN';
-      const isClinicOwnerOrAdmin = user.memberships.some((m) =>
-        ['CLINIC_OWNER', 'CLINIC_ADMIN'].includes(m.role) && m.status === 'ACTIVE',
-      );
-
-      if (isPlatformAdmin || isClinicOwnerOrAdmin) {
-        return;
-      }
-    }
-
+  private assertMonitoringCredential(metricsKey?: string): void {
+    if (validMonitoringCredential(metricsKey, process.env.METRICS_SECRET_KEY)) return;
     throw new UnauthorizedException({
       statusCode: 401,
       error: { code: 'UNAUTHORIZED_METRICS_ACCESS', message: 'مؤشرات الأداء التشغيلية محمية وغير متاحة للعامة' },
+    });
+  }
+
+  private assertPlatformOperator(req: AuthRequest): void {
+    if (isPlatformOperator(req.auth?.user)) return;
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: { code: 'PLATFORM_OPERATOR_REQUIRED', message: 'هذه البيانات متاحة لمشغلي المنصة المخولين فقط' },
     });
   }
 }

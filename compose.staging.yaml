@@ -1,0 +1,77 @@
+name: lamssa-staging
+services:
+  postgres:
+    image: postgres:16.10-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?required}
+      APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:?required}
+      MIGRATION_DATABASE_PASSWORD: ${MIGRATION_DATABASE_PASSWORD:?required}
+    volumes:
+      - staging_postgres:/var/lib/postgresql/data
+      - ./deploy/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lamssa"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: migration }
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://lamssa_app:${APP_DATABASE_PASSWORD}@postgres:5432/lamssa?schema=public
+      MIGRATION_DATABASE_URL: postgresql://lamssa_migrator:${MIGRATION_DATABASE_PASSWORD}@postgres:5432/lamssa?schema=public
+      RUNTIME_DATABASE_ROLE: lamssa_app
+    networks: [data]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: production }
+    env_file: [deploy/staging.env]
+    environment:
+      DATABASE_URL: postgresql://lamssa_app:${APP_DATABASE_PASSWORD}@postgres:5432/lamssa?schema=public
+      ASSET_STORAGE_DIR: /srv/lamssa/assets
+    volumes: [staging_assets:/srv/lamssa/assets]
+    networks: [app, data, monitoring]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile, target: production }
+    networks: [app]
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run]
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2.10.2-alpine
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?required}
+    ports: ["127.0.0.1:8080:80", "127.0.0.1:8443:443"]
+    volumes:
+      - ./deploy/caddy/Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - staging_caddy_data:/data
+    networks: [edge, app]
+    depends_on: [api, web]
+    read_only: true
+    tmpfs: [/config]
+    restart: unless-stopped
+
+networks:
+  edge: {}
+  app: { internal: true }
+  data: { internal: true }
+  monitoring: { internal: true }
+volumes:
+  staging_postgres: {}
+  staging_assets: {}
+  staging_caddy_data: {}

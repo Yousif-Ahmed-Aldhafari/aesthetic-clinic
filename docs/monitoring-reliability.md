@@ -72,9 +72,9 @@
 | `/api/v1/health` | `GET` | عام (بدون قيود) | فحص الحيوية الأساسي لـ Kubernetes / موازن الحمل، يرجع `{ "status": "ok" }` |
 | `/api/v1/health/live` | `GET` | عام | فحص الحيوية ومطابقة مواصفات Liveness Probe |
 | `/api/v1/health/ready` | `GET` | عام | فحص الجاهزية (Readiness Probe). يرجع `200 { "status": "ready" }` عند جاهزية DB، و `503` عند انقطاعها |
-| `/api/v1/metrics` | `GET` | محمية (`PLATFORM_ADMIN` أو `X-Metrics-Key`) | مقاييس الأداء التشغيلي (JSON أو صيغة Prometheus التلقائية) |
-| `/api/v1/health/diagnostics` | `GET` | محمية (`PLATFORM_ADMIN` أو `CLINIC_ADMIN`) | تشخيص شامل (المقاييس + التنبيهات النشطة + مجموعات الأخطاء + آخر السجلات) |
-| `/api/v1/alerts/active` | `GET` | محمية (`PLATFORM_ADMIN` أو `CLINIC_ADMIN`) | قائمة بالتنبيهات التشغيلية النشطة الحالية وقواعدها |
+| `/api/v1/metrics` | `GET` | مفتاح آلة `X-Metrics-Key` على شبكة المراقبة الداخلية فقط | مقاييس الأداء التشغيلي (JSON أو صيغة Prometheus) |
+| `/api/v1/health/diagnostics` | `GET` | جلسة `PLATFORM_ADMIN` نشطة فقط | المقاييس والتنبيهات ومجموعات الأخطاء والسجلات الحديثة |
+| `/api/v1/alerts/active` | `GET` | جلسة `PLATFORM_ADMIN` نشطة فقط | قائمة التنبيهات التشغيلية العامة |
 
 ---
 
@@ -185,7 +185,8 @@ scrape_configs:
 #### 2. دليل تصاعد أخطاء الخادم الداخلية (`HIGH_5XX_ERROR_RATE`):
 1. طلب تقرير التشخيص السريع عبر واجهة الإدارة أو واجهة برمجة التطبيقات:
    ```bash
-   curl -H "X-Metrics-Key: $METRICS_SECRET_KEY" http://127.0.0.1:3000/api/v1/health/diagnostics
+   # يتطلب جلسة مدير منصة؛ مفتاح المقاييس لا يمنح التشخيص
+   curl --cookie "$PLATFORM_SESSION_COOKIE" https://internal-api/api/v1/health/diagnostics
    ```
 2. مراجعة `errorGroups` لتحديد بصمة الخطأ (`fingerprint`) والمسار المتأثر.
 3. مراجعة السجلات الهيكلية الحديثة برمز التتبع (`correlationId`) المذكور في تقرير الخطأ.
@@ -212,3 +213,7 @@ scrape_configs:
 - **رمز تتبع الحادثة (`correlationId`)**: توليد رمز مرجعي فريد (مثل `ERR-XXXXXX`) يظهر للمستخدم لتقديمه للدعم الفني.
 - **أزرار استعادة آمنة**: زر "إعادة المحاولة" لإعادة تحميل الشجرة المتأثرة، وزر "العودة للرئيسية" لمسح الحالة غير المتسقة.
 - **منع تسريب الاستثناءات**: حجب نصوص الأخطاء التقنية المباشرة وتفاصيل الـ Stack Trace عن شاشات المستخدمين.
+
+لا تمنح أدوار `CLINIC_OWNER` أو `CLINIC_ADMIN` الوصول إلى المقاييس أو التشخيص أو
+التنبيهات العامة، ولو كانت العضوية نشطة. يمنع الوكيل المسارات الثلاثة من الإنترنت؛
+مفتاح المراقبة لا يُخزن في المتصفح ولا يظهر في السجلات.

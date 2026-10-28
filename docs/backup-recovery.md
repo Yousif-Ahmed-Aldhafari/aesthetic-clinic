@@ -106,7 +106,8 @@ flowchart TD
 ### Database vs. Clinic Asset Backup Boundary
 - **What Database Backups Contain**: All relational clinic data, clinical records, appointments, visits, invoices, audit trails, user accounts, and database-level metadata.
 - **What Database Backups Do NOT Contain**: Uploaded clinic assets, logos, and stamps stored on the filesystem under `var/clinic-assets/` (e.g. SVG/PNG logo files referenced by `ClinicAsset.storageKey`).
-- **Asset Backup Requirement**: The `var/clinic-assets/` directory must be backed up separately via block-level snapshots or object storage synchronization (e.g. `rclone` or S3 bucket replication).
+- **Asset Backup Implementation**: `npm run assets:backup` creates a separate AES-256-GCM archive with a hash-verified manifest. It accepts regular UUID-keyed PNG/WebP derivatives only, rejects symlinks, and keeps paths and bytes inside the encrypted payload. `npm run assets:restore -- --file=...` verifies by default; add `--restore=true --target=/new/non-existing/path` for a real restore into a new volume. Pair and copy database and asset archives off-site together.
+- **Current Limit**: the local adapter bundles at most 1 GiB in memory. It is suitable and tested for the initial deployment; streaming object-storage replication, off-site transfer and WORM retention remain deployment operations.
 
 ---
 
@@ -121,7 +122,7 @@ BACKUP_ENCRYPTION_KEY="your-secure-passphrase" npm run db:backup
 - Dumps database using `pg_dump -Fc --enable-row-security`.
 - Verifies TOC contains all 33 public tables and 145 RLS policies.
 - Encrypts via AES-256-GCM and writes atomic `0600` files in `var/backups/`.
-- Enforces retention (default: 7 days / configurable via `BACKUP_RETENTION_DAYS`).
+- Enforces retention (default: 30 days / configurable via `BACKUP_RETENTION_DAYS`).
 
 ### Execute Archive Verification Drill (No DB Mutation)
 ```bash

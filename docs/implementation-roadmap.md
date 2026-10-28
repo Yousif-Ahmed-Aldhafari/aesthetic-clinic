@@ -164,6 +164,17 @@ production use remains gated on authentication, isolation and operational contro
     boundary (`<ErrorBoundary>`) with support correlation IDs (`ERR-XXXXXX`).
     See [monitoring-reliability.md](monitoring-reliability.md).
 
+15. **2.5 — Deployment Infrastructure & Production Verification (implemented locally; launch gated).**
+    Multi-stage non-root API/web images, isolated staging Compose topology, PostgreSQL
+    private networking, controlled one-shot migration identity, Caddy TLS/host/header/
+    upload policy, production fail-closed configuration, private machine-only metrics,
+    platform-operator-only diagnostics, encrypted clinic-asset backup/restore and CI
+    validation workflow. Local production-mode smoke and security regressions are
+    automated. Public deployment, DNS/certificate activation, cloud resources, off-site
+    immutable copies and jurisdictional approval require explicit owner action.
+    See [deployment.md](deployment.md) and
+    [production-readiness-checklist.md](production-readiness-checklist.md).
+
 ## Migration discipline
 
 - Preserve root development commands and the browser origin used for demo storage.

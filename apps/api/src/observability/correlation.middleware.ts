@@ -1,9 +1,9 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { StructuredLoggerService } from './structured-logger.service.js';
 import { MetricsService } from './metrics.service.js';
 import type { AuthRequest } from '../auth/access.js';
+import { requestId as safeRequestId } from './request-id.js';
 
 @Injectable()
 export class CorrelationMiddleware implements NestMiddleware {
@@ -17,15 +17,8 @@ export class CorrelationMiddleware implements NestMiddleware {
     const decrementActive = this.metrics.recordRequestStart();
 
     // Extract or generate Request ID and Correlation ID
-    const rawReqId = req.headers['x-request-id'];
-    const requestId = typeof rawReqId === 'string' && rawReqId.length > 0 && rawReqId.length <= 128
-      ? rawReqId
-      : randomUUID();
-
-    const rawCorrId = req.headers['x-correlation-id'];
-    const correlationId = typeof rawCorrId === 'string' && rawCorrId.length > 0 && rawCorrId.length <= 128
-      ? rawCorrId
-      : requestId;
+    const requestId = safeRequestId(req.headers['x-request-id']);
+    const correlationId = safeRequestId(req.headers['x-correlation-id'], requestId);
 
     // Attach to request object and response headers
     (req as unknown as { requestId: string; correlationId: string }).requestId = requestId;

@@ -1,0 +1,36 @@
+{
+  admin off
+  local_certs
+}
+
+{$PUBLIC_HOST} {
+  tls internal
+  encode zstd gzip
+  @operational path /api/v1/metrics* /api/v1/health/diagnostics* /api/v1/alerts/active*
+  respond @operational 404
+  @api path /api/v1/*
+  handle @api {
+    request_body {
+      max_size 3MB
+    }
+    reverse_proxy api:3000 {
+      transport http {
+        dial_timeout 5s
+        response_header_timeout 30s
+      }
+      header_up X-Forwarded-Proto https
+      header_up X-Forwarded-Host {host}
+    }
+  }
+  handle {
+    reverse_proxy web:8080
+  }
+  header {
+    -Server
+    X-Content-Type-Options nosniff
+    X-Frame-Options DENY
+    Referrer-Policy strict-origin-when-cross-origin
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security "max-age=31536000"
+  }
+}

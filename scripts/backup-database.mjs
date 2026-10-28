@@ -15,7 +15,7 @@ function parseArgs() {
   const options = {
     target: 'dev',
     outdir: resolve(root, 'var/backups'),
-    retentionDays: parseInt(process.env.BACKUP_RETENTION_DAYS || '7', 10),
+    retentionDays: parseInt(process.env.BACKUP_RETENTION_DAYS || '30', 10),
     key: process.env.BACKUP_ENCRYPTION_KEY || '',
     url: '',
   };
@@ -38,8 +38,8 @@ async function collectDatabaseBaseline(connectionString) {
     const { rows: userRows } = await client.query('SELECT current_user, session_user');
     const currentUser = userRows[0]?.current_user;
 
-    const unprivilegedAppRoles = ['lamssa_dev_app', 'lamssa_test_app'];
-    if (unprivilegedAppRoles.includes(currentUser)) {
+    const unprivilegedAppRoles = new Set(['lamssa_dev_app', 'lamssa_test_app', 'lamssa_app', process.env.RUNTIME_DATABASE_ROLE].filter(Boolean));
+    if (unprivilegedAppRoles.has(currentUser)) {
       throw new Error(
         `[Backup Security Abort] Runtime application role '${currentUser}' cannot be used for database backups. ` +
         `Backups must run as the maintenance/migrator owner role (e.g. MIGRATION_DATABASE_URL) to ensure complete capture of RLS-protected tables.`

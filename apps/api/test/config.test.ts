@@ -40,7 +40,26 @@ test('production requires MFA_ENCRYPTION_KEY and valid origins', () => {
     NODE_ENV: 'production',
     CORS_ORIGINS: 'https://clinic.example.com',
     MFA_ENCRYPTION_KEY: randomBytes(32).toString('base64url'),
+    METRICS_SECRET_KEY: randomBytes(48).toString('base64url'),
+    ASSET_STORAGE_DIR: '/srv/lamssa/assets',
+    API_ALLOWED_HOSTS: 'app.example.com',
+    TRUST_PROXY_HOPS: '1',
   });
   assert.equal(prodConfig.NODE_ENV, 'production');
   assert.ok(prodConfig.MFA_ENCRYPTION_KEY);
+});
+
+test('production fails closed without deployment secrets and trusted proxy settings', () => {
+  assert.throws(() => validateEnvironment({
+    ...valid,
+    NODE_ENV: 'production',
+    CORS_ORIGINS: 'https://app.example.com',
+    MFA_ENCRYPTION_KEY: randomBytes(32).toString('base64url'),
+  }), /METRICS_SECRET_KEY.*ASSET_STORAGE_DIR.*TRUST_PROXY_HOPS.*API_ALLOWED_HOSTS/);
+});
+
+test('platform subdomain wildcard is restricted to the configured base domain', () => {
+  const config=validateEnvironment({...valid,PLATFORM_BASE_DOMAIN:'clinics.example.com',API_ALLOWED_HOSTS:'app.example.com,*.clinics.example.com'});
+  assert.deepEqual(config.API_ALLOWED_HOSTS,['app.example.com','*.clinics.example.com']);
+  assert.throws(()=>validateEnvironment({...valid,PLATFORM_BASE_DOMAIN:'clinics.example.com',API_ALLOWED_HOSTS:'*.example.com'}),/API_ALLOWED_HOSTS/);
 });

@@ -71,6 +71,7 @@ before(async () => {
   assert.notEqual(identity(testUrl!), identity(developmentUrl!), 'Integration tests require a separate database');
   process.env.NODE_ENV='test'; process.env.DATABASE_URL=testUrl;
   process.env.AUTH_CSRF_SECRET=randomBytes(48).toString('base64url');
+  process.env.METRICS_SECRET_KEY=randomBytes(48).toString('base64url');
   process.env.CORS_ORIGINS=origin; process.env.AUTH_LOGIN_ACCOUNT_LIMIT='100'; process.env.AUTH_LOGIN_IP_LIMIT='10000';
   const { AppModule } = await import('../src/app.module.js');
   const module = await Test.createTestingModule({imports:[AppModule],controllers:[SecurityController]}).compile();
@@ -158,6 +159,29 @@ live('least privilege denies settings and financial permissions to doctor despit
 live('global platform administrator has no automatic clinic bypass',async()=>{
   const b=new Browser();await b.login(3);assert.equal((await b.request(`clinics/${clinicIds[0]}/me`)).status,404);
   assert.deepEqual(await (await b.request('auth/clinics')).json(),{clinics:[]});
+});
+live('clinic owners and admins cannot access platform telemetry while an active platform operator can',async()=>{
+  const clinicOwner=new Browser();await clinicOwner.login(0);
+  assert.equal((await clinicOwner.request('health/diagnostics')).status,403);
+  assert.equal((await clinicOwner.request('alerts/active')).status,403);
+  assert.equal((await clinicOwner.request('metrics')).status,401);
+  await prisma.clinicMembership.update({where:{clinicId_userId:{clinicId:clinicIds[0],userId:userIds[0]}},data:{role:'CLINIC_ADMIN'}});
+  try{
+    const clinicAdmin=new Browser();await clinicAdmin.login(0);
+    assert.equal((await clinicAdmin.request('health/diagnostics')).status,403);
+    assert.equal((await clinicAdmin.request('alerts/active')).status,403);
+    assert.equal((await clinicAdmin.request('metrics')).status,401);
+  }finally{
+    await prisma.clinicMembership.update({where:{clinicId_userId:{clinicId:clinicIds[0],userId:userIds[0]}},data:{role:'CLINIC_OWNER'}});
+  }
+  const platform=new Browser();await platform.login(3);
+  assert.equal((await platform.request('health/diagnostics')).status,200);
+  assert.equal((await platform.request('alerts/active')).status,200);
+  const machine=await fetch(`${base}/api/v1/metrics`,{headers:{'X-Metrics-Key':process.env.METRICS_SECRET_KEY!}});
+  assert.equal(machine.status,200);
+  const snapshot=await machine.json() as Record<string,unknown>;
+  assert(!JSON.stringify(snapshot).includes(slugs[0]));
+  assert(!JSON.stringify(snapshot).includes(clinicIds[0]));
 });
 live('suspended membership, clinic and user revoke existing sessions and deny fresh access',async()=>{
   for(const target of ['membership','clinic','user']){

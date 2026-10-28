@@ -4,7 +4,11 @@ import pg from 'pg';
 config({ path: resolve(import.meta.dirname, '../.env'), quiet: true });
 const tables=['Clinic','ClinicBranding','ClinicDomain','User','ClinicMembership','Session','LoginBucket','Patient','PatientCounter','ClinicService','BookableResource','ResourceAvailability','ResourceTimeOff','SchedulingState','Appointment','Visit','QueueTicket','QueueCounter','QueueConfiguration','QueueCommand','Invoice','InvoiceLine','Payment','PaymentReversal','FinancialAuditEvent','ClinicInvoiceCounter','ClinicBillingProfile','ClinicAsset','ClinicIdentityState','ClinicIdentityAuditEvent','ClinicSlugReservation','AuditEvent','UserMfa','MfaRecoveryCode','MfaChallenge','PrivacyRequest','PatientExport','RetentionPolicy'];
 try {
-  for(const [key,role] of [['MIGRATION_DATABASE_URL','lamssa_dev_app'],['TEST_MIGRATION_DATABASE_URL','lamssa_test_app']]) {
+  const configurations=process.env.RUNTIME_DATABASE_ROLE
+    ? [['MIGRATION_DATABASE_URL',process.env.RUNTIME_DATABASE_ROLE]]
+    : [['MIGRATION_DATABASE_URL','lamssa_dev_app'],['TEST_MIGRATION_DATABASE_URL','lamssa_test_app']];
+  for(const [key,role] of configurations) {
+    if(!/^[a-z][a-z0-9_]{2,62}$/.test(role))throw new Error('Unsafe runtime role name');
     if(!process.env[key])throw new Error('Missing migration URL');
     const client=new pg.Client({connectionString:process.env[key],connectionTimeoutMillis:3000});
     try {
@@ -38,5 +42,5 @@ try {
       await client.query('COMMIT');
     }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{await client.end();}
   }
-  console.info('Applied restricted runtime grants for identity, patients, scheduling, queue billing and audited clinic administration; identity/financial history is append-only and only draft lines permit guarded DELETE.');
+  console.info('Applied restricted runtime grants; application roles remain non-owner and FORCE RLS constrained.');
 }catch{console.error('Runtime grants failed. Check separate owner/runtime roles and apply all migrations first; credentials withheld.');process.exitCode=1;}
