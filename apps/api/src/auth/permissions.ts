@@ -7,6 +7,8 @@ export const permissions = [
   'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read',
   'audit.read',
   'privacy.requests.read', 'privacy.requests.manage', 'privacy.export',
+  'clinical.encounters.read', 'clinical.encounters.create', 'clinical.encounters.update', 'clinical.encounters.sign',
+  'clinical.history.read', 'clinical.history.update', 'clinical.amendments.create',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -21,7 +23,9 @@ const administration: Permission[] = [
 export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>> = {
   CLINIC_OWNER: [...administration, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read', 'privacy.export'],
   CLINIC_ADMIN: administration,
-  DOCTOR: ['clinic.branding.read', 'patients.read', 'patients.update', 'appointments.read', 'appointments.update', 'appointments.complete', 'queue.read', 'queue.manage', 'queue.complete'],
+  DOCTOR: ['clinic.branding.read', 'patients.read', 'patients.update', 'appointments.read', 'appointments.update', 'appointments.complete', 'queue.read', 'queue.manage', 'queue.complete',
+    'clinical.encounters.read', 'clinical.encounters.create', 'clinical.encounters.update', 'clinical.encounters.sign',
+    'clinical.history.read', 'clinical.history.update', 'clinical.amendments.create'],
   RECEPTIONIST: ['clinic.branding.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record'],
   ACCOUNTANT: ['clinic.branding.read', 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read'],
 };

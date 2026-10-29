@@ -52,5 +52,7 @@ test('identity: permission ceiling ensures CLINIC_ADMIN cannot grant roles with 
   assert(!permissionsFor('RECEPTIONIST').every(p=>adminPermissions.includes(p)));
   assert(!permissionsFor('ACCOUNTANT').every(p=>adminPermissions.includes(p)));
   assert(!permissionsFor('CLINIC_OWNER').every(p=>adminPermissions.includes(p)));
-  assert(permissionsFor('DOCTOR').every(p=>adminPermissions.includes(p)));
+  const administrativeDoctorPermissions=permissionsFor('DOCTOR').filter(p=>!p.startsWith('clinical.'));
+  assert(administrativeDoctorPermissions.every(p=>adminPermissions.includes(p)));
+  assert(permissionsFor('DOCTOR').filter(p=>p.startsWith('clinical.')).every(p=>!adminPermissions.includes(p)));
 });

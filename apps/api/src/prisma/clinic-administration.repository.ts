@@ -75,7 +75,8 @@ export class ClinicAdministrationRepository {
     return this.write(proof,clinicId,'staff.manage',async(tx,c)=>{
       const old=await tx.clinicMembership.findFirst({where:{id,clinicId:c.clinicId},select:memberSelect});if(!old)throw new NotFoundException();version(old.version,input.expectedVersion);
       if(c.role!=='CLINIC_OWNER'&&([old.role,input.role].some(r=>['CLINIC_OWNER','CLINIC_ADMIN','ACCOUNTANT'].includes(r))))throw new ForbiddenException();
-      if(c.role!=='CLINIC_OWNER'&&input.status==='ACTIVE'&&(old.role!==input.role||old.status!=='ACTIVE')&&!permissionsFor(input.role).every(permission=>c.permissions.includes(permission)))throw new ForbiddenException();
+      const explicitlyDelegableClinicalRole=input.role==='DOCTOR';
+      if(c.role!=='CLINIC_OWNER'&&input.status==='ACTIVE'&&(old.role!==input.role||old.status!=='ACTIVE')&&!explicitlyDelegableClinicalRole&&!permissionsFor(input.role).every(permission=>c.permissions.includes(permission)))throw new ForbiddenException();
       if(old.role==='CLINIC_OWNER'&&(input.role!=='CLINIC_OWNER'||input.status!=='ACTIVE')){
         const activeOwners=await tx.clinicMembership.count({where:{clinicId:c.clinicId,role:'CLINIC_OWNER',status:'ACTIVE'}});
         if(activeOwners<=1)throw new IdentityError('IDENTITY_CONFLICT');

@@ -1,5 +1,10 @@
 # Lamssa implementation roadmap
 
+## Phase 3
+
+1. **3.1 — Clinical consultations and EMR foundation (implemented):** doctor-assigned encounters, structured history, signed-note immutability, append-only amendments, RLS, audit/privacy controls, and Arabic RTL workflow.
+2. **3.2 — Treatment plans and aesthetic procedures (next):** governed procedure catalog and planned/performed workflow with explicit consent and prescription boundaries.
+
 Updated after Step 1.9, 2026-10-26. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All
 production use remains gated on authentication, isolation and operational controls.

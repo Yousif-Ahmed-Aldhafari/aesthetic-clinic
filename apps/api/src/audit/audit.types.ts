@@ -45,7 +45,7 @@ export interface SanitizedAuditEventDto {
   createdAt: string;
 }
 
-const SENSITIVE_KEY_PATTERN = /(password|token|secret|cookie|credential|card|cvv|pan|authorization|csrf|medicalnotes|diagnosis|clinicalnotes|symptom|prescription|treatmentnote|nationalid|passport)/i;
+const SENSITIVE_KEY_PATTERN = /(password|token|secret|cookie|credential|card|cvv|pan|authorization|csrf|medicalnotes|diagnosis|clinicalnotes|symptom|prescription|treatmentnote|medication|allerg|assessment|examination|chiefcomplaint|nationalid|passport)/i;
 
 export function sanitizeAuditMetadata(input: unknown, depth = 0): Record<string, unknown> | null {
   if (depth > 5 || input === null || typeof input !== 'object') return null;

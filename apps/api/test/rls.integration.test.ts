@@ -66,7 +66,7 @@ for(const i of [0,1])live(`runtime context ${i===0?'A':'B'} sees only its own pr
   });
 });
 live('missing context returns no protected rows and rejects writes',async()=>{
-  for(const table of ['Clinic','ClinicBranding','ClinicDomain','ClinicMembership'])assert.equal((await pool.query(`SELECT 1 FROM public."${table}"`)).rowCount,0);
+  for(const table of ['Clinic','ClinicBranding','ClinicDomain','ClinicMembership','ClinicalEncounter','ClinicalNote','ClinicalNoteAmendment','MedicalHistory'])assert.equal((await pool.query(`SELECT 1 FROM public."${table}"`)).rowCount,0);
   await assert.rejects(pool.query('INSERT INTO public."ClinicDomain" (id,"clinicId",hostname,"updatedAt") VALUES ($1,$2,$3,NOW())',[randomUUID(),clinics[0],`missing-${suffix}.example.invalid`]),denied);
 });
 live('malformed or incomplete GUCs fail closed, including forged clinic selection',async()=>{
@@ -108,11 +108,11 @@ live('RLS remains active under row_security=off and runtime cannot change polici
   await assert.rejects(pool.query(`SET ROLE "${table.owner}"`),denied);
 });
 live('FORCE RLS, explicit command policies, and locked definer search paths are installed',async()=>{
-  const tables=(await pool.query(`SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid IN ('public."Clinic"'::regclass,'public."ClinicBranding"'::regclass,'public."ClinicDomain"'::regclass,'public."ClinicMembership"'::regclass)`)).rows;
-  assert.equal(tables.length,4);assert(tables.every(t=>t.relrowsecurity&&t.relforcerowsecurity));
+  const tables=(await pool.query(`SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid IN ('public."Clinic"'::regclass,'public."ClinicBranding"'::regclass,'public."ClinicDomain"'::regclass,'public."ClinicMembership"'::regclass,'public."ClinicalEncounter"'::regclass,'public."ClinicalNote"'::regclass,'public."ClinicalNoteAmendment"'::regclass,'public."MedicalHistory"'::regclass)`)).rows;
+  assert.equal(tables.length,8);assert(tables.every(t=>t.relrowsecurity&&t.relforcerowsecurity));
   for(const t of tables){const policies=(await pool.query('SELECT cmd FROM pg_policies WHERE schemaname=$1 AND tablename=$2',['public',t.relname])).rows.map(r=>r.cmd).sort();assert.deepEqual(policies,['ALL','DELETE','INSERT','SELECT','UPDATE']);}
   const functions=(await pool.query(`SELECT p.proname,p.prosecdef,p.proconfig,EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE') AS public_execute FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='lamssa_security'`)).rows;
-  assert.equal(functions.length,26);assert(functions.every(f=>f.proconfig.includes('search_path=pg_catalog, pg_temp')&&!f.public_execute));
+  assert.equal(functions.length,29);assert(functions.every(f=>f.proconfig.includes('search_path=pg_catalog, pg_temp')&&!f.public_execute));
   assert.deepEqual(functions.filter(f=>f.prosecdef).map(f=>f.proname).sort(),['administration_locks','clinic_mfa_policy','context_allows','identity_guard','identity_memberships','identity_record','membership_privilege_guard','public_brand_asset','public_branding','public_branding_details','public_queue','record_audit_event','reserve_clinic_slug','retention_dry_run']);
 });
 live('concurrent runtime transactions use distinct connections without context contamination',async()=>{
@@ -184,7 +184,7 @@ live('public branding function exposes only approved fields without tenant GUCs'
 live('migrations remain applied and maintenance seed stays idempotent under FORCE RLS',async()=>{
   // Roll back the seed exercise so the test DB retains no extra seed records.
   const {owner:ownerUrl}=testUrls();const setup=new Pool({connectionString:ownerUrl,max:1});
-  try{const rows=(await setup.query('SELECT migration_name FROM public._prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name')).rows;assert.equal(rows.length,15);}finally{await setup.end();}
+  try{const rows=(await setup.query('SELECT migration_name FROM public._prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name')).rows;assert.equal(rows.length,17);}finally{await setup.end();}
   const before=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true}});
   await seedDemoClinics(owner);const once=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true},orderBy:{slug:'asc'}});
   await seedDemoClinics(owner);const twice=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true},orderBy:{slug:'asc'}});assert.deepEqual(twice,once);assert.notEqual(twice[0].branding!.primaryColor,twice[1].branding!.primaryColor);

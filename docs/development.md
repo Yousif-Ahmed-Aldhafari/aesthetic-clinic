@@ -1,5 +1,9 @@
 # Development setup
 
+## Phase 3.1 clinical records
+
+Apply `20261029000100_clinical_records` and `20261029000200_clinical_integrity_hardening` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`; never reset or schema-push. Routes are under `/api/v1/clinics/:clinicId/clinical`. Use fictional records only. Runtime has no delete privilege and remains FORCE-RLS constrained.
+
 ## Step 2.5 — Deployment Infrastructure & Production Verification (2026-10-28)
 
 Active branch: `phase/2-security-reliability`. Production deployment is not performed.

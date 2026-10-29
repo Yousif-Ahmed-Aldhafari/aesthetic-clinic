@@ -96,6 +96,10 @@ model Clinic {
   privacyRequests PrivacyRequest[]
   patientExports PatientExport[]
   retentionPolicy RetentionPolicy?
+  clinicalEncounters ClinicalEncounter[]
+  clinicalNotes ClinicalNote[]
+  clinicalNoteAmendments ClinicalNoteAmendment[]
+  medicalHistories MedicalHistory[]
 
   @@index([status, createdAt])
 }
@@ -225,6 +229,10 @@ model ClinicMembership {
 
   bookableResource BookableResource?
   financialAuditEvents FinancialAuditEvent[]
+  clinicalEncounters ClinicalEncounter[] @relation("EncounterClinician")
+  authoredClinicalNotes ClinicalNote[] @relation("ClinicalNoteAuthor")
+  clinicalNoteAmendments ClinicalNoteAmendment[] @relation("ClinicalAmendmentAuthor")
+  reviewedMedicalHistories MedicalHistory[] @relation("MedicalHistoryReviewer")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -353,6 +361,8 @@ model Patient {
   appointments Appointment[]
   visits Visit[]
   invoices Invoice[]
+  clinicalEncounters ClinicalEncounter[]
+  medicalHistory MedicalHistory?
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -366,6 +376,99 @@ model PatientCounter {
   clinicId   String @id @db.Uuid
   lastNumber Int
   clinic     Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+enum ClinicalEncounterStatus {
+  DRAFT
+  IN_PROGRESS
+  SIGNED
+  AMENDED
+  CLOSED
+}
+
+enum ClinicalNoteStatus {
+  DRAFT
+  SIGNED
+  AMENDED
+}
+
+enum ClinicalNoteType {
+  CONSULTATION
+}
+
+model ClinicalEncounter {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  patientId String @db.Uuid
+  clinicianMembershipId String @db.Uuid
+  visitId String? @db.Uuid
+  appointmentId String? @db.Uuid
+  status ClinicalEncounterStatus @default(DRAFT)
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  patient Patient @relation(fields:[clinicId,patientId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  clinician ClinicMembership @relation("EncounterClinician",fields:[clinicId,clinicianMembershipId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  visit Visit? @relation(fields:[clinicId,visitId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  appointment Appointment? @relation(fields:[clinicId,appointmentId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  notes ClinicalNote[]
+  @@unique([clinicId,id])
+  @@unique([clinicId,visitId])
+  @@index([clinicId,patientId,createdAt,id])
+  @@index([clinicId,clinicianMembershipId,status,createdAt])
+}
+
+model ClinicalNote {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  encounterId String @db.Uuid
+  authorMembershipId String @db.Uuid
+  noteType ClinicalNoteType @default(CONSULTATION)
+  content Json
+  status ClinicalNoteStatus @default(DRAFT)
+  version Int @default(1)
+  signedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  encounter ClinicalEncounter @relation(fields:[clinicId,encounterId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  author ClinicMembership @relation("ClinicalNoteAuthor",fields:[clinicId,authorMembershipId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  amendments ClinicalNoteAmendment[]
+  @@unique([clinicId,id])
+  @@index([clinicId,encounterId,createdAt])
+  @@index([clinicId,authorMembershipId,status])
+}
+
+model ClinicalNoteAmendment {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  noteId String @db.Uuid
+  authorMembershipId String @db.Uuid
+  reason String @db.VarChar(1000)
+  content Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  note ClinicalNote @relation(fields:[clinicId,noteId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  author ClinicMembership @relation("ClinicalAmendmentAuthor",fields:[clinicId,authorMembershipId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  @@unique([clinicId,id])
+  @@index([clinicId,noteId,createdAt,id])
+}
+
+model MedicalHistory {
+  clinicId String @db.Uuid
+  patientId String @db.Uuid
+  content Json
+  version Int @default(1)
+  reviewedByMembershipId String? @db.Uuid
+  reviewedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  patient Patient @relation(fields:[clinicId,patientId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  reviewedBy ClinicMembership? @relation("MedicalHistoryReviewer",fields:[clinicId,reviewedByMembershipId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
+  @@id([clinicId,patientId])
+  @@index([clinicId,reviewedAt])
 }
 
 
@@ -487,6 +590,7 @@ model Appointment {
   doctor BookableResource @relation("AppointmentDoctor",fields:[clinicId,doctorResourceId,doctorKind],references:[clinicId,id,kind],onDelete:Restrict,onUpdate:Restrict)
   room BookableResource? @relation("AppointmentRoom",fields:[clinicId,roomResourceId,roomKind],references:[clinicId,id,kind],onDelete:Restrict,onUpdate:Restrict)
   visit Visit?
+  clinicalEncounters ClinicalEncounter[]
   @@unique([clinicId,id])
   @@unique([clinicId,bookingKey])
   @@index([clinicId,startAt,id])
@@ -537,6 +641,7 @@ model Visit {
   appointment Appointment? @relation(fields:[clinicId,appointmentId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   ticket QueueTicket?
   invoices Invoice[]
+  clinicalEncounter ClinicalEncounter?
   @@unique([clinicId,id,patientId])
   @@unique([clinicId,id])
   @@unique([clinicId,appointmentId])
@@ -782,6 +887,7 @@ enum AuditCategory {
   SECURITY
   PLATFORM
   PRIVACY
+  CLINICAL
 }
 
 enum AuditOutcome {

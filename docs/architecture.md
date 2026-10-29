@@ -1,5 +1,9 @@
 # Lamssa architecture
 
+## Phase 3.1 clinical boundary
+
+`ClinicalEncounter`, `ClinicalNote`, `ClinicalNoteAmendment`, and `MedicalHistory` are sensitive tenant resources protected by doctor-only permissions, assigned-membership filtering, transaction-local tenant context, same-clinic foreign keys, and FORCE RLS. Signed content is database-immutable and corrections are append-only. Patient administration, clinic ownership, and platform administration confer no clinical access. See [clinical-records.md](clinical-records.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
