@@ -130,4 +130,3 @@ In `ClinicSettings.tsx`:
 While application roles and PostgreSQL runtime users are strictly prohibited from mutating audit records:
 - Superusers (`postgres`) and migrator maintenance roles hold database administrative authority required for migrations and maintenance.
 - DBA protections are enforced outside the database engine via encrypted off-site backups, write-once storage (WORM), and separation of cloud provider credentials.
-

@@ -163,4 +163,3 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Unit Tests**: `npm test` (72 tests passing: 16 web + 56 api).
 - **Database Integration Tests**: `npm run test:db` (191 tests passing across all 12 test suites).
 - **Browser Smoke Suite**: `node scripts/patients-browser-smoke.mjs` (33/33 browser checks passing with 0 runtime errors).
-

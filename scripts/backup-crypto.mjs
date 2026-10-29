@@ -78,4 +78,3 @@ export function decryptBackup(ciphertextBuffer, passphrase, meta) {
     throw new Error(`Decryption failed: authentication tag verification failed (${error.message}). Ciphertext may have been modified or wrong passphrase supplied.`);
   }
 }
-

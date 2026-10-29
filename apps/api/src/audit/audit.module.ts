@@ -11,4 +11,3 @@ import { AuditController } from './audit.controller.js';
   exports: [AuditService],
 })
 export class AuditModule {}
-

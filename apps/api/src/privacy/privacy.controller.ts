@@ -158,4 +158,3 @@ export class PrivacyController {
     return this.privacyRepo.runRetentionDryRun(req.auth!.principal, clinicId);
   }
 }
-

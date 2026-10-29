@@ -153,4 +153,3 @@ test('backup crypto detects ciphertext tampering or incorrect passphrase via GCM
     /Decryption failed: authentication tag verification failed/
   );
 });
-

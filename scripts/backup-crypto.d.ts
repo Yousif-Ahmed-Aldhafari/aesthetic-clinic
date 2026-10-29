@@ -25,4 +25,3 @@ export function decryptBackup(
     ciphertextSha256?: string;
   }
 ): Buffer;
-

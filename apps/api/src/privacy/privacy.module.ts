@@ -8,4 +8,3 @@ import { PrivacyController } from './privacy.controller.js';
   exports: [],
 })
 export class PrivacyModule {}
-

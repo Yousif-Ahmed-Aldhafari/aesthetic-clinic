@@ -125,7 +125,7 @@ if (!enabled) {
       // 1. Users
       await client.query(`
         INSERT INTO public."User" (id, email, "passwordHash", name, status, "updatedAt")
-        VALUES 
+        VALUES
           ($1, 'alpha-owner@clinic-fictional.test', 'hash_alpha', 'مدير عيادة ألف', 'ACTIVE', NOW()),
           ($2, 'beta-owner@clinic-fictional.test', 'hash_beta', 'مدير عيادة باء', 'ACTIVE', NOW())
       `, [userIdAlpha, userIdBeta]);
@@ -133,7 +133,7 @@ if (!enabled) {
       // 2. Clinics
       await client.query(`
         INSERT INTO public."Clinic" (id, "displayName", "legalName", slug, "contactPhone", "contactEmail", status, currency, timezone, "updatedAt")
-        VALUES 
+        VALUES
           ($1, 'عيادة النور التجريبية', 'شركة النور لطب التجميل', 'clinic-alpha-backup-verify', '+966500000011', 'alpha@alnoor.test', 'ACTIVE', 'SAR', 'Asia/Riyadh', NOW()),
           ($2, 'عيادة الأمل التجريبية', 'شركة الأمل لطب التجميل', 'clinic-beta-backup-verify', '+966500000022', 'beta@alamal.test', 'ACTIVE', 'SAR', 'Asia/Riyadh', NOW())
       `, [clinicIdAlpha, clinicIdBeta]);
@@ -141,7 +141,7 @@ if (!enabled) {
       // 3. Memberships
       await client.query(`
         INSERT INTO public."ClinicMembership" (id, "clinicId", "userId", role, status, "updatedAt")
-        VALUES 
+        VALUES
           (gen_random_uuid(), $1, $2, 'CLINIC_OWNER', 'ACTIVE', NOW()),
           (gen_random_uuid(), $3, $4, 'CLINIC_OWNER', 'ACTIVE', NOW())
       `, [clinicIdAlpha, userIdAlpha, clinicIdBeta, userIdBeta]);
@@ -149,7 +149,7 @@ if (!enabled) {
       // 4. Patients
       await client.query(`
         INSERT INTO public."Patient" (id, "clinicId", "fullName", "searchName", "patientNumber", phone, status, gender, "dateOfBirth", version, "updatedAt")
-        VALUES 
+        VALUES
           ($1, $2, 'مريضة عيادة ألف', 'مريضة عيادة الف', 'P-000101', '+966551000101', 'ACTIVE', 'FEMALE', '1995-05-15', 1, NOW()),
           ($3, $4, 'مريض عيادة باء', 'مريض عيادة باء', 'P-000202', '+966552000202', 'ACTIVE', 'MALE', '1990-10-20', 1, NOW())
       `, [patientIdAlpha, clinicIdAlpha, patientIdBeta, clinicIdBeta]);
@@ -157,7 +157,7 @@ if (!enabled) {
       // 5. Centralized Audit Events
       await client.query(`
         INSERT INTO public."AuditEvent" (id, "clinicId", "actorId", "actorEmail", category, action, outcome, "targetType", "targetId", metadata)
-        VALUES 
+        VALUES
           (gen_random_uuid(), $1, $2, 'alpha-owner@clinic-fictional.test', 'IDENTITY', 'clinic.profile_updated', 'SUCCESS', 'Clinic', $5, '{"change":"test_alpha"}'),
           (gen_random_uuid(), $3, $4, 'beta-owner@clinic-fictional.test', 'IDENTITY', 'clinic.profile_updated', 'SUCCESS', 'Clinic', $6, '{"change":"test_beta"}')
       `, [clinicIdAlpha, userIdAlpha, clinicIdBeta, userIdBeta, clinicIdAlpha, clinicIdBeta]);

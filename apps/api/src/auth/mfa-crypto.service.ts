@@ -67,4 +67,3 @@ export class MfaCryptoService {
     throw lastError ?? new Error('Decryption failed');
   }
 }
-

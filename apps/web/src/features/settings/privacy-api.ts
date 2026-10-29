@@ -89,4 +89,3 @@ export const exportStatusLabels: Record<string, string> = {
   EXPIRED: 'منتهي الصلاحية',
   REVOKED: 'ملغى يدويًا',
 };
-

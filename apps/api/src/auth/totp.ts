@@ -162,4 +162,3 @@ export function verifyRecoveryCode(plaintext: string, expectedHash: string, salt
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
 }
-

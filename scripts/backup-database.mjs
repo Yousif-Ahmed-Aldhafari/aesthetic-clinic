@@ -55,8 +55,8 @@ async function collectDatabaseBaseline(connectionString) {
 
     // Discover all public tables dynamically
     const { rows: tableRows } = await client.query(`
-      SELECT tablename 
-      FROM pg_tables 
+      SELECT tablename
+      FROM pg_tables
       WHERE schemaname = 'public'
       ORDER BY tablename
     `);

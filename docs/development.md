@@ -214,6 +214,8 @@ All existing uncommitted changes and secrets were preserved. Development and tes
 
 ## Step 2.1 — Centralized Audit Logging, Secure Backups & Disaster Recovery (2026-10-26)
 
+> Historical implementation record. The table and timing counts in this section describe the Step 2.1 checkpoint; use [deployment.md](deployment.md) and [backup-recovery.md](backup-recovery.md) for the final Phase 2 recovery evidence and current operating procedure.
+
 Active branch: `Antigravity-Work`.
 All existing uncommitted changes and secrets were preserved. Development and test databases both migrated to migration 12 (`20261026000400_centralized_audit_logging`).
 

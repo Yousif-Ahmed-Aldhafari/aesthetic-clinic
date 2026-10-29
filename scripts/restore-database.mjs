@@ -212,8 +212,8 @@ async function verifyRestoredDatabase(targetConnectionString, meta) {
     // 5. Verify security functions in lamssa_security via system catalog pg_proc
     const { rows: funcRows } = await client.query(`
       SELECT p.proname AS routine_name
-      FROM pg_proc p 
-      JOIN pg_namespace n ON n.oid = p.pronamespace 
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'lamssa_security'
     `);
     const securityFunctions = funcRows.map((r) => r.routine_name);
@@ -223,7 +223,7 @@ async function verifyRestoredDatabase(targetConnectionString, meta) {
 
     // 6. Verify constraints
     const { rows: constraintRows } = await client.query(`
-      SELECT conname, contype 
+      SELECT conname, contype
       FROM pg_constraint c
       JOIN pg_namespace n ON n.oid = c.connamespace
       WHERE n.nspname = 'public' AND conname = 'patient_values'
@@ -546,8 +546,8 @@ export async function runRestore(cliOptions = {}) {
       await dropClient.connect();
       try {
         await dropClient.query(`
-          SELECT pg_terminate_backend(pid) 
-          FROM pg_stat_activity 
+          SELECT pg_terminate_backend(pid)
+          FROM pg_stat_activity
           WHERE datname = $1 AND pid <> pg_backend_pid()
         `, [targetDbName]);
         await dropClient.query(`DROP DATABASE ${quoteRestoreIdentifier(targetDbName)}`);

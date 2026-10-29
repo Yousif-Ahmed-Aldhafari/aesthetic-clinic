@@ -53,4 +53,3 @@ export class AuditClinicRoute {
   @IsUUID()
   clinicId!: string;
 }
-

@@ -83,4 +83,3 @@ export function sanitizeAuditMetadata(input: unknown, depth = 0): Record<string,
   }
   return result;
 }
-
