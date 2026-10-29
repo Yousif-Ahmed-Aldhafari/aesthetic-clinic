@@ -1,15 +1,183 @@
 # Lamssa architecture
 
-Phase 1, Steps 1.1–1.9 — current implementation, 2026-10-26.
+Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
-appointment scheduling, visits, live queues, invoices and payments now persist per clinic through mandatory tenant transactions,
-RBAC and PostgreSQL FORCE RLS. Arabic RTL directory and appointment calendar screens
-use the protected API, as do reception/doctor queue and billing workspaces.
-Dashboard metrics and explicitly selected legacy workflows retain browser demo data. The original queue
-remains an explicitly separate optional demo. No clinical records, photographs or automatic demo import are
-implemented. Use only fictional data until production privacy and operational controls
-are reviewed.
+appointment scheduling, visits, live queues, invoices, payments, centralized immutable audit logs,
+encrypted backups, TOTP Multi-Factor Authentication (MFA), hashed recovery codes, server-enforced
+step-up authorization, active session device management, privacy rights requests (Access, Correction,
+Restriction, Export, Erasure), formula injection sanitization, export revocation, versioned
+retention policies with dry-run verification, structured JSON logging with IP and PII redaction,
+in-memory rolling operational metrics with Prometheus exposition, decoupled error tracking and SHA-256
+fingerprinting, actionable alerting with 15-minute deduplication, and Arabic RTL frontend error boundaries
+now persist per clinic through mandatory tenant transactions, RBAC, PostgreSQL FORCE RLS, and security hardening.
+Arabic RTL directory and appointment calendar screens use the protected API, as do reception/doctor queue, billing,
+audit, privacy, observability, deployment and security workspaces. Dashboard metrics and explicitly selected legacy workflows
+retain browser demo data. The original queue remains an explicitly separate optional demo. No clinical records,
+photographs or automatic demo import are implemented.
+
+## Step 2.5: deployment and production verification
+
+The deployment unit remains a simple modular monolith: an unprivileged static web
+container, a non-root NestJS container, one PostgreSQL 16 database and a private asset
+volume behind Caddy TLS termination. PostgreSQL has no public network attachment.
+Runtime and migration identities are separate; the runtime role remains a non-owner
+without `BYPASSRLS`. Migrations run as an explicit one-shot release operation before
+application traffic, never automatically inside each API replica.
+
+Environment validation fails production startup without strong CSRF, MFA and monitoring
+secrets, HTTPS origins, an absolute persistent asset directory, an explicit Host allowlist
+and exactly one trusted proxy hop. Caddy rejects operational endpoints publicly and
+routes only the API prefix and static web application. Platform subdomain wildcarding is
+limited to the configured base domain; verified custom names require a separate reviewed
+routing/TLS activation and never become tenant authorization.
+
+Compose explicitly allowlists runtime environment variables so database administrator,
+migration and backup credentials never enter the API container. Caddy's ordered route
+block denies operational endpoints before proxy routing and applies CSP to the frontend
+HTML as well as other security headers. A read-only staging verification command checks
+actual containers, locally trusted TLS, headers, CORS, hosts and cookie attributes.
+
+Global observability has a distinct authorization boundary. `/metrics` accepts only a
+dedicated machine credential and is intended for the internal monitoring network.
+Diagnostics and active alerts require an active global `PLATFORM_ADMIN`. Clinic owner
+or admin membership alone always fails. Operational output remains global and has no
+clinic-scoped variant in this phase.
+
+PostgreSQL and assets have paired but separate encrypted recovery paths. The asset
+archive validates UUID keys, refuses links, hashes every file and restores to a new
+volume. Genuine recovery verifies the actual target server, exact expected RLS table
+set and a successful non-owner/NOBYPASSRLS runtime query without tenant context;
+connection failures cannot count as successful isolation. Existing restore targets
+require explicit overwrite confirmation. Off-site object storage, immutable retention and key management are operator
+gates. See [deployment](deployment.md) and the
+[production checklist](production-readiness-checklist.md).
+
+## Step 2.4: monitoring, error tracking & reliability
+
+Phase 2, Step 2.4 establishes production-grade observability and reliability:
+
+1. **Zero-Dependency & Zero-Cost Telemetry**:
+   - Native Node.js `crypto`, in-memory ring buffers, and NestJS services provide comprehensive observability without external subscriptions or recurring SaaS costs.
+   - Prometheus metrics exposition (`GET /api/v1/metrics`) with `# TYPE`, `# HELP`, and custom quantiles ($p50$, $p95$, $p99$, $max$).
+   - Multi-tenant data isolation: operational metrics omit patient identifiers, clinic names, and financial amounts. Metrics require a private machine key; diagnostics/alerts require an active `PLATFORM_ADMIN`. Clinic roles have no global telemetry access.
+
+2. **Structured JSON Logging & Automated PII/PHI Redaction**:
+   - Single-line JSON logging format for seamless log aggregation (Vector, Fluentbit, Loki).
+   - Network IP masking: IPv4 addresses masked to `/24`, IPv6 addresses masked to `/48`, localhost mapped to `127.0.0.0/24`.
+   - Recursive redaction of sensitive credentials, payment cards, national IDs, and medical notes (`[REDACTED]`).
+   - Header sanitization: `[REDACTED_AUTHORIZATION]`, `[REDACTED_COOKIE]`, `[REDACTED_CSRF_TOKEN]`, `[REDACTED_HEADER]`.
+   - Correlation ID propagation (`X-Request-Id` / `X-Correlation-Id`) across middleware, filters, and client responses.
+
+3. **Decoupled Error Tracking & Deterministic Fingerprinting**:
+   - `ErrorTrackerService` computes 64-character SHA-256 fingerprints normalizing UUIDs, numbers, and timestamps.
+   - Error grouping aggregates identical failure root causes into frequency-ranked records.
+   - Pluggable provider interface (`ErrorReportingProvider`) allows future zero-touch integration with Sentry, Datadog, or AWS CloudWatch.
+
+4. **Actionable Alerting Engine**:
+   - `AlertingService` continuously evaluates operational health rules:
+     - `DATABASE_DOWN` (critical): PostgreSQL unreachable or connection pool exhausted.
+     - `HIGH_5XX_ERROR_RATE` (critical): $\ge 10$ internal server errors.
+     - `BACKUP_STALE` (warning): Last successful encrypted backup $> 24$ hours old.
+     - `BACKUP_FAILED` (critical): Last backup or restore drill failed.
+     - `AUTH_BRUTE_FORCE_SPIKE` (warning): $\ge 30$ failed login/MFA attempts.
+   - Built-in 15-minute deduplication cooldown prevents alert fatigue.
+
+5. **Arabic RTL Frontend Error Boundary**:
+   - React Error Boundary with native Arabic RTL typography and design matching the Lamssa design system.
+   - Incident tracking correlation IDs (`ERR-XXXXXX`) displayed for user technical support.
+   - Safe user recovery actions: "إعادة المحاولة" (retry tree) and "العودة للرئيسية" (safe home navigation).
+
+For detailed specifications, runbooks, and Prometheus scraping instructions, see [monitoring-reliability.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/monitoring-reliability.md).
+
+## Step 2.3: privacy, data retention & data governance
+
+Phase 2, Step 2.3 establishes formal privacy engineering and governance:
+
+1. **Data Inventory & 6-Tier Classification**:
+   - `AUTH_SECRET`, `FINANCIAL`, `SENSITIVE_PERSONAL`, `PERSONAL`, `INTERNAL`, `PUBLIC`.
+   - Distinct boundaries separating current administrative patient data from future clinical data.
+
+2. **Data Minimization & Formula Injection Sanitization**:
+   - Neutralizes CSV/Excel formula injection risks by prefixing `=, +, -, @, \t, \r` with single quotes (`'`).
+   - Anonymous public queue board display and SSE feed without patient identity leakage.
+   - Recursive metadata sanitization stripping credentials and sensitive keys from `AuditEvent`.
+
+3. **Retention Policy & Dry-Run Framework**:
+   - Versioned per-clinic `RetentionPolicy` enforcing platform minimums (Audit $\ge 90$d, Backups $\ge 30$d, Patients $\ge 180$d, Appointments $\ge 90$d, Exports $\ge 1$d).
+   - `dryRunOnly` permanently enforced (`CHECK (dry_run_only = TRUE)`); NO automated deletion.
+   - Simulation engine via locked search-path security definer function `lamssa_security.retention_dry_run`.
+
+4. **Privacy Rights Lifecycle (Access, Correction, Restriction, Export, Erasure)**:
+   - Atomic review and decision tracking with documented justification, legal hold flags, and optimistic concurrency versioning.
+   - Scoped permissions: `privacy.requests.read`, `privacy.requests.manage`, `privacy.export`.
+
+5. **Secure Patient Data Export**:
+   - Protected by `@RequireStepUp(15)`.
+   - Single-use/expiring 256-bit download tokens verified via SHA-256 hashes (`PatientExport.tokenHash`).
+   - Bounded download counts (max 3), 24-hour expiration, `0600` disk file permissions, and instant revocation.
+
+6. **Legal & Compliance Boundary with Cryptographic Chains**:
+   - Cryptographic financial ledger hash chains and append-only audit trails take statutory precedence over erasure requests.
+   - Historical point-in-time encrypted backup archives remain immutable.
+
+For detailed specifications, see [privacy-data-governance.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/privacy-data-governance.md).
+
+## Step 2.2: security hardening, multi-factor authentication (MFA) & step-up authorization
+
+Multi-factor authentication (MFA) and step-up authorization provide defense-in-depth across global security
+and clinic tenant boundaries:
+
+1. **TOTP Core Engine (RFC 6238 & RFC 4648)**:
+   - Built with native Node.js `crypto` primitives: HMAC-SHA1 with 30-second steps and 6-digit zero-padded decimal codes.
+   - Bounded clock drift tolerance: $\pm 1$ step window ($\pm 30$ seconds) handles minor client clock skew while rejecting larger disparities.
+   - Replay protection: `UserMfa.lastReplayStep` prevents replay attacks within the same or prior time steps.
+   - Timing-attack resistance: constant-time comparison via `timingSafeEqual`.
+   - Setup verification: requires current password reauthentication before generating pending enrollment secret; enrollment remains in `PENDING` status until an OTP is verified.
+   - Encryption at rest: TOTP secret encrypted using AES-256-GCM with 12-byte random IVs and 16-byte authentication tags. Keys derived via HKDF-SHA256 from `MFA_ENCRYPTION_KEY` or `AUTH_CSRF_SECRET`. Secrets are never stored plaintext, never logged, never exposed via API after setup, and never saved in browser localStorage.
+
+2. **Single-Use Recovery Codes**:
+   - Generates 8 cryptographically secure Base32 recovery codes.
+   - Shown once to the user upon setup or password-authenticated regeneration.
+   - Verifiers stored only as SHA-256 hashes (`MfaRecoveryCode.codeHash`).
+   - Constant-time verification; each code is single-use and immediately marked with `usedAt = now()`.
+   - Regeneration revokes all previously issued recovery codes.
+
+3. **MFA Policy & Clinic Membership Governance**:
+   - Platform administrators and clinic owners are strictly required to have active MFA.
+   - Clinic-level configurable policy stored in `Clinic.mfaPolicy` (`OWNER_ONLY`, `ADMINS_AND_OWNER`, `ALL_STAFF`).
+   - Evaluated dynamically against user memberships and active clinic context. Users cannot bypass MFA by changing clinics or roles.
+
+4. **Server-Enforced Step-Up Authorization**:
+   - `@RequireStepUp(15)` decorator in `AccessGuard` enforces a 15-minute re-authentication window (`Session.mfaVerifiedAt`) on high-risk operations:
+     - Staff role escalation: `PATCH /api/v1/clinics/:clinicId/identity/members/:membershipId`
+     - Custom domain verification: `POST /api/v1/clinics/:clinicId/identity/domains/:domainId/verify`
+     - Financial reversals and refunds: `POST /api/v1/clinics/:clinicId/billing/invoices/:invoiceId/payments/:paymentId/reversals`
+     - Financial invoice voiding: `POST /api/v1/clinics/:clinicId/billing/invoices/:invoiceId/void`
+     - Recovery code regeneration: `POST /api/v1/auth/mfa/recovery-codes/regenerate`
+   - When required and missing/expired, returns HTTP 403 `MFA_STEP_UP_REQUIRED`. Frontend displays an in-context step-up modal without logging out.
+
+5. **Session Management & Device Privacy**:
+   - `GET /api/v1/auth/sessions`: Lists active sessions with masked IP addresses (`192.168.***.***` or `2001:db8:****`), Arabic localized device summaries (e.g. `Chrome على Linux`), creation and last active timestamps.
+   - `DELETE /api/v1/auth/sessions/:id`: Revokes specific device session.
+   - `DELETE /api/v1/auth/sessions`: Revokes all other sessions.
+
+6. **HTTP Security Headers**:
+   - Content-Security-Policy: `default-src 'self'; frame-ancestors 'none';`
+   - X-Frame-Options: `DENY`
+   - X-Content-Type-Options: `nosniff`
+   - Referrer-Policy: `no-referrer`
+   - Anti-caching: `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`, `Pragma: no-cache`
+   - Strict-Transport-Security: `max-age=31536000` (production; no blanket subdomain/preload assertion on custom clinic domains)
+   - CORS methods: explicit allowlist including `GET, POST, PATCH, DELETE, OPTIONS, HEAD`.
+
+## Step 2.1: centralized immutable audit logging, secure backups & disaster recovery
+
+Centralized immutable audit trail (`AuditEvent`) and encrypted disaster recovery subsystem:
+- Immutable append-only audit trail protected by PostgreSQL trigger `reject_audit_mutation()` and FORCE RLS.
+- Dedicated `lamssa_security.record_audit_event(...)` `SECURITY DEFINER` function for out-of-band security logging.
+- AES-256-GCM encrypted database backups (`pg_dump -Fc --enable-row-security`) with mode `0600` filesystem permissions.
+- Non-destructive archive verification drill (`npm run db:backup:drill`) and isolated genuine restore (`npm run db:restore`).
 
 ## Step 1.9: clinic identity administration
 
@@ -1146,3 +1314,18 @@ tested. The temporary comparison/smoke scripts and screenshots live outside the
 repository; no test dependencies or permanent test harness were added. These
 checks cover the exercised prototype flows, not production security or concurrent
 multi-device correctness. See the roadmap for future acceptance gates.
+
+## 8. Step 2.1: Centralized Audit Logging, Backups & Disaster Recovery
+
+### Centralized Audit Architecture
+- **Append-Only Immutability**: All tenant audit events are stored in `AuditEvent` with `FORCE ROW LEVEL SECURITY`. Updates and deletes are rejected at the database level by the `reject_audit_mutation()` trigger function.
+- **Tenant Context**: Reads and writes evaluate `lamssa_security.context_allows("clinicId")`. Only `CLINIC_OWNER` and `CLINIC_ADMIN` with `audit.read` permission can query clinic logs.
+- **Out-of-Band Security Auditing**: `lamssa_security.record_audit_event(...)` is a `SECURITY DEFINER` function with fixed `search_path = pg_catalog, pg_temp` used by exception filters to log 401/403/429 rejections even when request transactions abort.
+- **PII / PHI Redaction**: Pre-persistence sanitization (`sanitizeAuditMetadata`) redacts passwords, tokens, session cookies, payment cards, national IDs, and clinical notes.
+
+### Encrypted Backups & Disaster Recovery
+- **AES-256-GCM + scrypt KDF**: `scripts/backup-database.mjs` executes `pg_dump -Fc --enable-row-security`, deriving a 256-bit key using scrypt (32-byte salt). Ciphertext and metadata are written with `0600` permissions.
+- **Integrity Validation**: SHA-256 checksum and AES-GCM 16-byte authentication tags are verified before decryption. Tampered or corrupt files fail closed.
+- **Safe Drills**: `scripts/restore-database.mjs --drill` validates TOC and schema integrity in temporary schemas without overwriting live data.
+- **Safety Guards**: Active databases (`lamssa_dev`, `lamssa_test`) are blocked from accidental overwrite without `--force-destructive-overwrite` and `--confirm=<db>`.
+- **Systemd Automation**: Systemd unit and timer files in `deploy/systemd/` provide scheduled, sandboxed execution.

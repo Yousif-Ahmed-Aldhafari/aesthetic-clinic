@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ClinicRole, MembershipStatus, ClinicStatus, User, Prisma } from '../generated/prisma/client.js';
+import type { ClinicRole, MembershipStatus, ClinicStatus, ClinicMfaPolicy, User, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from './prisma.service.js';
 
 export interface MembershipSnapshot {
@@ -7,7 +7,7 @@ export interface MembershipSnapshot {
   clinic: { status: ClinicStatus; slug: string; displayName: string };
 }
 export type AuthUser = User & { memberships: MembershipSnapshot[] };
-type IdentityTransaction = Pick<Prisma.TransactionClient, 'session' | 'loginBucket'> & { userById: (id: string) => Promise<AuthUser | null> };
+type IdentityTransaction = Pick<Prisma.TransactionClient, 'session' | 'loginBucket' | 'userMfa' | 'mfaRecoveryCode' | 'mfaChallenge'> & { userById: (id: string) => Promise<AuthUser | null> };
 
 // Reviewed GLOBAL identity/security boundary. No tenant delegates are exported.
 @Injectable()
@@ -15,11 +15,20 @@ export class IdentityDatabase {
   constructor(private readonly prisma: PrismaService) {}
   get session() { return this.prisma.session; }
   get loginBucket() { return this.prisma.loginBucket; }
+  get userMfa() { return this.prisma.userMfa; }
+  get mfaRecoveryCode() { return this.prisma.mfaRecoveryCode; }
+  get mfaChallenge() { return this.prisma.mfaChallenge; }
+  get clinic() { return this.prisma.clinic; }
   credentialsByEmail(email: string) { return this.prisma.user.findUnique({ where: { email } }); }
   async userById(id: string) { return this.loadUser(this.prisma, id); }
   async loadUser(tx: Pick<Prisma.TransactionClient, 'user' | '$queryRaw'>, id: string) {
     const user = await tx.user.findUnique({ where: { id } });
     return user ? this.snapshot(tx, user) : null;
+  }
+  async clinicMfaPolicy(clinicId: string): Promise<ClinicMfaPolicy | null> {
+    const rows = await this.prisma.$queryRaw<{ mfaPolicy: ClinicMfaPolicy | null }[]>`
+      SELECT lamssa_security.clinic_mfa_policy(${clinicId}::uuid) AS "mfaPolicy"`;
+    return rows[0]?.mfaPolicy ?? null;
   }
   private async snapshot(tx: Pick<Prisma.TransactionClient, '$queryRaw'>, user: User): Promise<AuthUser> {
     const rows = await tx.$queryRaw<(Omit<MembershipSnapshot, 'clinic'> & { clinicStatus: ClinicStatus; slug: string; displayName: string })[]>`
@@ -27,6 +36,13 @@ export class IdentityDatabase {
     return { ...user, memberships: rows.map(({clinicStatus,slug,displayName,...m})=>({...m,clinic:{status:clinicStatus,slug,displayName}})) };
   }
   transaction<T>(work: (tx: IdentityTransaction) => Promise<T>) {
-    return this.prisma.$transaction(tx=>work({session:tx.session,loginBucket:tx.loginBucket,userById:id=>this.loadUser(tx,id)}));
+    return this.prisma.$transaction(tx => work({
+      session: tx.session,
+      loginBucket: tx.loginBucket,
+      userMfa: tx.userMfa,
+      mfaRecoveryCode: tx.mfaRecoveryCode,
+      mfaChallenge: tx.mfaChallenge,
+      userById: id => this.loadUser(tx, id),
+    }));
   }
 }

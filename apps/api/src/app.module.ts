@@ -1,3 +1,6 @@
+import { ObservabilityModule } from './observability/observability.module.js';
+import { PrivacyModule } from './privacy/privacy.module.js';
+import { AuditModule } from './audit/audit.module.js';
 import { ClinicAdministrationController, PublicAssetController } from './identity/clinic-administration.controller.js';
 import { PlatformFoundationController } from './identity/platform-foundation.controller.js';
 import { AssetStore, LocalAssetStore } from './identity/asset-store.js';
@@ -15,7 +18,6 @@ import { ConfigModule } from '@nestjs/config';
 import { resolve } from 'node:path';
 import { validateEnvironment } from './config/environment.js';
 import { PrismaModule } from './prisma/prisma.module.js';
-import { HealthController } from './health/health.controller.js';
 import { PublicBrandingController } from './clinics/public-branding.controller.js';
 import { PublicBrandingService } from './clinics/public-branding.service.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -31,8 +33,11 @@ import { ClinicContextController } from './clinics/clinic-context.controller.js'
     }),
     PrismaModule,
     AuthModule,
+    AuditModule,
+    PrivacyModule,
+    ObservabilityModule,
   ],
-  controllers: [ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController,HealthController, PublicBrandingController, ClinicContextController],
+  controllers: [ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],
 })
 export class AppModule {}

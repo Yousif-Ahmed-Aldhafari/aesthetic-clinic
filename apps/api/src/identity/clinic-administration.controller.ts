@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { ClinicPermissions, PublicRoute, type AuthRequest } from '../auth/access.js';
+import { ClinicPermissions, PublicRoute, RequireStepUp, type AuthRequest } from '../auth/access.js';
 import { ClinicAdministrationRepository } from '../prisma/clinic-administration.repository.js';
 import { PublicBrandingRepository } from '../prisma/public-branding.repository.js';
 import { AssetStore } from './asset-store.js';
@@ -35,11 +35,11 @@ export class ClinicAdministrationController {
   createDomain(@Req() r:AuthRequest,@Param() p:ClinicRoute,@Body() b:DomainInput){return this.repository.createDomain(r.auth!.principal,p.clinicId,b.hostname);}
   @Post('domains/:domainId/challenge') @ClinicPermissions('clinic.settings.update')
   challenge(@Req() r:AuthRequest,@Param() p:DomainRoute,@Body() b:IdentityVersion){return this.repository.rotateChallenge(r.auth!.principal,p.clinicId,p.domainId,b.expectedVersion);}
-  @Post('domains/:domainId/verify') @ClinicPermissions('clinic.settings.update')
+  @Post('domains/:domainId/verify') @ClinicPermissions('clinic.settings.update') @RequireStepUp(15)
   async verify(@Req() r:AuthRequest,@Param() p:DomainRoute,@Body() b:IdentityVersion){const check=await this.repository.beginVerification(r.auth!.principal,p.clinicId,p.domainId,b.expectedVersion);const owns=await this.verifier.owns(check.hostname,check.challengeHash);return this.repository.finishVerification(r.auth!.principal,p.clinicId,p.domainId,check.version,owns);}
   @Get('members') @ClinicPermissions('staff.read')
   members(@Req() r:AuthRequest,@Param() p:ClinicRoute,@Query() q:IdentityPage){return this.repository.members(r.auth!.principal,p.clinicId,q);}
-  @Patch('members/:membershipId') @ClinicPermissions('staff.manage')
+  @Patch('members/:membershipId') @ClinicPermissions('staff.manage') @RequireStepUp(15)
   updateMember(@Req() r:AuthRequest,@Param() p:MemberRoute,@Body() b:MemberInput){return this.repository.updateMember(r.auth!.principal,p.clinicId,p.membershipId,b);}
   @Get('audit') @ClinicPermissions('clinic.settings.read')
   audit(@Req() r:AuthRequest,@Param() p:ClinicRoute,@Query() q:IdentityPage){return this.repository.audit(r.auth!.principal,p.clinicId,q);}

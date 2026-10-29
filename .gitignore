@@ -4,6 +4,7 @@ dist/
 .env
 .env.*
 !.env.example
+/deploy/staging.env
 *.local
 npm-debug.log*
 apps/api/src/generated/
@@ -11,3 +12,7 @@ coverage/
 dist-test/
 *.log
 /var/clinic-assets/
+/var/backups/
+/var/exports/
+var/
+apps/api/var/

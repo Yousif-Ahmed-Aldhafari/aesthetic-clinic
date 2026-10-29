@@ -1,0 +1,36 @@
+[Unit]
+Description=Lamssa Aesthetic Clinic - Automated Encrypted Database and Asset Backup
+Documentation=file:///opt/lamssa/docs/backup-recovery.md
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=lamssa
+Group=lamssa
+WorkingDirectory=/opt/lamssa
+
+# Secure credentials must be stored in a root-owned 0600 env file
+EnvironmentFile=-/etc/lamssa/backup.env
+Environment=BACKUP_OUTPUT_DIR=/var/backups/lamssa
+Environment=BACKUP_RETENTION_DAYS=30
+
+# Execute backup using restricted node script without leaking secrets in process arguments
+ExecStart=/usr/bin/node /opt/lamssa/scripts/backup-database.mjs --target=prod --outdir=/var/backups/lamssa
+ExecStart=/usr/bin/node /opt/lamssa/scripts/asset-backup.mjs
+
+# Systemd Security Hardening
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/backups/lamssa /opt/lamssa/var
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+
+# Resource limits
+TimeoutStartSec=900
+StandardOutput=journal
+StandardError=journal

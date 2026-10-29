@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=24.11.0 <25",
+    "node": ">=24.15.0 <25",
     "npm": ">=11 <12"
   },
   "workspaces": [
@@ -12,6 +12,7 @@
     "apps/api"
   ],
   "scripts": {
+    "test:deployment-runtime": "node scripts/verify-deployment-runtime.mjs",
     "dev": "npm run dev --workspace @lamssa/web --",
     "dev:web": "npm run dev --workspace @lamssa/web --",
     "dev:api": "npm run dev --workspace @lamssa/api --",
@@ -35,9 +36,16 @@
     "db:status:test": "node scripts/test-database-command.mjs status",
     "db:grant": "node scripts/grant-database-access.mjs",
     "auth:provision": "npm run auth:provision --workspace @lamssa/api --",
+    "db:backup": "node scripts/backup-database.mjs",
+    "db:restore": "node scripts/restore-database.mjs",
+    "db:backup:drill": "node scripts/restore-database.mjs --drill",
+    "assets:backup": "node scripts/asset-backup.mjs",
+    "assets:restore": "node scripts/restore-assets.mjs",
     "check:boundaries": "node scripts/check-database-boundaries.mjs",
     "test:web": "npm run test --workspace @lamssa/web --",
-    "test:browser": "npm run build && npm run test:compile --workspace @lamssa/api && node scripts/patients-browser-smoke.mjs"
+    "test:browser": "npm run build && npm run test:compile --workspace @lamssa/api && node scripts/patients-browser-smoke.mjs",
+    "check:deployment": "node scripts/check-deployment.mjs",
+    "test:production-smoke": "node scripts/production-smoke.mjs"
   },
   "allowScripts": {
     "@prisma/engines@7.10.1": true,

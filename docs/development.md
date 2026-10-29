@@ -1,9 +1,255 @@
 # Development setup
 
-Step 1.9 adds audited clinic profile/branding/domain/staff administration and safe
-identity asset delivery to the existing patient/scheduling/queue/billing boundary. Current UI is Arabic RTL;
-only the dashboard overview and explicitly opened old workflows remain local demos.
-Use fictional data until operational, privacy and market-specific finance review.
+## Step 2.5 — Deployment Infrastructure & Production Verification (2026-10-28)
+
+Active branch: `phase/2-security-reliability`. Production deployment is not performed.
+The existing native PostgreSQL workflow remains supported. Docker and Caddy were absent
+from the verification host, so container build/runtime and real TLS proxy checks are
+explicit launch blockers; static deployment invariants and an equivalent production-mode
+NestJS smoke are provided by:
+
+```bash
+npm run check:deployment
+npm run build
+npm run test:production-smoke
+```
+
+Production startup now requires `METRICS_SECRET_KEY`, `ASSET_STORAGE_DIR`, explicit
+`API_ALLOWED_HOSTS`, `TRUST_PROXY_HOPS=1`, the existing CSRF/MFA secrets and HTTPS CORS
+origins. Do not add real values to `.env.example` or `deploy/staging.env.example`.
+
+The security review found and removed clinic-owner/admin access to global telemetry.
+Metrics uses only the scoped internal monitoring credential. Diagnostics and alerts use
+only an active platform-administrator session. The public proxy denies all three paths.
+Negative HTTP/integration tests cover ordinary clinic administrators and owners.
+
+Clinic file recovery now has encrypted backup, verification and restore commands:
+
+```bash
+BACKUP_ENCRYPTION_KEY="$SECRET" npm run assets:backup
+BACKUP_ENCRYPTION_KEY="$SECRET" npm run assets:restore -- --file=/secure/assets.assets.meta.json
+BACKUP_ENCRYPTION_KEY="$SECRET" npm run assets:restore -- --file=/secure/assets.assets.meta.json --restore=true --target=/new/asset-volume
+```
+
+### Step 2.5 verification record
+
+| Command/check | Observed result |
+| --- | --- |
+| Starting `npm test` | 78 passed before changes (16 web + 62 API) |
+| `npm run check:boundaries` | Passed |
+| `npm run check:deployment` | Passed all static container/network/migration/proxy/artifact invariants |
+| `npm run db:validate` / `npm run db:generate` | Passed with Prisma 7.10.1 |
+| `npm run db:status` / `npm run db:status:test` | Development and test are current at all 15 migrations |
+| `npm run build` | Web and API production builds passed |
+| Final `npm test` | 86 passed (16 web + 70 API), zero failures/skips |
+| Final `npm run test:db` | 192 passed under isolated test/runtime credentials, zero failures/skips |
+| `npm run test:browser` | 34 Arabic RTL checks passed, zero runtime errors |
+| `npm run test:production-smoke` | Passed liveness/readiness, HSTS, telemetry denial, secure cookie, DB outage/restart and graceful shutdown checks |
+| Asset backup/restore tests | Exact-byte encrypted restoration passed; wrong key, symlink and malformed-key paths fail closed |
+| `docker --version`, `caddy version`, `nginx -v` | Each unavailable (`command not found`, exit 127); image builds, Compose rendering and actual proxy/TLS runtime remain blocked on this host |
+
+The database integration suite includes a genuine encrypted PostgreSQL restore drill.
+Asset restoration is independently demonstrated into a new target directory; a paired
+database-plus-assets recovery rehearsal and immutable off-site copy remain launch gates.
+See the full operational design in the [deployment guide](deployment.md).
+
+Step 2.4 establishes production monitoring, metrics, decoupled error tracking, alerting with deduplication,
+and Arabic RTL frontend error boundaries, building upon the established privacy governance, multi-factor
+authentication, audit logging, and tenant boundary.
+Current UI is Arabic RTL; only the dashboard overview and explicitly opened old workflows remain local demos.
+
+## Step 2.4 — Monitoring, Error Tracking & Reliability (2026-10-28)
+
+Active branch: `phase/2-security-reliability`.
+All existing uncommitted changes and database schemas were preserved.
+
+### Core Features & Implementation Details
+
+1. **Structured JSON Logging & PII/Secret Scrubbing**:
+   - `StructuredLoggerService` outputs single-line JSON entries with timestamps, levels, request IDs, correlation IDs, and timing.
+   - Automatic IP masking (`maskIpAddress`): IPv4 to `/24`, IPv6 to `/48`, localhost to `127.0.0.0/24`.
+   - Automatic header sanitization (`sanitizeHeadersForLogging`): masks `authorization`, `cookie`, `set-cookie`, `x-csrf-token`, and API keys.
+   - Recursive PII/PHI scrubbing (`redactSensitiveData`): masks passwords, tokens, cards, CVVs, IBANs, national IDs, and medical notes.
+
+2. **In-Memory Rolling Metrics & Prometheus Format**:
+   - `MetricsService` tracks HTTP request counts by status class (`2xx`, `3xx`, `4xx`, `5xx`), in-flight requests, and rolling latency percentiles ($p50$, $p95$, $p99$, $max$).
+   - Failed authentication attempts tracked for brute-force monitoring.
+   - Backup health reader parses `/var/backups` metadata to report last successful backup age and status.
+   - Dual-format exposition: JSON for API diagnostics, text format for Prometheus scraping (`GET /api/v1/metrics`).
+
+3. **Protected Diagnostic Endpoints**:
+   - `GET /api/v1/health`: Public liveness (`{ "status": "ok" }`).
+   - `GET /api/v1/health/live`: Public liveness (`{ "status": "ok" }`).
+   - `GET /api/v1/health/ready`: Public readiness probe returning `200 { "status": "ready" }` or `503 Service Unavailable`.
+   - `GET /api/v1/metrics`: Dedicated `X-Metrics-Key` machine credential on the private monitoring network only.
+   - `GET /api/v1/health/diagnostics`: Active `PLATFORM_ADMIN` session only; clinic roles are denied.
+   - `GET /api/v1/alerts/active`: Active `PLATFORM_ADMIN` session only; clinic roles are denied.
+
+4. **Decoupled Error Tracking & Fingerprinting**:
+   - `ErrorTrackerService` normalizes error messages (stripping UUIDs, timestamps, phone numbers, numeric IDs) and generates deterministic 64-character SHA-256 fingerprints.
+   - Groups duplicate occurrences without table bloat.
+   - Pluggable `ErrorReportingProvider` interface for zero-friction integration with external monitoring systems (Sentry, Datadog) in the future.
+
+5. **Actionable Alerting with Cooldown**:
+   - `AlertingService` evaluates operational rules (`DATABASE_DOWN`, `HIGH_5XX_ERROR_RATE`, `BACKUP_STALE`, `BACKUP_FAILED`, `AUTH_BRUTE_FORCE_SPIKE`).
+   - 15-minute deduplication cooldown prevents alert flooding. Auto-resolves when health status returns to normal.
+
+6. **Frontend Arabic RTL Error Boundary**:
+   - `<ErrorBoundary>` wraps the web application in `main.tsx`.
+   - Native Arabic RTL design with incident correlation code (`ERR-XXXXXX`).
+   - Safe retry and recovery actions without exposing internals or stack traces.
+
+For complete architectural specifications, see `docs/monitoring-reliability.md`.
+
+## Step 2.3 — Privacy, Data Retention & Data Governance (2026-10-27)
+
+Active branch: `Antigravity-Work`.
+All existing uncommitted changes and secrets were preserved. Development and test databases both migrated with 15 migrations applied (including `20261027000100_privacy_governance`).
+
+### Core Features & Architecture
+
+1. **Data Classification & Inventory**:
+   - Comprehensive inventory across 6 security tiers (`AUTH_SECRET`, `FINANCIAL`, `SENSITIVE_PERSONAL`, `PERSONAL`, `INTERNAL`, `PUBLIC`).
+   - Administrative patient profiles isolated from future clinical data.
+
+2. **Data Minimization & Formula Sanitization**:
+   - `sanitizeFormulaField` and `sanitizeObjectForExport` prevent CSV/Excel injection attacks by escaping `=`, `+`, `-`, `@`, `\t`, `\r` with `'`.
+   - Anonymous public queue boards and SSE streams.
+   - Out-of-band audit trail recording with automatic metadata credential redaction.
+
+3. **Retention Policy Framework & Dry-Run Engine**:
+   - Governed by `RetentionPolicy` per clinic.
+   - Platform minimums: Audit $\ge 90$d, Backups $\ge 30$d, Patients $\ge 180$d, Appointments $\ge 90$d, Exports $\ge 1$d.
+   - Strictly non-destructive: `dryRunOnly` enforced at schema level; reports generated via `lamssa_security.retention_dry_run`.
+
+4. **Privacy Rights Requests (Access, Rectification, Restriction, Export, Erasure)**:
+   - Request tracking under `PrivacyRequest` table with optimistic concurrency control (`expectedVersion`).
+   - Granular RBAC permissions: `privacy.requests.read`, `privacy.requests.manage`, `privacy.export`.
+   - Denied to DOCTOR, RECEPTIONIST, and ACCOUNTANT by default.
+
+5. **Patient Data Export & Revocation**:
+   - Requires 15-minute step-up authentication (`@RequireStepUp(15)`).
+   - Single-use, expiring 256-bit download tokens verified via SHA-256 hashes (`PatientExport.tokenHash`).
+   - Immediate revocation and secure local disk storage permissions (`0600`).
+
+6. **Backup and Financial Immutability Interaction**:
+   - Statutory retention exemptions for immutable financial ledger chains and audit logs under Saudi tax law.
+   - Point-in-time encrypted backup archives are immutable.
+
+For full architecture details, refer to `docs/privacy-data-governance.md`.
+
+## Step 2.2 — Security Hardening, Multi-Factor Authentication (MFA) & Step-Up Authorization (2026-10-27)
+
+Active branch: `Antigravity-Work`.
+All existing uncommitted changes and secrets were preserved. Development and test databases both migrated with 14 migrations applied (including `20261026000500_mfa_and_session_security` and `20261026000600_clinic_mfa_policy_function`).
+
+### Security Architecture & Senior Review Remediations
+
+1. **Standards-Compliant TOTP MFA (RFC 6238)**:
+   - Algorithms: RFC 6238 TOTP using HMAC-SHA1, 30-second timestep, 6-digit verification codes.
+   - Bounded clock drift: strict $\pm 1$ step window ($\pm 30$ seconds) tolerance.
+   - Replay protection: `UserMfa.lastReplayStep` prevents reuse of codes within the same or prior time steps.
+   - Throttling: `MfaChallenge` limits verification to at most 5 attempts before locking (`MFA_CHALLENGE_LOCKED`, HTTP 429).
+   - Atomic challenge consumption: conditional `updateMany({ where: { id, consumedAt: null }, data: { consumedAt: now } })` prevents challenge replay under concurrent requests.
+   - Constant-time comparison: `timingSafeEqual` prevents side-channel timing attacks.
+   - Enrollment workflow: requires current password reauthentication before generating pending secret. Pending secrets are never active until confirmed with a valid OTP.
+   - Secret encryption at rest: AES-256-GCM authenticated encryption using 12-byte random IVs and 16-byte tags. Key derivation via HKDF-SHA256 from `MFA_ENCRYPTION_KEY`.
+   - Production key validation & rotation: in production (`NODE_ENV === 'production'`), `MFA_ENCRYPTION_KEY` is strictly required ($\ge 32$ characters) and fails closed on startup. Dual-key rotation is supported via optional `MFA_ENCRYPTION_KEY_PREVIOUS` (encrypts with primary, decrypts with primary falling back to previous keys in order).
+   - Safe development account onboarding: developer accounts provisioned via scripts can log in initially without lockouts; owners and admins are directed to enroll MFA from "الأمان والجلسات" in Clinic Settings.
+
+2. **High-Entropy Single-Use Recovery Codes**:
+   - Generates 8 high-entropy single-use recovery codes formatted as 16 Base32 characters (`XXXX-XXXX-XXXX-XXXX`, 80 bits of cryptographically secure entropy, $\ge 64$ bits requirement).
+   - Plaintext codes revealed exactly once during enrollment or password-authenticated regeneration.
+   - Only SHA-256 verifier hashes stored in `MfaRecoveryCode`. Constant-time comparison on verification.
+   - Backwards compatibility: supports both modern 16-character codes and legacy 8-character codes without invalidating existing verifiers.
+   - Strictly atomic redemption under concurrency: conditional `updateMany({ where: { id: match.id, usedAt: null }, data: { usedAt: now } })` guarantees that simultaneous requests redeeming the same recovery code result in exactly one success and all others rejected.
+   - Regeneration requires current password reauthentication, enforces step-up, and revokes all previously issued codes.
+   - Audit trail records `auth.mfa_recovery_code_used` and `auth.mfa_recovery_codes_generated`.
+
+3. **Multi-Clinic MFA Policy & RLS-Safe Enforcement**:
+   - Platform administrators and clinic owners strictly required to have active MFA.
+   - Clinic-level configurable policy stored in `Clinic.mfaPolicy` (`OWNER_ONLY`, `ADMINS_AND_OWNER`, `ALL_STAFF`, `OPTIONAL`).
+   - Security Definer Bootstrap: `lamssa_security.clinic_mfa_policy(uuid)` allows the uncontextualized identity layer to evaluate clinic policy safely under PostgreSQL `FORCE ROW LEVEL SECURITY`.
+   - Multi-clinic users are evaluated against their active selected clinic and memberships. Clinic switching cannot bypass MFA requirements or downgrade verification state.
+   - Required-but-unenrolled users receive HTTP 403 `MFA_SETUP_REQUIRED` when attempting privileged operations, while retaining safe access to `/api/v1/auth/mfa/setup` and `/api/v1/auth/mfa/verify-setup`.
+
+4. **Server-Enforced Step-Up Authorization (Strict Second-Factor Step-Up)**:
+   - High-risk operations require recent second-factor verification (`Session.mfaVerifiedAt` within 15 minutes):
+     - Staff role escalation / membership edits: `PATCH /api/v1/clinics/:clinicId/identity/members/:membershipId`
+     - Custom domain verification: `POST /api/v1/clinics/:clinicId/identity/domains/:domainId/verify`
+     - Financial reversals and refunds: `POST /api/v1/clinics/:clinicId/billing/invoices/:invoiceId/payments/:paymentId/reversals`
+     - Financial invoice voiding: `POST /api/v1/clinics/:clinicId/billing/invoices/:invoiceId/void`
+     - Recovery codes regeneration: `POST /api/v1/auth/mfa/recovery-codes/regenerate`
+     - MFA disablement: `POST /api/v1/auth/mfa/disable`
+   - Enforced server-side via `@RequireStepUp(15)` and `AccessGuard`. If window has expired or is missing, returns HTTP 403 `MFA_STEP_UP_REQUIRED` (or `MFA_SETUP_REQUIRED` for required-but-unenrolled users).
+   - **No Step-Up Password Bypass**: Submitting account password alone cannot update `Session.mfaVerifiedAt` or satisfy `@RequireStepUp`. Password reauthentication confirms the knowledge factor but never masquerades as second-factor verification. Step-up strictly requires a valid TOTP code or unused recovery code.
+   - Disabling MFA requires current password AND a valid TOTP code; on disablement, `Session.mfaVerifiedAt` is cleared across all active user sessions and unused recovery codes are purged.
+
+5. **Active Session Management & Privacy-Preserving Device Summaries**:
+   - Active session listing: `GET /api/v1/auth/sessions` returns active sessions with IP masking (`192.168.***.***` or `2001:db8:****`), localized Arabic browser and OS summaries (e.g. `Chrome على Linux`, `Safari على iOS`), creation timestamp, last active timestamp, and current session flag.
+   - Session revocation: `DELETE /api/v1/auth/sessions/:id` revokes a specific device session, and `DELETE /api/v1/auth/sessions` revokes all other sessions.
+   - Reverse-proxy client IP resolution: configured via Express `trust proxy` in `configure-app.ts`.
+
+6. **HTTP Security Hardening Headers**:
+   - Content-Security-Policy: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';`
+   - X-Frame-Options: `DENY`
+   - X-Content-Type-Options: `nosniff`
+   - Referrer-Policy: `no-referrer`
+   - Anti-caching: `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`, `Pragma: no-cache`
+   - HTTP Strict Transport Security: `max-age=31536000` (production; custom clinic domains make global subdomain/preload assertions unsafe)
+   - CORS methods: explicit allowlist including `GET, POST, PATCH, DELETE, OPTIONS, HEAD`.
+
+### Verification Record
+
+| Command / Check | Result |
+|---|---|
+| `git branch --show-current` | Active branch `Antigravity-Work` confirmed; no commit, push, or branch switch |
+| `npm run check:boundaries` | Exit 0; architectural boundaries passed cleanly |
+| `npm run db:validate` | Exit 0; Prisma schema valid with 14 migrations applied |
+| `npm run build` | Exit 0; `@lamssa/web` (Vite) and `@lamssa/api` (NestJS ESM) compiled cleanly |
+| `npm test` | Exit 0; **72 passed** (16 web + 56 API unit tests including TOTP, Base32, drift, replay, 16-char recovery codes, production fail-closed key validation, key rotation, and crypto) |
+| `npm run test:db` | Exit 0; **185 passed**, zero failed across all 11 database integration suites with actual restricted runtime credentials |
+| `node --test apps/api/test/mfa.integration.test.js` | Exit 0; **8 passed** (enrollment lifecycle, challenge without session cookie, single-use recovery code, 15-min step-up, atomic concurrent recovery redemption, unenrolled owner blocking, session revocation, disablement) |
+| `npm run test:browser` | Exit 0; **33 browser checks passed**, zero runtime errors; Arabic RTL, MFA screens, step-up modal, session management verified |
+
+## Step 2.1 — Centralized Audit Logging, Secure Backups & Disaster Recovery (2026-10-26)
+
+> Historical implementation record. The table and timing counts in this section describe the Step 2.1 checkpoint; use [deployment.md](deployment.md) and [backup-recovery.md](backup-recovery.md) for the final Phase 2 recovery evidence and current operating procedure.
+
+Active branch: `Antigravity-Work`.
+All existing uncommitted changes and secrets were preserved. Development and test databases both migrated to migration 12 (`20261026000400_centralized_audit_logging`).
+
+### Commands & Workflows
+
+1. **Centralized Audit Trail**:
+   - Schema: `AuditEvent` model with `AuditCategory` and `AuditOutcome` enums.
+   - Append-only immutability enforced by PostgreSQL trigger `reject_audit_mutation()`.
+   - Tenant RLS isolation via `FORCE ROW LEVEL SECURITY`, `tenant_select`, and `tenant_insert`.
+   - Direct out-of-band security failure recording via `lamssa_security.record_audit_event(...)` `SECURITY DEFINER`.
+   - Automatic metadata sanitization stripping credentials, tokens, cookies, credit cards, national IDs, and clinical notes.
+   - Dual-mode Arabic RTL audit interface in `ClinicSettings.tsx` (Unified Central Audit vs Identity Hash Chain).
+
+2. **Encrypted Backups & Disaster Recovery**:
+   - `BACKUP_ENCRYPTION_KEY="your-passphrase" npm run db:backup`: Creates AES-256-GCM encrypted custom-format dump (`pg_dump -Fc --enable-row-security`) in `var/backups/` with mode `0600` permissions and `.meta.json`. Rejects unprivileged runtime users (`lamssa_dev_app`, `lamssa_test_app`). Dynamically baselines all 33 public tables and pre-verifies TOC before encryption.
+   - `BACKUP_ENCRYPTION_KEY="your-passphrase" npm run db:backup:drill`: Runs safe, non-destructive archive verification drill, verifying AES-256-GCM authentication tag, SHA-256 digest, and TOC (`pg_restore -l`) without database mutation (RTO: ~100ms, RPO: 0 min).
+   - `BACKUP_ENCRYPTION_KEY="your-passphrase" npm run db:restore -- --target-db=<target>`: Executes genuine pg_restore into isolated target database (e.g. `lamssa_restore_tmp`), verifying all 33 table counts, 29 RLS tables, triggers, constraints, functions, multi-clinic data, and runtime user access isolation (Genuine RTO: ~1.59s). Protected databases (`lamssa_dev`, `lamssa_test`) require `--force-destructive-overwrite` AND `--confirm=<dbname>`.
+   - `deploy/systemd/lamssa-backup.service` & `deploy/systemd/lamssa-backup.timer`: Scheduled nightly Linux systemd units with security sandboxing.
+
+### Verification Record
+
+| Command / Check | Result |
+|---|---|
+| `git branch --show-current` | Active branch `Antigravity-Work` confirmed; no commit, push, or branch switch |
+| `npm run check:boundaries` | Exit 0; architectural boundaries passed cleanly |
+| `npm run db:validate` | Exit 0; Prisma schema valid |
+| `npm run db:status` / `npm run db:status:test` | Exit 0; 12 migrations applied to both databases; schemas up to date |
+| `npm run build` | Exit 0; Vite production bundle and NestJS ESM API compiled cleanly |
+| `npm test` | Exit 0; **62 passed** (16 web + 46 API), zero failed/skipped |
+| `npm run test:db` | Exit 0; **177 passed**, zero failed across all 10 integration suites with actual restricted runtime credentials |
+| `node --test apps/api/test/backup-restore.test.ts` | Exit 0; **6 passed** (backup completeness, runtime user rejection, drill, genuine restore, tamper resistance, safety guards) |
+| `npm run test:browser` | Exit 0; **33 checks passed**, zero runtime errors; Arabic RTL, dual audit panes, branded views preserved |
+| `npm run db:backup:drill` | Exit 0; Archive Verification Drill RTO: **102ms**, RPO: 0 min; valid archive TOC, cryptographic integrity |
+| `npm run db:restore` (Isolated Real Restore) | Exit 0; Genuine Restore RTO: **1,592ms** (1.59s), RPO: 0 min; 1,169 rows across 33 tables, 29 RLS tables verified |
 
 ## Step 1.9 — identity administration setup and verification (2026-10-26)
 
@@ -723,9 +969,25 @@ docs/development.md
 `package-lock.json`, existing migrations, legacy demo models/forms/storage key and
 all environment secrets remain unchanged.
 
+## Phase 2 final verification — 2026-10-29
+
+The current Docker workflow was verified on Linux Mint 22.3 without replacing native
+PostgreSQL. See [deployment evidence and paired recovery](deployment.md#isolated-staging-and-recovery-evidence-2026-10-29)
+for image IDs, exact results, database/assets restore timings and launch gates.
+`npm run test:deployment-runtime` checks a running isolated staging stack and trusts
+only its generated local CA; it changes no database records or services. It requires
+Docker socket access and ignored `deploy/staging.env` with generated staging secrets.
+The API environment is explicitly allowlisted and excludes maintenance/backup secrets.
+
+The final suite reported 86 unit passes, 199 database passes, one native restore skip
+(NOCREATEDB), 34 browser journeys, 30 deployment checks, 35 HTTPS business checks and
+10 additional Chrome staging checks. Independent Docker recovery passed with actual
+restricted runtime credentials and 16 recovered application checks. No dev/test role
+was granted CREATEDB. Do not treat the native skip as a successful restore.
+
 ## Requirements and versions
 
-- Node 24 LTS (`>=24.11 <25`), npm 11; `.nvmrc` selects Node 24.
+- Node 24 LTS (`>=24.15 <25`), npm 11; `.nvmrc` selects Node 24.
 - Native PostgreSQL **16** from Linux Mint 22.3 / Ubuntu 24.04 repositories is the
   preferred local setup (candidate 16.15 at inspection). Optional Docker Compose
   uses PostgreSQL 17; both use the existing PostgreSQL schema and pg adapter.

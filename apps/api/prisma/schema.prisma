@@ -59,6 +59,7 @@ model Clinic {
   version        Int                @default(1)
   slug           String             @unique @db.VarChar(63)
   status         ClinicStatus       @default(ACTIVE)
+  mfaPolicy      ClinicMfaPolicy    @default(OWNER_ONLY)
   timezone       String             @default("UTC") @db.VarChar(100)
   currency       String             @db.Char(3)
   createdAt      DateTime           @default(now()) @db.Timestamptz(3)
@@ -91,6 +92,10 @@ model Clinic {
   identityState ClinicIdentityState?
   identityAuditEvents ClinicIdentityAuditEvent[]
   slugReservations ClinicSlugReservation[]
+  auditEvents AuditEvent[]
+  privacyRequests PrivacyRequest[]
+  patientExports PatientExport[]
+  retentionPolicy RetentionPolicy?
 
   @@index([status, createdAt])
 }
@@ -199,8 +204,10 @@ model User {
   createdAt    DateTime           @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime           @updatedAt @db.Timestamptz(3)
   memberships  ClinicMembership[]
-  authVersion  Int                @default(0)
-  sessions     Session[]
+  authVersion   Int                @default(0)
+  sessions      Session[]
+  mfa           UserMfa?
+  mfaChallenges MfaChallenge[]
 }
 
 // Tenant resource and identity bridge: scoped SELECT, maintenance-only writes.
@@ -238,11 +245,69 @@ model Session {
   lastSeenAt        DateTime  @default(now()) @db.Timestamptz(3)
   expiresAt         DateTime  @db.Timestamptz(3)
   revokedAt         DateTime? @db.Timestamptz(3)
+  mfaVerifiedAt     DateTime? @db.Timestamptz(3)
+  userAgent         String?   @db.VarChar(255)
+  ipAddress         String?   @db.VarChar(45)
+  deviceSummary     String?   @db.VarChar(100)
   user              User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   selectedClinic    Clinic?   @relation(fields: [selectedClinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([userId, revokedAt])
   @@index([expiresAt])
+}
+
+enum ClinicMfaPolicy {
+  OWNER_ONLY
+  ADMINS_AND_OWNER
+  ALL_STAFF
+  OPTIONAL
+}
+
+enum MfaStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+model UserMfa {
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String            @unique @db.Uuid
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totpSecretEnc  String            @db.Text
+  totpIv         String            @db.VarChar(32)
+  totpTag        String            @db.VarChar(32)
+  status         MfaStatus         @default(PENDING)
+  enrolledAt     DateTime?         @db.Timestamptz(3)
+  lastUsedAt     DateTime?         @db.Timestamptz(3)
+  lastReplayStep BigInt?           @db.BigInt
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime          @updatedAt @db.Timestamptz(3)
+  recoveryCodes  MfaRecoveryCode[]
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  mfaId     String    @db.Uuid
+  mfa       UserMfa   @relation(fields: [mfaId], references: [id], onDelete: Cascade)
+  codeHash  String    @db.Char(64)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([mfaId, usedAt])
+}
+
+model MfaChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique @db.Char(64)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  attempts   Int       @default(0)
+  consumedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([tokenHash, expiresAt])
+  @@index([userId, consumedAt])
 }
 
 // Global security infrastructure; no tenant access grant.
@@ -704,4 +769,153 @@ model ClinicBillingProfile {
   version Int @default(1)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
   clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+}
+
+enum AuditCategory {
+  AUTH
+  IDENTITY
+  STAFF
+  PATIENTS
+  SCHEDULING
+  QUEUE
+  FINANCE
+  SECURITY
+  PLATFORM
+  PRIVACY
+}
+
+enum AuditOutcome {
+  SUCCESS
+  DENIED
+  FAILURE
+}
+
+// Centralized operational audit trail; append-only, tenant-scoped, and immutable.
+model AuditEvent {
+  id            String        @id @default(uuid()) @db.Uuid
+  clinicId      String?       @db.Uuid
+  actorId       String?       @db.Uuid
+  actorEmail    String?       @db.VarChar(254)
+  action        String        @db.VarChar(64)
+  category      AuditCategory
+  targetType    String?       @db.VarChar(64)
+  targetId      String?       @db.VarChar(64)
+  outcome       AuditOutcome  @default(SUCCESS)
+  correlationId String?       @db.VarChar(64)
+  ipAddress     String?       @db.VarChar(64)
+  userAgent     String?       @db.VarChar(256)
+  metadata      Json?
+  createdAt     DateTime      @default(now()) @db.Timestamptz(3)
+
+  clinic        Clinic?       @relation(fields: [clinicId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([clinicId, createdAt, id])
+  @@index([clinicId, category, createdAt])
+  @@index([clinicId, action, createdAt])
+  @@index([clinicId, actorId, createdAt])
+  @@index([correlationId])
+}
+
+// ============================================================
+// Privacy, Data Governance and Retention Framework
+// ============================================================
+
+enum PrivacyRequestType {
+  ACCESS
+  CORRECTION
+  RESTRICTION
+  EXPORT
+  ERASURE
+}
+
+enum PrivacyRequestStatus {
+  OPEN
+  IN_REVIEW
+  APPROVED
+  DENIED
+  COMPLETED
+  WITHDRAWN
+  HELD
+}
+
+// Tenant-scoped patient privacy rights request. Append-only status transitions via controller.
+model PrivacyRequest {
+  id               String               @id @default(uuid()) @db.Uuid
+  clinicId         String               @db.Uuid
+  patientId        String?              @db.Uuid
+  patientName      String               @db.VarChar(200)
+  patientContact   String?              @db.VarChar(254)
+  requestType      PrivacyRequestType
+  status           PrivacyRequestStatus @default(OPEN)
+  subject          String               @db.VarChar(500)
+  notes            String?              @db.Text
+  decisionReason   String?              @db.VarChar(2000)
+  decisionBy       String?              @db.Uuid
+  decisionAt       DateTime?            @db.Timestamptz(3)
+  completedAt      DateTime?            @db.Timestamptz(3)
+  legalHold        Boolean              @default(false)
+  legalHoldReason  String?              @db.VarChar(500)
+  requestedAt      DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @db.Timestamptz(3)
+  version          Int                  @default(1)
+
+  clinic           Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  exports          PatientExport[]
+
+  @@index([clinicId, status, requestedAt])
+  @@index([clinicId, patientId])
+  @@index([clinicId, requestType])
+}
+
+enum ExportStatus {
+  PENDING
+  READY
+  EXPIRED
+  REVOKED
+}
+
+// Tracks generated patient data exports with expiry and download limits.
+model PatientExport {
+  id                String         @id @default(uuid()) @db.Uuid
+  clinicId          String         @db.Uuid
+  privacyRequestId  String?        @db.Uuid
+  patientId         String         @db.Uuid
+  generatedBy       String         @db.Uuid
+  status            ExportStatus   @default(PENDING)
+  purpose           String         @db.VarChar(200)
+  tokenHash         String?        @unique @db.Char(64)
+  expiresAt         DateTime?      @db.Timestamptz(3)
+  downloadCount     Int            @default(0)
+  maxDownloads      Int            @default(3)
+  revokedAt         DateTime?      @db.Timestamptz(3)
+  revokeReason      String?        @db.VarChar(200)
+  fileSizeBytes     BigInt?
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
+
+  clinic            Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  privacyRequest    PrivacyRequest? @relation(fields: [privacyRequestId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([clinicId, patientId, createdAt])
+  @@index([clinicId, status])
+  @@index([privacyRequestId])
+}
+
+// Per-clinic retention configuration. Dry-run only; dryRunOnly must remain TRUE until legal review.
+model RetentionPolicy {
+  clinicId            String    @id @db.Uuid
+  policyVersion       Int       @default(1)
+  dryRunOnly          Boolean   @default(true)
+  patientRecordDays   Int?
+  appointmentDays     Int?
+  visitDays           Int?
+  auditEventDays      Int?
+  backupRetentionDays Int?
+  exportRetentionDays Int       @default(7)
+  privacyRequestDays  Int?
+  configuredBy        String?   @db.Uuid
+  configuredAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+
+  clinic              Clinic    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }

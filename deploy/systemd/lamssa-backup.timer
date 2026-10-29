@@ -1,0 +1,15 @@
+[Unit]
+Description=Lamssa Aesthetic Clinic - Daily Automated Encrypted Backup Timer
+Documentation=file:///opt/lamssa/docs/backup-recovery.md
+After=network.target
+
+[Timer]
+# Run nightly at 02:30 UTC
+OnCalendar=*-*-* 02:30:00 UTC
+# Spread execution slightly across multiple tenant nodes
+RandomizedDelaySec=300
+# Run immediately if timer missed during downtime
+Persistent=true
+
+[Install]
+WantedBy=timers.target

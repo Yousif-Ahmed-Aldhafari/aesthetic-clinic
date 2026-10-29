@@ -28,6 +28,7 @@ class FailureController {
 
 let app: INestApplication;
 let base: string;
+const monitoringKey = randomBytes(48).toString('base64url');
 let databaseAvailable = true;
 const lookups: { where: { slug: string; status: string } }[] = [];
 const fixtures = [
@@ -43,6 +44,7 @@ before(async () => {
   process.env.API_PORT = '3000';
   process.env.DATABASE_URL = 'postgresql://test:test@127.0.0.1:1/lamssa_test';
   process.env.CORS_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173';
+  process.env.METRICS_SECRET_KEY = monitoringKey;
   const { AppModule } = await import('../src/app.module.js');
   const module = await Test.createTestingModule({ imports: [AppModule], controllers: [FailureController] })
     .overrideProvider(PrismaService).useValue({
@@ -73,6 +75,17 @@ test('versioned liveness exposes no infrastructure details', async () => {
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(response.headers.get('x-powered-by'), null);
   assert.equal((await fetch(`${base}/health`)).status, 404);
+});
+
+test('metrics require the dedicated monitoring credential and never accept anonymous access', async () => {
+  assert.equal((await fetch(`${base}/api/v1/metrics`)).status, 401);
+  assert.equal((await fetch(`${base}/api/v1/metrics`, { headers: { 'X-Metrics-Key': 'forged' } })).status, 401);
+  const response = await fetch(`${base}/api/v1/metrics?format=prometheus`, { headers: { 'X-Metrics-Key': monitoringKey } });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /^text\/plain/);
+  assert.match(await response.text(), /lamssa_http_requests_total/);
+  assert.equal((await fetch(`${base}/api/v1/health/diagnostics`)).status, 401);
+  assert.equal((await fetch(`${base}/api/v1/alerts/active`)).status, 401);
 });
 
 test('readiness returns a safe 503 on database failure, independently of liveness', async () => {

@@ -20,7 +20,7 @@ export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic
   const [busy,setBusy]=useState(false),mutating=useRef(false),issueRequests=useRef(new Map<string,{expectedVersion:number;requestKey:string}>());
   const cursor=cursors.at(-1);
   useEffect(()=>()=>{Object.values(gates).forEach(g=>g.cancel());},[gates]);
-  function auth(e:unknown){if(e instanceof ApiError&&e.status===401)onAuthError(e);}
+  function auth(e:unknown){if(e instanceof ApiError&&(e.status===401||e.code==='MFA_STEP_UP_REQUIRED'||e.code==='MFA_SETUP_REQUIRED'))onAuthError(e);}
   useEffect(()=>{
     if(!canRead)return;const scope=gates.list.start();setLoading(true);setPage(null);setError('');const timer=setTimeout(()=>{
       const query=new URLSearchParams({q,status,pageSize:'20'});if(cursor)query.set('cursor',cursor);

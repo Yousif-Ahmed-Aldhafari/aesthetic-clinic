@@ -37,7 +37,7 @@ before(async()=>{
   if(!enabled)return;const urls=testUrls();process.env.DATABASE_URL=urls.runtime;process.env.NODE_ENV='test';process.env.AUTH_CSRF_SECRET=randomBytes(48).toString('base64url');process.env.CORS_ORIGINS=origin;process.env.AUTH_LOGIN_ACCOUNT_LIMIT='200';process.env.AUTH_LOGIN_IP_LIMIT='10000';
   const {AppModule}=await import('../src/app.module.js');const mod=await Test.createTestingModule({imports:[AppModule]}).compile();app=mod.createNestApplication({logger:false});configureApp(app);await app.listen(0,'127.0.0.1');base=await app.getUrl();owner=fixtureDatabase();pool=new pg.Pool({connectionString:urls.runtime,max:4});
   for(const [i,id] of clinics.entries()){
-    await owner.clinic.create({data:{id,slug:`billing-${i}-${suffix}`,legalName:`اسم قانوني وهمي ${i}`,displayName:`عيادة فوترة وهمية ${i}`,currency:i?'KWD':'YER',timezone:'Asia/Aden',branding:{create:{primaryColor:i?'#087F8C':'#7854D9'}}}});
+    await owner.clinic.create({data:{id,slug:`billing-${i}-${suffix}`,legalName:`اسم قانوني وهمي ${i}`,displayName:`عيادة فوترة وهمية ${i}`,currency:i?'KWD':'YER',timezone:'Asia/Aden',mfaPolicy:'OPTIONAL',branding:{create:{primaryColor:i?'#087F8C':'#7854D9'}}}});
     patients.push((await owner.patient.create({data:{clinicId:id,patientNumber:'P-000001',fullName:`مريض مالي وهمي ${i}`,searchName:`مريض مالي وهمي ${i}`}})).id);
   }
   for(const [i,email] of emails.entries())users.push((await provisionUser(owner,{email,name:'مستخدم مالي وهمي',password,memberships:[{clinicSlug:`billing-0-${suffix}`,role:roles[i]}]})).id);

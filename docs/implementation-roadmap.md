@@ -129,6 +129,55 @@ production use remains gated on authentication, isolation and operational contro
     Clinical records, consent and protected media need their own reviewed scope;
     they must not reuse the intentionally public clinic-asset channel.
 
+11. **2.1 — Centralized Audit Logging, Secure Backups & Disaster Recovery (implemented).**
+    Append-only immutable audit trail with `FORCE ROW LEVEL SECURITY`, tenant isolation,
+    and PostgreSQL triggers rejecting mutation/deletion. Covers authentication (login/logout/failures),
+    clinic identity/branding, staff administration and role assignments, patient records, appointments,
+    queue/visits, and billing/invoicing. Automatic metadata redaction sanitizes PHI, credentials, tokens,
+    and payment card numbers. Out-of-band security failure recording via hardened `SECURITY DEFINER`
+    function. Dual-mode Arabic RTL audit management interface in clinic settings. Automated AES-256-GCM
+    encrypted database backups (`pg_dump -Fc --enable-row-security`) with scrypt KDF, SHA-256 checksums,
+    0600 file permissions, and systemd units (`deploy/systemd/`). Automated disaster recovery verification drills
+    (`npm run db:backup:drill`) measure RTO and RPO in isolated temporary schemas, with fail-closed tamper
+    detection and guards preventing accidental overwrite of active databases.
+    See [audit logging](audit-logging.md), [backup and recovery](backup-recovery.md), and [verification](development.md).
+
+12. **2.2 — Security Hardening, Multi-Factor Authentication (MFA) & Step-Up Authorization (implemented).**
+    RFC 6238 TOTP engine, encrypted secrets at rest with AES-256-GCM, high-entropy single-use recovery
+    codes hashed with salted PBKDF2 (10,000 iterations), 15-minute server-enforced step-up authorization
+    (`@RequireStepUp`), active session device management, IP masking, and Arabic RTL security settings interface.
+    See [development.md](development.md).
+
+13. **2.3 — Privacy, Data Retention & Data Governance (implemented).**
+    Formal 6-tier data inventory (`AUTH_SECRET`, `FINANCIAL`, `SENSITIVE_PERSONAL`, `PERSONAL`, `INTERNAL`, `PUBLIC`),
+    data minimization, formula injection sanitization, versioned retention policies with dry-run simulation engine,
+    privacy rights requests lifecycle (Access, Rectification, Restriction, Export, Erasure), bounded single-use patient
+    data exports, and statutory precedence for immutable audit/financial chains.
+    See [privacy-data-governance.md](privacy-data-governance.md).
+
+14. **2.4 — Monitoring, Error Tracking & Reliability (implemented).**
+    Zero-dependency, zero-cost observability: structured JSON logging with CIDR network IP masking (IPv4 `/24`, IPv6 `/48`)
+    and automated PII/PHI redaction, in-memory rolling metrics buffer (status codes, latency percentiles $p50$, $p95$, $p99$,
+    $max$, in-flight requests, failed logins), Prometheus text exposition (`GET /api/v1/metrics`), decoupled error tracking
+    and SHA-256 fingerprinting (`ErrorTrackerService`), actionable alerting engine with 15-minute deduplication cooldown
+    (`AlertingService`), protected health diagnostics (`GET /api/v1/health/diagnostics`), and native Arabic RTL frontend error
+    boundary (`<ErrorBoundary>`) with support correlation IDs (`ERR-XXXXXX`).
+    See [monitoring-reliability.md](monitoring-reliability.md).
+
+15. **2.5 — Deployment Infrastructure & Production Verification (implemented locally; launch gated).**
+    Multi-stage non-root API/web images, isolated staging Compose topology, PostgreSQL
+    private networking, controlled one-shot migration identity, Caddy TLS/host/header/
+    upload policy, production fail-closed configuration, private machine-only metrics,
+    platform-operator-only diagnostics, encrypted clinic-asset backup/restore and CI
+    validation workflow. Local production-mode smoke and security regressions are
+    automated. Isolated Docker/TLS journeys and paired DB/assets recovery have been
+    exercised locally; the read-only deployment verifier checks actual runtime secret
+    boundaries and proxy controls. Recovery checks fail closed on missing evidence.
+    Public deployment, DNS/certificate activation, cloud resources, off-site
+    immutable copies and jurisdictional approval require explicit owner action.
+    See [deployment.md](deployment.md) and
+    [production-readiness-checklist.md](production-readiness-checklist.md).
+
 ## Migration discipline
 
 - Preserve root development commands and the browser origin used for demo storage.

@@ -1,0 +1,78 @@
+name: Validate Lamssa
+
+on:
+  pull_request:
+  push:
+    branches: [main, phase/2-security-reliability]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.21.0, cache: npm }
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run check:boundaries
+      - run: npm run check:deployment
+      - run: npm run db:validate
+      - run: npm run db:generate
+      - run: npm test
+      - run: npm run build
+      - run: docker build -f apps/api/Dockerfile --target production -t lamssa-api:ci .
+      - run: docker build -f apps/web/Dockerfile --target production -t lamssa-web:ci .
+      - name: Validate production proxy syntax
+        run: >-
+          docker run --rm -e PUBLIC_HOST=app.example.test -e ACME_EMAIL=ops@example.test
+          -v "$PWD/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+
+  database-and-browser:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16.10-bookworm
+        env: { POSTGRES_PASSWORD: ci-ephemeral-password }
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      PGPASSWORD: ci-ephemeral-password
+      DATABASE_URL: postgresql://lamssa_dev_app:ci-runtime@127.0.0.1:5432/lamssa_dev?schema=public
+      MIGRATION_DATABASE_URL: postgresql://lamssa_dev_migrator:ci-migrator@127.0.0.1:5432/lamssa_dev?schema=public
+      TEST_DATABASE_URL: postgresql://lamssa_test_app:ci-runtime@127.0.0.1:5432/lamssa_test?schema=public
+      TEST_MIGRATION_DATABASE_URL: postgresql://lamssa_test_migrator:ci-migrator@127.0.0.1:5432/lamssa_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.21.0, cache: npm }
+      - run: npm ci
+      - name: Create isolated CI databases and restricted runtime roles
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE lamssa_dev_migrator LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD 'ci-migrator';
+          CREATE ROLE lamssa_test_migrator LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD 'ci-migrator';
+          CREATE ROLE lamssa_dev_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD 'ci-runtime';
+          CREATE ROLE lamssa_test_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD 'ci-runtime';
+          CREATE DATABASE lamssa_dev OWNER lamssa_dev_migrator;
+          CREATE DATABASE lamssa_test OWNER lamssa_test_migrator;
+          SQL
+      - run: npm run db:migrate
+      - run: npm run db:migrate:test
+      - name: Apply dev runtime grants
+        run: RUNTIME_DATABASE_ROLE=lamssa_dev_app node scripts/grant-database-access.mjs
+      - name: Apply test runtime grants
+        run: RUNTIME_DATABASE_ROLE=lamssa_test_app MIGRATION_DATABASE_URL="$TEST_MIGRATION_DATABASE_URL" node scripts/grant-database-access.mjs
+      - run: npm run test:db
+      - run: npm run test:browser
+
+# Validation only. This workflow has no cloud credentials and performs no deployment.

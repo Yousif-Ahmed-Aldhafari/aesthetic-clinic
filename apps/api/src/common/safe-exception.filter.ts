@@ -5,6 +5,10 @@ import type { Response } from 'express';
 import { SchedulingError, schedulingErrors } from '../appointments/scheduling-error.js';
 import { AuthError, authErrors } from '../auth/auth-error.js';
 import { QueueError, queueErrors } from '../queue/queue-error.js';
+import type { AuthRequest } from '../auth/access.js';
+import type { AuditEventInput } from '../audit/audit.types.js';
+import type { ErrorTrackerService } from '../observability/error-tracker.service.js';
+import type { StructuredLoggerService } from '../observability/structured-logger.service.js';
 
 const errors: Record<number, { code: string; message: string }> = {
   400: { code: 'INVALID_REQUEST', message: 'الطلب غير صالح' },
@@ -19,11 +23,63 @@ const errors: Record<number, { code: string; message: string }> = {
 
 @Catch()
 export class SafeExceptionFilter implements ExceptionFilter {
+  constructor(
+    private readonly auditService?: { recordDirectSafe: (event: AuditEventInput) => Promise<void> },
+    private readonly errorTracker?: ErrorTrackerService,
+    private readonly logger?: StructuredLoggerService,
+  ) {}
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
     const error = exception instanceof IdentityError ? {code:exception.code,message:identityErrors[exception.code][1]} : exception instanceof BillingError ? {code:exception.code,message:billingErrors[exception.code][1]} : exception instanceof QueueError ? {code:exception.code,message:queueErrors[exception.code][1]} : exception instanceof SchedulingError ? { code: exception.code, message: schedulingErrors[exception.code][1] } : exception instanceof AuthError ? { code: exception.code, message: authErrors[exception.code].message } : errors[status] ?? (status >= 500
       ? { code: 'INTERNAL_ERROR', message: 'حدث خطأ داخلي' }
       : { code: 'REQUEST_REJECTED', message: 'تعذر تنفيذ الطلب' });
+
+    const http = host.switchToHttp();
+    const req = http.getRequest<AuthRequest>();
+    const correlationId = typeof req?.headers?.['x-correlation-id'] === 'string'
+      ? req.headers['x-correlation-id']
+      : typeof req?.headers?.['x-request-id'] === 'string'
+      ? req.headers['x-request-id']
+      : null;
+
+    // Track unhandled internal server errors in error reporting service
+    if (status >= 500) {
+      this.logger?.error('Unhandled internal server error', {
+        error: exception instanceof Error ? exception.message : String(exception),
+        path: req?.url,
+        method: req?.method,
+        correlationId: correlationId ?? undefined,
+      });
+      if (this.errorTracker) {
+        this.errorTracker.captureException(exception, {
+          code: error.code,
+          message: error.message,
+          path: req?.url,
+          method: req?.method,
+          requestId: correlationId ?? undefined,
+          clinicId: req?.clinicContext?.clinicId,
+        });
+      }
+    }
+
+    if (status === 401 || status === 403 || status === 429) {
+      if (req) {
+        this.auditService?.recordDirectSafe({
+          clinicId: req.clinicContext?.clinicId ?? req.auth?.session?.selectedClinicId ?? null,
+          actorId: req.auth?.user?.id ?? null,
+          actorEmail: req.auth?.user?.email ?? null,
+          action: status === 401 ? 'security.unauthenticated_access' : status === 403 ? 'security.access_denied' : 'security.rate_limited',
+          category: 'SECURITY',
+          outcome: 'DENIED',
+          ipAddress: req.ip ?? req.socket?.remoteAddress ?? null,
+          userAgent: typeof req.headers?.['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+          correlationId,
+          metadata: { path: req.url?.slice(0, 100), method: req.method, code: error.code },
+        }).catch(() => {});
+      }
+    }
+
     // Do not serialize exception messages, request URLs, SQL, stacks or credentials.
     host.switchToHttp().getResponse<Response>().status(status).json({ statusCode: status, error });
   }

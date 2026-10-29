@@ -14,13 +14,15 @@ async function inspect(dir) {
     {
       // Metadata writes need the reviewed exclusive tenant lock, validation and
       // trigger-owned audit path. Ledger/audit heads are not application writers.
-      const sensitive=new Set(['clinic','clinicBranding','clinicDomain','clinicMembership','clinicAsset','clinicIdentityState','clinicIdentityAuditEvent','clinicSlugReservation']);
+      const sensitive=new Set(['clinic','clinicBranding','clinicDomain','clinicMembership','clinicAsset','clinicIdentityState','clinicIdentityAuditEvent','clinicSlugReservation','auditEvent']);
       const mutations=new Set(['create','createMany','update','updateMany','upsert','delete','deleteMany']);
       function inspectWrite(node){
         if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)){
           const operation=node.expression,delegate=operation.expression;
-          if(mutations.has(operation.name.text)&&ts.isPropertyAccessExpression(delegate)&&sensitive.has(delegate.name.text)&&
-            (name!=='prisma/clinic-administration.repository.ts'||['clinicIdentityState','clinicIdentityAuditEvent','clinicSlugReservation'].includes(delegate.name.text)))errors.push(`${name}: clinic identity mutation belongs in the audited administration boundary`);
+          if(mutations.has(operation.name.text)&&ts.isPropertyAccessExpression(delegate)&&sensitive.has(delegate.name.text)){
+            if(delegate.name.text==='auditEvent'&&name!=='prisma/audit.repository.ts')errors.push(`${name}: audit mutation belongs in the audited audit repository boundary`);
+            else if(delegate.name.text!=='auditEvent'&&(name!=='prisma/clinic-administration.repository.ts'||['clinicIdentityState','clinicIdentityAuditEvent','clinicSlugReservation'].includes(delegate.name.text)))errors.push(`${name}: clinic identity mutation belongs in the audited administration boundary`);
+          }
         }
         ts.forEachChild(node,inspectWrite);
       }
