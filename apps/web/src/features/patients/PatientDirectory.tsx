@@ -4,6 +4,7 @@ import { ApiError, type ClinicContext } from '../auth/api';
 import { patientApi, type PatientGender, type PatientInput, type PatientPage, type PatientRecord } from './patient-api';
 import { RequestScope } from './request-scope';
 import { ClinicalPanel } from '../clinical/ClinicalPanel';
+import { TreatmentPlansPanel } from '../treatments/TreatmentPlansPanel';
 import './patients.css';
 const genderNames:Record<PatientGender,string>={FEMALE:'أنثى',MALE:'ذكر',OTHER:'هوية أخرى',UNDISCLOSED:'يفضّل عدم الإفصاح'};
 const date=(value:string)=>new Intl.DateTimeFormat('ar-YE',{dateStyle:'medium',timeZone:'UTC'}).format(new Date(value));
@@ -41,7 +42,7 @@ export function PatientDirectory({clinic,csrfToken,onAuthError,onLegacy}:{clinic
   const [modal,setModal]=useState<'new'|'detail'|'edit'|null>(null),[selected,setSelected]=useState<PatientRecord|null>(null),[profileLoading,setProfileLoading]=useState(false);
   const mutating=useRef(false);
   const [busy,setBusy]=useState(false),[formError,setFormError]=useState(''),[notice,setNotice]=useState('');
-  const canRead=clinic.permissions.includes('patients.read'),canCreate=clinic.permissions.includes('patients.create'),canUpdate=clinic.permissions.includes('patients.update'),canClinical=clinic.permissions.includes('clinical.encounters.read');
+  const canRead=clinic.permissions.includes('patients.read'),canCreate=clinic.permissions.includes('patients.create'),canUpdate=clinic.permissions.includes('patients.update'),canClinical=clinic.permissions.includes('clinical.encounters.read'),canTreatmentPlans=clinic.permissions.includes('clinical.treatment-plans.read');
   const cursor=history.at(-1);
   useEffect(()=>()=>{gates.list.cancel();gates.profile.cancel();gates.mutation.cancel();},[gates]);
   useEffect(()=>{
@@ -93,6 +94,7 @@ export function PatientDirectory({clinic,csrfToken,onAuthError,onLegacy}:{clinic
         {formError&&<div className="patient-error" role="alert">{formError}<button className="table-btn" onClick={()=>void open(selected.id)}>إعادة تحميل الملف</button></div>}
         {canUpdate&&<div className="profile-actions"><button className="primary-btn" disabled={busy} onClick={()=>{setFormError('');setModal('edit');}}>تعديل البيانات</button><button className="table-btn" disabled={busy} onClick={()=>void changeStatus()}>{busy?'جارٍ التحديث…':selected.status==='ACTIVE'?'تعطيل الملف':'إعادة تنشيط الملف'}</button></div>}
         {canClinical&&<ClinicalPanel clinicId={clinic.clinicId} patientId={selected.id} csrfToken={csrfToken} onAuthError={onAuthError}/>}
+        {canTreatmentPlans&&<TreatmentPlansPanel clinicId={clinic.clinicId} patientId={selected.id} csrfToken={csrfToken} onAuthError={onAuthError}/>}
       </div>:<div className="patient-error" role="alert">{formError}</div>}
     </Modal>}
   </>;

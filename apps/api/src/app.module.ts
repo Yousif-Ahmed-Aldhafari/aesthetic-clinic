@@ -23,6 +23,7 @@ import { PublicBrandingService } from './clinics/public-branding.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ClinicContextController } from './clinics/clinic-context.controller.js';
 import { ClinicalController } from './clinical/clinical.controller.js';
+import { TreatmentController } from './treatments/treatment.controller.js';
 
 @Module({
   imports: [
@@ -38,7 +39,7 @@ import { ClinicalController } from './clinical/clinical.controller.js';
     PrivacyModule,
     ObservabilityModule,
   ],
-  controllers: [ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
+  controllers: [TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],
 })
 export class AppModule {}

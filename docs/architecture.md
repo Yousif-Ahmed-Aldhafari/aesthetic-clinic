@@ -4,6 +4,14 @@
 
 `ClinicalEncounter`, `ClinicalNote`, `ClinicalNoteAmendment`, and `MedicalHistory` are sensitive tenant resources protected by doctor-only permissions, assigned-membership filtering, transaction-local tenant context, same-clinic foreign keys, and FORCE RLS. Signed content is database-immutable and corrections are append-only. Patient administration, clinic ownership, and platform administration confer no clinical access. See [clinical-records.md](clinical-records.md).
 
+## Phase 3.2 treatment plans and aesthetic procedures
+
+`AestheticProcedureCatalog`, `TreatmentPlan`, `TreatmentPlanRevision`, `TreatmentPlanItem`, and `ProcedureExecution` extend the clinical domain with governed procedure catalogs, versioned treatment planning, and procedure documentation.
+- Approved revisions (`TreatmentPlanRevision`) and their items (`TreatmentPlanItem`) are strictly immutable, enforced by database triggers `treatment_revision_guard` and `treatment_item_guard` (raising error `42501`).
+- Reopening completed/cancelled plans is prevented by `treatment_plan_guard`.
+- Procedure performance enforces a fail-closed consent gate: transitioning `ProcedureExecution` to `PERFORMED` or `COMPLETED` requires verified informed consent from Step 3.3. Any attempt without verified consent throws 403 Forbidden (`VERIFIED_CONSENT_REQUIRED`) and generates an audit log event `clinical.procedure-execution.blocked`.
+- All tables enforce `FORCE ROW LEVEL SECURITY`, tenant isolation via `lamssa_security.context_allows("clinicId")`, and doctor-only permissions (`clinical.treatment-plans.*`, `clinical.procedure-catalog.*`, `clinical.procedures.*`). Runtime roles have no DELETE privileges on catalog, plans, revisions, or executions. See [treatment-plans.md](treatment-plans.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,

@@ -4,6 +4,14 @@
 
 Clinical encounters, notes, amendments, allergies, medications, assessments, and medical history are `SENSITIVE_PERSONAL`. They are covered by encrypted database backups but deliberately excluded from the current administrative export. Retention remains dry-run only; no clinical row is automatically deleted. Export scope, legal holds, access disclosure, and jurisdiction-specific retention require clinical/legal approval.
 
+## Phase 3.2 treatment plans & procedures addendum
+
+Aesthetic procedure catalog definitions, treatment plans, revisions, plan items, and procedure execution documentation are classified as `SENSITIVE_PERSONAL`.
+- They are covered by multi-clinic encrypted database backups (`pg_dump -Fc --enable-row-security`).
+- They are strictly excluded from administrative patient exports (`PatientExport`).
+- Audit logging records operational metadata (`revisionNumber`, `sessionOrder`, `status`, `targetStatus`, `reason`) while strictly withholding medical content, instructions, observations, and patient identifiers.
+- Retention simulation remains dry-run only; clinical rows are never automatically deleted by retention tasks.
+
 ## 1. Executive Summary
 
 Lamssa is an Arabic-first, RTL-native, multi-tenant SaaS for aesthetic clinics. This document defines the privacy engineering architecture, data classification, retention framework, rights management lifecycle, export protection, and data governance controls introduced in **Phase 2, Step 2.3**.

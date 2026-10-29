@@ -3,7 +3,8 @@
 ## Phase 3
 
 1. **3.1 — Clinical consultations and EMR foundation (implemented):** doctor-assigned encounters, structured history, signed-note immutability, append-only amendments, RLS, audit/privacy controls, and Arabic RTL workflow.
-2. **3.2 — Treatment plans and aesthetic procedures (next):** governed procedure catalog and planned/performed workflow with explicit consent and prescription boundaries.
+2. **3.2 — Treatment plans and aesthetic procedures (implemented):** persistent clinic-owned treatment plans, immutable approved revisions, clinic-defined aesthetic procedure catalog, procedure execution drafting with metadata snapshotting, fail-closed consent gate (`VERIFIED_CONSENT_REQUIRED`), doctor-only RBAC, FORCE RLS, optimistic concurrency, and Arabic RTL treatment planning UI.
+3. **3.3 — Informed Consent & Clinical Treatment Forms (next):** digital consent verification, patient signature workflows, and consent record lifecycle unlocking procedure performance.
 
 Updated after Step 1.9, 2026-10-26. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All
