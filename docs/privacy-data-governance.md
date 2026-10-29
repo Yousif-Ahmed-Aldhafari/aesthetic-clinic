@@ -12,6 +12,15 @@ Aesthetic procedure catalog definitions, treatment plans, revisions, plan items,
 - Audit logging records operational metadata (`revisionNumber`, `sessionOrder`, `status`, `targetStatus`, `reason`) while strictly withholding medical content, instructions, observations, and patient identifiers.
 - Retention simulation remains dry-run only; clinical rows are never automatically deleted by retention tasks.
 
+## Phase 3.3 informed consent & signature evidence addendum
+
+Informed consent templates, template versions, patient consents, signature evidence, and withdrawal records are classified as `SENSITIVE_PERSONAL`.
+- Signature evidence (`ConsentSignatureEvidence`) contains drawn base64 image data or typed confirmation strings alongside signer capacity, relationship, and identity snapshots. It is strictly database-immutable via `consent_signature_evidence_guard`.
+- Audit metadata sanitizer recursively redacts `signatureData`, `signerIdentitySnapshot`, and raw consent text bodies from general audit logs.
+- Patient consent documents are strictly excluded from administrative patient exports.
+- Multi-clinic encrypted database backups capture all 5 consent tables under dedicated non-bypass backup roles and verified by restoration drills.
+- Retention simulation remains dry-run only; consent records and legal signature evidence are never automatically pruned.
+
 ## 1. Executive Summary
 
 Lamssa is an Arabic-first, RTL-native, multi-tenant SaaS for aesthetic clinics. This document defines the privacy engineering architecture, data classification, retention framework, rights management lifecycle, export protection, and data governance controls introduced in **Phase 2, Step 2.3**.

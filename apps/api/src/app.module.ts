@@ -24,6 +24,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { ClinicContextController } from './clinics/clinic-context.controller.js';
 import { ClinicalController } from './clinical/clinical.controller.js';
 import { TreatmentController } from './treatments/treatment.controller.js';
+import { ConsentController } from './consent/consent.controller.js';
 
 @Module({
   imports: [
@@ -39,7 +40,7 @@ import { TreatmentController } from './treatments/treatment.controller.js';
     PrivacyModule,
     ObservabilityModule,
   ],
-  controllers: [TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
+  controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],
 })
 export class AppModule {}

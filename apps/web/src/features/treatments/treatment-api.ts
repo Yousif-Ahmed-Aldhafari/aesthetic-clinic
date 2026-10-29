@@ -14,5 +14,6 @@ export const treatmentApi=(clinicId:string)=>{const root=`clinics/${encodeURICom
  approve:(id:string,expectedVersion:number,csrf:string,signal:AbortSignal)=>api<Plan>(`${root}/treatment-plans/${id}/approve`,'POST',{expectedVersion},csrf,signal),
  revise:(id:string,expectedVersion:number,reason:string,csrf:string,signal:AbortSignal)=>api<Plan>(`${root}/treatment-plans/${id}/revisions`,'POST',{expectedVersion,reason},csrf,signal),
  execution:(itemId:string,csrf:string,signal:AbortSignal)=>api<{id:string;status:string;consentEligible:boolean;consentReason:string}>(`${root}/procedure-executions`,'POST',{treatmentPlanItemId:itemId},csrf,signal),
+ eligibility:(executionId:string,signal:AbortSignal)=>api<{eligible:boolean;status:string;reason:string;consent?:any}>(`${root}/procedure-executions/${executionId}/eligibility`,'GET',undefined,undefined,signal),
  perform:(executionId:string,expectedVersion:number,csrf:string,signal:AbortSignal)=>api(`${root}/procedure-executions/${executionId}/status`,'PATCH',{expectedVersion,status:'PERFORMED'},csrf,signal),
 };};

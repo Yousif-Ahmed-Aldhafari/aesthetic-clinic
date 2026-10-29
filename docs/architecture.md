@@ -10,7 +10,15 @@
 - Approved revisions (`TreatmentPlanRevision`) and their items (`TreatmentPlanItem`) are strictly immutable, enforced by database triggers `treatment_revision_guard` and `treatment_item_guard` (raising error `42501`).
 - Reopening completed/cancelled plans is prevented by `treatment_plan_guard`.
 - Procedure performance enforces a fail-closed consent gate: transitioning `ProcedureExecution` to `PERFORMED` or `COMPLETED` requires verified informed consent from Step 3.3. Any attempt without verified consent throws 403 Forbidden (`VERIFIED_CONSENT_REQUIRED`) and generates an audit log event `clinical.procedure-execution.blocked`.
-- All tables enforce `FORCE ROW LEVEL SECURITY`, tenant isolation via `lamssa_security.context_allows("clinicId")`, and doctor-only permissions (`clinical.treatment-plans.*`, `clinical.procedure-catalog.*`, `clinical.procedures.*`). Runtime roles have no DELETE privileges on catalog, plans, revisions, or executions. See [treatment-plans.md](treatment-plans.md).
+## Phase 3.3 informed consent, signature evidence, and procedure consent eligibility
+
+`ConsentTemplate`, `ConsentTemplateVersion`, `PatientConsent`, `ConsentSignatureEvidence`, and `ConsentWithdrawal` establish legal and clinical consent governance:
+- Template governance: Templates define purpose (`PROCEDURE`, `CLINICAL_PHOTOGRAPHY`, `MARKETING_PHOTOGRAPHY`), titles, and procedure links. Template versions carry full Arabic/English text, risks, alternatives, and deterministic SHA-256 content digests. Published and retired versions are immutable (`consent_template_version_guard`).
+- Cryptographic signature evidence: Captures drawn canvas signatures (`DRAWN_BASE64`) or typed confirmations (`TYPED_CONFIRMATION`), signer capacity (`PATIENT`, `GUARDIAN`, `LEGAL_REPRESENTATIVE`), relationship, ID snapshot, and a deterministic SHA-256 evidence hash binding template content digest, patient ID, clinic ID, signer info, and server timestamp. Strictly immutable (`consent_signature_evidence_guard`).
+- Strict purpose separation: Photography and marketing consents can NEVER satisfy procedure execution consent.
+- Fail-closed procedure execution gate: `ConsentEligibilityService` evaluates live transactional database state. Transitioning `ProcedureExecution` to `PERFORMED` requires active, doctor-verified `PROCEDURE` consent matching the procedure. Unauthorized execution attempts are rejected (403 `VERIFIED_CONSENT_REQUIRED`) and logged to audit trails.
+- Withdrawal and revocation: Withdrawing consent requires an explicit clinical reason, creates an immutable `ConsentWithdrawal` record, and immediately revokes execution eligibility.
+- Doctor-only RBAC and FORCE RLS: All 5 tables enforce `FORCE ROW LEVEL SECURITY`, composite foreign keys `(clinicId, id)`, and doctor-only permissions (`clinical.consents.*`, `clinical.consent-templates.*`). Denied to owners, admins, receptionists, and accountants. See [informed-consent.md](informed-consent.md).
 
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 

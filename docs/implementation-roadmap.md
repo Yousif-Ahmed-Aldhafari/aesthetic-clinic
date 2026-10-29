@@ -4,7 +4,8 @@
 
 1. **3.1 — Clinical consultations and EMR foundation (implemented):** doctor-assigned encounters, structured history, signed-note immutability, append-only amendments, RLS, audit/privacy controls, and Arabic RTL workflow.
 2. **3.2 — Treatment plans and aesthetic procedures (implemented):** persistent clinic-owned treatment plans, immutable approved revisions, clinic-defined aesthetic procedure catalog, procedure execution drafting with metadata snapshotting, fail-closed consent gate (`VERIFIED_CONSENT_REQUIRED`), doctor-only RBAC, FORCE RLS, optimistic concurrency, and Arabic RTL treatment planning UI.
-3. **3.3 — Informed Consent & Clinical Treatment Forms (next):** digital consent verification, patient signature workflows, and consent record lifecycle unlocking procedure performance.
+3. **3.3 — Informed Consent Forms, Signature Evidence & Procedure Consent Eligibility (implemented):** legal consent templates with immutable published versions, deterministic SHA-256 content digests, digital patient/guardian signature evidence (`DRAWN_BASE64` and `TYPED_CONFIRMATION`) with evidence hash binding, doctor verification workflow, mandatory-reason withdrawal with instant revocation, strict purpose separation (procedure vs clinical photo vs marketing), fail-closed procedure execution gate (`VERIFIED_CONSENT_REQUIRED`), doctor-only RBAC, FORCE RLS, and Arabic RTL UI with printable branded snapshot view.
+4. **3.4 — Clinical Photography & Before/After Media Governance (next):** encrypted asset storage, photo categorization, patient consent binding, and clinical comparison.
 
 Updated after Step 1.9, 2026-10-26. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All

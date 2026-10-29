@@ -9,7 +9,12 @@ Apply `20261029000100_clinical_records` and `20261029000200_clinical_integrity_h
 Apply `20261029000300_treatment_plans_procedures` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical treatment plan and procedure endpoints reside under `/api/v1/clinics/:clinicId/clinical`.
 - Unit and policy tests: `apps/api/test/treatment-policy.test.ts`.
 - Database integration tests: `apps/api/test/treatment.integration.test.ts`.
-- Invariants: Approved revisions and plan items are database-immutable. Procedure execution cannot be set to PERFORMED or COMPLETED without verified consent (Step 3.3). Only DOCTOR role has clinical permissions.
+## Phase 3.3 informed consent forms, signatures, and procedure consent eligibility
+
+Apply `20261030000100_informed_consent_signatures` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical consent endpoints reside under `/api/v1/clinics/:clinicId/clinical`.
+- Unit and policy tests: `apps/api/test/consent-policy.test.ts` and `apps/web/test/consent-flow.test.mjs`.
+- Database integration tests: `apps/api/test/consent.integration.test.ts`.
+- Invariants: Published template versions, signature evidence, and withdrawal records are strictly immutable via triggers. Procedure execution cannot transition to PERFORMED without active verified PROCEDURE consent. Clinical photography or marketing consents cannot satisfy procedure execution. Permissions are doctor-only.
 
 ## Step 2.5 — Deployment Infrastructure & Production Verification (2026-10-28)
 

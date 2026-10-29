@@ -105,6 +105,11 @@ model Clinic {
   treatmentPlanRevisions TreatmentPlanRevision[]
   treatmentPlanItems TreatmentPlanItem[]
   procedureExecutions ProcedureExecution[]
+  consentTemplates ConsentTemplate[]
+  consentTemplateVersions ConsentTemplateVersion[]
+  patientConsents PatientConsent[]
+  consentSignatureEvidence ConsentSignatureEvidence[]
+  consentWithdrawals ConsentWithdrawal[]
 
   @@index([status, createdAt])
 }
@@ -242,6 +247,10 @@ model ClinicMembership {
   authoredTreatmentRevisions TreatmentPlanRevision[] @relation("TreatmentRevisionAuthor")
   approvedTreatmentRevisions TreatmentPlanRevision[] @relation("TreatmentRevisionApprover")
   procedureExecutions ProcedureExecution[] @relation("ProcedureClinician")
+  publishedConsentTemplateVersions ConsentTemplateVersion[] @relation("ConsentTemplateVersionPublisher")
+  preparedPatientConsents PatientConsent[] @relation("ConsentPreparer")
+  verifiedPatientConsents PatientConsent[] @relation("ConsentVerifier")
+  withdrawnPatientConsents ConsentWithdrawal[] @relation("ConsentWithdrawer")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -374,6 +383,7 @@ model Patient {
   medicalHistory MedicalHistory?
   treatmentPlans TreatmentPlan[]
   procedureExecutions ProcedureExecution[]
+  consents PatientConsent[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -526,6 +536,8 @@ model AestheticProcedureCatalog {
   clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
   clinicService ClinicService? @relation(fields:[clinicId,clinicServiceId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   planItems TreatmentPlanItem[]
+  consentTemplates ConsentTemplate[]
+  consents PatientConsent[]
   @@unique([clinicId,id])
   @@index([clinicId,active,nameAr,id])
   @@index([clinicId,clinicServiceId])
@@ -547,6 +559,7 @@ model TreatmentPlan {
   clinician ClinicMembership @relation("TreatmentPlanClinician",fields:[clinicId,clinicianMembershipId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   originatingEncounter ClinicalEncounter? @relation(fields:[clinicId,originatingEncounterId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   revisions TreatmentPlanRevision[]
+  consents PatientConsent[]
   @@unique([clinicId,id])
   @@index([clinicId,patientId,createdAt,id])
   @@index([clinicId,clinicianMembershipId,status,updatedAt])
@@ -598,6 +611,7 @@ model TreatmentPlanItem {
   revision TreatmentPlanRevision @relation(fields:[clinicId,revisionId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   procedureCatalog AestheticProcedureCatalog @relation(fields:[clinicId,procedureCatalogId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   executions ProcedureExecution[]
+  consents PatientConsent[]
   @@unique([clinicId,id])
   @@unique([clinicId,revisionId,sessionOrder])
   @@index([clinicId,procedureCatalogId,status])
@@ -637,6 +651,170 @@ model ProcedureExecution {
   @@unique([clinicId,treatmentPlanItemId])
   @@index([clinicId,patientId,status,createdAt])
   @@index([clinicId,clinicianMembershipId,status])
+}
+
+enum ConsentPurpose {
+  PROCEDURE
+  CLINICAL_PHOTOGRAPHY
+  MARKETING_PHOTOGRAPHY
+}
+
+enum ConsentTemplateStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum ConsentStatus {
+  DRAFT
+  PENDING_VERIFICATION
+  ACTIVE
+  WITHDRAWN
+  EXPIRED
+  REFUSED
+}
+
+enum SignerCapacity {
+  PATIENT
+  GUARDIAN
+  LEGAL_REPRESENTATIVE
+}
+
+enum SignatureType {
+  DRAWN_BASE64
+  TYPED_CONFIRMATION
+  SECURE_TOKEN
+}
+
+model ConsentTemplate {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  purpose ConsentPurpose
+  title String @db.VarChar(200)
+  procedureCatalogId String? @db.Uuid
+  active Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  procedureCatalog AestheticProcedureCatalog? @relation(fields: [clinicId, procedureCatalogId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  versions ConsentTemplateVersion[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, purpose, active, createdAt, id])
+  @@index([clinicId, procedureCatalogId])
+}
+
+model ConsentTemplateVersion {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  templateId String @db.Uuid
+  versionNumber Int
+  status ConsentTemplateStatus @default(DRAFT)
+  titleAr String @db.VarChar(200)
+  bodyAr String @db.VarChar(10000)
+  titleEn String? @db.VarChar(200)
+  bodyEn String? @db.VarChar(10000)
+  risksTextAr String @db.VarChar(6000)
+  alternativesTextAr String @db.VarChar(6000)
+  contentDigestSha256 String @db.VarChar(64)
+  publishedAt DateTime? @db.Timestamptz(3)
+  publishedByMembershipId String? @db.Uuid
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  template ConsentTemplate @relation(fields: [clinicId, templateId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  publishedBy ClinicMembership? @relation("ConsentTemplateVersionPublisher", fields: [clinicId, publishedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  consents PatientConsent[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, templateId, versionNumber])
+  @@index([clinicId, templateId, status, versionNumber])
+}
+
+model PatientConsent {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  patientId String @db.Uuid
+  templateVersionId String @db.Uuid
+  purpose ConsentPurpose
+  status ConsentStatus @default(DRAFT)
+  treatmentPlanId String? @db.Uuid
+  treatmentPlanRevisionNumber Int?
+  treatmentPlanItemId String? @db.Uuid
+  procedureCatalogId String? @db.Uuid
+  preparedByMembershipId String @db.Uuid
+  verifiedByMembershipId String? @db.Uuid
+  verifiedAt DateTime? @db.Timestamptz(3)
+  validFrom DateTime? @db.Timestamptz(3)
+  expiresAt DateTime? @db.Timestamptz(3)
+  refusalReason String? @db.VarChar(1000)
+  notes String? @db.VarChar(2000)
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient Patient @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  templateVersion ConsentTemplateVersion @relation(fields: [clinicId, templateVersionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  preparedBy ClinicMembership @relation("ConsentPreparer", fields: [clinicId, preparedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  verifiedBy ClinicMembership? @relation("ConsentVerifier", fields: [clinicId, verifiedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  treatmentPlan TreatmentPlan? @relation(fields: [clinicId, treatmentPlanId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  treatmentPlanItem TreatmentPlanItem? @relation(fields: [clinicId, treatmentPlanItemId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  procedureCatalog AestheticProcedureCatalog? @relation(fields: [clinicId, procedureCatalogId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  signatureEvidence ConsentSignatureEvidence?
+  withdrawal ConsentWithdrawal?
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, status, purpose, createdAt, id])
+  @@index([clinicId, treatmentPlanItemId, status])
+  @@index([clinicId, procedureCatalogId, status])
+}
+
+model ConsentSignatureEvidence {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  patientConsentId String @db.Uuid
+  signerCapacity SignerCapacity
+  signerName String @db.VarChar(200)
+  signerIdentitySnapshot String? @db.VarChar(100)
+  relationshipDescription String? @db.VarChar(200)
+  signatureType SignatureType
+  signatureData String @db.VarChar(20000)
+  evidenceHashSha256 String @db.VarChar(64)
+  signedAt DateTime @db.Timestamptz(3)
+  ipAddress String? @db.VarChar(64)
+  userAgent String? @db.VarChar(500)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patientConsent PatientConsent @relation(fields: [clinicId, patientConsentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, patientConsentId])
+  @@index([clinicId, signedAt, id])
+}
+
+model ConsentWithdrawal {
+  id String @id @default(uuid()) @db.Uuid
+  clinicId String @db.Uuid
+  patientConsentId String @db.Uuid
+  withdrawnAt DateTime @db.Timestamptz(3)
+  withdrawnByMembershipId String? @db.Uuid
+  reason String @db.VarChar(1000)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patientConsent PatientConsent @relation(fields: [clinicId, patientConsentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  withdrawnBy ClinicMembership? @relation("ConsentWithdrawer", fields: [clinicId, withdrawnByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, patientConsentId])
+  @@index([clinicId, withdrawnAt, id])
 }
 
 
