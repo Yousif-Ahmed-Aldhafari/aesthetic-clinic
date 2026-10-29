@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { config } from 'dotenv';
 import pg from 'pg';
-import { calculateSha256, decryptBackup } from './backup-crypto.mjs';
+import { decryptBackup } from './backup-crypto.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 config({ path: resolve(root, '.env'), quiet: true });
@@ -75,7 +75,54 @@ function resolveBackupPaths(fileOption, backupDir) {
   return { metaPath, dumpPath };
 }
 
+// Restore runs with maintenance credentials. Treat sidecar metadata and CLI names
+// as untrusted input, even after the ciphertext has authenticated successfully.
+export function quoteRestoreIdentifier(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(value)) {
+    throw new Error('Unsafe PostgreSQL restore identifier.');
+  }
+  return `"${value}"`;
+}
+
+export function validateRestoreMetadata(meta) {
+  if (!meta || meta.status !== 'completed' || meta.cipher !== 'aes-256-gcm' || meta.kdf !== 'scrypt' ||
+      !Number.isFinite(Date.parse(meta.timestamp)) ||
+      typeof meta.latestMigration !== 'string' || !/^[A-Za-z0-9_]+$/.test(meta.latestMigration) ||
+      !Number.isSafeInteger(meta.migrationCount) || meta.migrationCount < 1 ||
+      !meta.tableCounts || typeof meta.tableCounts !== 'object' || Array.isArray(meta.tableCounts)) {
+    throw new Error('Invalid database backup metadata.');
+  }
+  const tables = Object.entries(meta.tableCounts);
+  if (tables.length === 0 || meta.tableCount !== tables.length) throw new Error('Invalid backup table baseline.');
+  let total = 0;
+  for (const [table, count] of tables) {
+    quoteRestoreIdentifier(table);
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error('Invalid backup row-count baseline.');
+    total += count;
+  }
+  if (!Number.isSafeInteger(total) || total !== meta.totalRows) throw new Error('Invalid backup total-row baseline.');
+  if (!Array.isArray(meta.rlsTables) || meta.rlsTables.length === 0 ||
+      new Set(meta.rlsTables).size !== meta.rlsTables.length ||
+      meta.rlsTables.some((table) => typeof table !== 'string' || !Object.hasOwn(meta.tableCounts, table))) {
+    throw new Error('Invalid backup RLS baseline.');
+  }
+  for (const table of meta.rlsTables) quoteRestoreIdentifier(table);
+  if (meta.sourceUser !== undefined) quoteRestoreIdentifier(meta.sourceUser);
+  return meta;
+}
+
+export function checkExistingRestoreTarget(targetDb, exists, options) {
+  quoteRestoreIdentifier(targetDb);
+  if (exists && (!options.forceOverwrite || options.confirm !== targetDb)) {
+    throw new Error(
+      `[SAFETY ABORT] Refusing to overwrite existing database '${targetDb}'. ` +
+      `Pass BOTH --force-destructive-overwrite AND --confirm=${targetDb} only under explicit authorization.`
+    );
+  }
+}
+
 function checkSafetyGuards(targetDb, options) {
+  quoteRestoreIdentifier(targetDb);
   const protectedDatabases = ['lamssa_dev', 'lamssa_test'];
   const devUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).pathname.slice(1) : '';
   const testUrl = process.env.TEST_DATABASE_URL ? new URL(process.env.TEST_DATABASE_URL).pathname.slice(1) : '';
@@ -94,6 +141,23 @@ function checkSafetyGuards(targetDb, options) {
   }
 }
 
+export function assessRestoredRls(expectedTables, rows) {
+  const protectedRows = rows.filter((row) => row.relrowsecurity || row.relforcerowsecurity);
+  const actual = new Map(protectedRows.map((row) => [row.tablename, row]));
+  const expected = new Set(expectedTables);
+  const missingRlsTables = [...expected].filter((table) => {
+    const row = actual.get(table);
+    return !row?.relrowsecurity || !row?.relforcerowsecurity;
+  });
+  const unexpectedRlsTables = [...actual.keys()].filter((table) => !expected.has(table));
+  return {
+    rlsEnforced: expected.size > 0 && missingRlsTables.length === 0 && unexpectedRlsTables.length === 0,
+    rlsTablesCount: protectedRows.length,
+    missingRlsTables,
+    unexpectedRlsTables,
+  };
+}
+
 async function verifyRestoredDatabase(targetConnectionString, meta) {
   const client = new pg.Client({ connectionString: targetConnectionString });
   await client.connect();
@@ -105,7 +169,7 @@ async function verifyRestoredDatabase(targetConnectionString, meta) {
     );
     const restoredMigration = migRows[0]?.migration_name;
     const migrationCount = migRows.length;
-    const migrationMatches = restoredMigration === meta.latestMigration;
+    const migrationMatches = restoredMigration === meta.latestMigration && migrationCount === meta.migrationCount;
 
     // 2. Verify all table row counts match baseline
     const restoredCounts = {};
@@ -115,7 +179,7 @@ async function verifyRestoredDatabase(targetConnectionString, meta) {
     const expectedCounts = meta.tableCounts || {};
     for (const [table, expected] of Object.entries(expectedCounts)) {
       try {
-        const { rows } = await client.query(`SELECT count(*)::int AS count FROM public."${table}"`);
+        const { rows } = await client.query(`SELECT count(*)::int AS count FROM public.${quoteRestoreIdentifier(table)}`);
         const count = rows[0]?.count ?? 0;
         restoredCounts[table] = count;
         totalRestoredRows += count;
@@ -133,11 +197,10 @@ async function verifyRestoredDatabase(targetConnectionString, meta) {
       SELECT c.relname AS tablename, c.relrowsecurity, c.relforcerowsecurity
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relkind = 'r' AND (c.relrowsecurity OR c.relforcerowsecurity)
+      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
       ORDER BY c.relname
     `);
-    const rlsRestoredTables = rlsRows.map((r) => r.tablename);
-    const allForced = rlsRows.every((r) => r.relrowsecurity && r.relforcerowsecurity);
+    const rlsVerification = assessRestoredRls(meta.rlsTables, rlsRows);
 
     // 4. Verify triggers
     const { rows: triggerRows } = await client.query(`
@@ -178,8 +241,7 @@ async function verifyRestoredDatabase(targetConnectionString, meta) {
       countMismatches,
       restoredCounts,
       totalRestoredRows,
-      rlsEnforced: allForced,
-      rlsTablesCount: rlsRestoredTables.length,
+      ...rlsVerification,
       triggersCount: triggerRows.length,
       hasCoreSecurityFunctions: hasCoreFunctions,
       hasPatientConstraints,
@@ -189,40 +251,78 @@ async function verifyRestoredDatabase(targetConnectionString, meta) {
   }
 }
 
-async function verifyRuntimeRestriction(targetConnectionString, isTestTarget = false) {
+export function isRestrictedRuntimeRole(role) {
+  return Boolean(role && role.rolsuper === false && role.rolbypassrls === false &&
+    role.rolcreaterole === false && role.owns_application_tables === false &&
+    role.can_assume_bypass_role === false && role.has_tenant_context === false);
+}
+
+export async function verifyRuntimeRestriction(targetConnectionString, isTestTarget = false, options = {}) {
   const targetUrl = new URL(targetConnectionString);
   const isTest = isTestTarget || targetUrl.pathname.includes('test');
-  const appRole = isTest ? 'lamssa_test_app' : 'lamssa_dev_app';
 
-  // Attempt connection with app user credentials from env
-  const appUrl = isTest
+  // The operator may point at a dedicated recovery cluster whose runtime role
+  // is not the development/test role. Never rewrite only the database name on
+  // an unrelated host and report that connection failure as RLS evidence.
+  const appUrl = options.runtimeUrl || process.env.RESTORE_RUNTIME_DATABASE_URL || (isTest
     ? process.env.TEST_DATABASE_URL
-    : process.env.DATABASE_URL;
+    : process.env.DATABASE_URL);
 
-  if (!appUrl) return { skipped: true, reason: 'No runtime database URL configured' };
+  if (!appUrl) return { skipped: true, connectionSuccessful: false, isolationEnforced: false, reason: 'No recovery runtime database URL configured' };
 
   const parsedAppUrl = new URL(appUrl);
+  const endpoint = (url) => `${url.hostname}:${url.port || '5432'}`;
+  if (endpoint(parsedAppUrl) !== endpoint(targetUrl)) {
+    return { skipped: true, connectionSuccessful: false, isolationEnforced: false, reason: 'Runtime verification URL does not target the recovery database server' };
+  }
   parsedAppUrl.pathname = targetUrl.pathname; // point to targetDb
   const appClient = new pg.Client({ connectionString: parsedAppUrl.toString(), connectionTimeoutMillis: 3000 });
 
+  let connectionSuccessful = false;
   try {
     await appClient.connect();
+    connectionSuccessful = true;
+    const { rows: [role] } = await appClient.query(`
+      SELECT r.rolname, r.rolsuper, r.rolbypassrls, r.rolcreaterole,
+        EXISTS (
+          SELECT FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname IN ('public', 'lamssa_security') AND c.relkind IN ('r', 'p')
+            AND pg_has_role(current_user, c.relowner, 'MEMBER')
+        ) AS owns_application_tables,
+        EXISTS (
+          SELECT FROM pg_roles privileged
+          WHERE (privileged.rolsuper OR privileged.rolbypassrls)
+            AND pg_has_role(current_user, privileged.oid, 'MEMBER')
+        ) AS can_assume_bypass_role,
+        (COALESCE(current_setting('lamssa.clinic_id', true), '') <> '' OR
+          COALESCE(current_setting('lamssa.user_id', true), '') <> '' OR
+          COALESCE(current_setting('lamssa.session_id', true), '') <> '') AS has_tenant_context
+      FROM pg_roles r WHERE r.rolname = current_user
+    `);
+    const roleRestricted = isRestrictedRuntimeRole(role);
+    if (!roleRestricted) {
+      return { runtimeRole: role?.rolname, connectionSuccessful, roleRestricted: false,
+        isolationEnforced: false, reason: 'Recovery runtime role is elevated, owns application tables, or already has tenant context' };
+    }
     // Query tenant table without session token -> must return 0 rows under RLS
     const { rows } = await appClient.query('SELECT count(*)::int AS count FROM public."Patient"');
-    const visibleCount = rows[0]?.count ?? 0;
+    const visibleCount = rows[0]?.count;
     return {
-      runtimeRole: parsedAppUrl.username,
-      connectionSuccessful: true,
+      runtimeRole: role.rolname,
+      connectionSuccessful,
+      roleRestricted,
       isolationEnforced: visibleCount === 0,
       visibleRowsWithoutSession: visibleCount,
     };
   } catch (err) {
-    // If runtime role does not have CONNECT on temp DB, isolation is fully preserved
+    // A connection denial, network error, or failed query is absence of evidence.
+    // It must never be reported as a successful RLS verification.
     return {
-      runtimeRole: parsedAppUrl.username,
-      connectionSuccessful: false,
-      isolationEnforced: true,
-      error: err.message,
+      runtimeRole: decodeURIComponent(parsedAppUrl.username),
+      connectionSuccessful,
+      isolationEnforced: false,
+      errorCode: err.code,
+      reason: connectionSuccessful ? 'Runtime isolation query failed' : 'Runtime verification connection failed',
     };
   } finally {
     await appClient.end().catch(() => {});
@@ -237,7 +337,7 @@ export async function runRestore(cliOptions = {}) {
   console.info(`[Restore] Loading metadata from: ${metaPath}`);
   console.info(`[Restore] Loading dump from: ${dumpPath}`);
 
-  const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+  const meta = validateRestoreMetadata(JSON.parse(readFileSync(metaPath, 'utf8')));
   const ciphertextBuffer = readFileSync(dumpPath);
 
   let targetConnectionString = options.targetUrl;
@@ -245,7 +345,7 @@ export async function runRestore(cliOptions = {}) {
 
   if (targetConnectionString) {
     const parsed = new URL(targetConnectionString);
-    targetDbName = parsed.pathname.slice(1);
+    targetDbName = decodeURIComponent(parsed.pathname.slice(1));
   } else {
     const isTestOrTmp = options.targetDb?.includes('test') || options.targetDb?.includes('tmp') || meta.target === 'test';
     const baseMigrationUrl = isTestOrTmp && process.env.TEST_MIGRATION_DATABASE_URL
@@ -260,6 +360,7 @@ export async function runRestore(cliOptions = {}) {
     targetConnectionString = parsed.toString();
   }
 
+  quoteRestoreIdentifier(targetDbName);
   // Pre-restore safety guards
   if (!options.drill) {
     checkSafetyGuards(targetDbName, options);
@@ -315,10 +416,8 @@ export async function runRestore(cliOptions = {}) {
         rtoMs,
         rpoMinutes,
         verification: {
-          migrationMatches: true,
-          restoredMigration: meta.latestMigration,
+          migrationVerified: false,
           expectedMigration: meta.latestMigration,
-          tableCounts: meta.tableCounts,
           expectedCounts: meta.tableCounts,
           tocItemsCount: tocLines.length,
         },
@@ -338,20 +437,15 @@ export async function runRestore(cliOptions = {}) {
         'SELECT datname FROM pg_database WHERE datname = $1',
         [targetDbName]
       );
+      checkExistingRestoreTarget(targetDbName, dbRows.length > 0, options);
       if (dbRows.length === 0) {
         console.info(`[Real Restore] Creating isolated target database '${targetDbName}'...`);
-        await adminClient.query(`CREATE DATABASE "${targetDbName}"`);
+        await adminClient.query(`CREATE DATABASE ${quoteRestoreIdentifier(targetDbName)}`);
         targetCreated = true;
         console.info(`[Real Restore] Database '${targetDbName}' created.`);
       } else {
         console.info(`[Real Restore] Target database '${targetDbName}' already exists.`);
       }
-
-      // Grant connect to runtime app role for isolation testing
-      try {
-        const appRole = targetDbName.includes('test') ? 'lamssa_test_app' : 'lamssa_dev_app';
-        await adminClient.query(`GRANT CONNECT ON DATABASE "${targetDbName}" TO "${appRole}"`);
-      } catch {}
     } finally {
       await adminClient.end().catch(() => {});
     }
@@ -362,15 +456,15 @@ export async function runRestore(cliOptions = {}) {
       ...process.env,
       PGHOST: targetUrlParsed.hostname,
       PGPORT: targetUrlParsed.port || '5432',
-      PGUSER: targetUrlParsed.username,
-      PGPASSWORD: targetUrlParsed.password,
+      PGUSER: decodeURIComponent(targetUrlParsed.username),
+      PGPASSWORD: decodeURIComponent(targetUrlParsed.password),
       PGDATABASE: targetDbName,
     };
 
     console.info(`[Real Restore] Executing pg_restore into '${targetDbName}'...`);
     const restoreResult = spawnSync(
       'pg_restore',
-      ['-d', targetDbName, '--no-owner', '--clean', '--if-exists', tmpDumpFile],
+      ['-d', targetDbName, '--no-owner', '--clean', '--if-exists', '--single-transaction', '--exit-on-error', tmpDumpFile],
       {
         env: restoreEnv,
         maxBuffer: 200 * 1024 * 1024,
@@ -381,7 +475,7 @@ export async function runRestore(cliOptions = {}) {
       throw new Error(`pg_restore execution failed: ${restoreResult.error.message}`);
     }
     const stderrStr = restoreResult.stderr.toString();
-    if (restoreResult.status !== 0 && restoreResult.status !== 1) {
+    if (restoreResult.status !== 0) {
       throw new Error(
         `[Real Restore] pg_restore failed with fatal exit code ${restoreResult.status}: ${stderrStr}`
       );
@@ -389,33 +483,16 @@ export async function runRestore(cliOptions = {}) {
     if (stderrStr.includes('pg_restore: error:')) {
       throw new Error(`[Real Restore] pg_restore reported error: ${stderrStr}`);
     }
-    if (restoreResult.status === 1) {
-      console.info(`[Real Restore] pg_restore completed with warnings (exit 1): ${stderrStr.split('\n')[0]}`);
-    } else {
-      console.info('[Real Restore] pg_restore completed cleanly (exit 0).');
-    }
+    console.info('[Real Restore] pg_restore completed cleanly (exit 0).');
 
     // Step 3: Deep Verification of restored database
     console.info(`[Real Restore] Verifying schema, data, RLS, and constraints in '${targetDbName}'...`);
-    const verifyUrl = new URL(
-      meta.sourceUser === 'lamssa_dev_migrator' && process.env.MIGRATION_DATABASE_URL
-        ? process.env.MIGRATION_DATABASE_URL
-        : (process.env.TEST_MIGRATION_DATABASE_URL || targetConnectionString)
-    );
+    // Verify the database that was actually restored. Ambient development/test
+    // credentials may point at another PostgreSQL server and must never be used
+    // as evidence for this recovery target.
+    const verifyUrl = new URL(targetConnectionString);
     verifyUrl.pathname = `/${targetDbName}`;
     const verifyConnectionString = verifyUrl.toString();
-
-    // Ensure sourceUser has CONNECT and USAGE on target database
-    if (meta.sourceUser && meta.sourceUser !== targetUrlParsed.username) {
-      const grantClient = new pg.Client({ connectionString: targetConnectionString });
-      await grantClient.connect();
-      try {
-        await grantClient.query(`GRANT USAGE ON SCHEMA public TO "${meta.sourceUser}"`);
-        await grantClient.query(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${meta.sourceUser}"`);
-      } catch {} finally {
-        await grantClient.end().catch(() => {});
-      }
-    }
 
     const verification = await verifyRestoredDatabase(verifyConnectionString, meta);
 
@@ -435,14 +512,20 @@ export async function runRestore(cliOptions = {}) {
     if (!verification.hasCoreSecurityFunctions) {
       throw new Error('[Restore Verification Failed] Core security functions missing in lamssa_security schema.');
     }
+    if (!verification.hasPatientConstraints) {
+      throw new Error('[Restore Verification Failed] Patient validation constraints missing.');
+    }
 
     // Step 4: Verify application runtime role restriction post-restore
     console.info('[Real Restore] Verifying application runtime role access isolation...');
     const runtimeVerification = await verifyRuntimeRestriction(targetConnectionString, meta.target === 'test');
-    if (!runtimeVerification.isolationEnforced) {
-      throw new Error(
-        `[Restore Security Failed] Application runtime user was able to read ${runtimeVerification.visibleRowsWithoutSession} rows without session context!`
-      );
+    if (!runtimeVerification.connectionSuccessful || !runtimeVerification.roleRestricted || !runtimeVerification.isolationEnforced) {
+      const error = new Error(`[Restore Security Failed] Runtime RLS verification was not proven: ${
+        runtimeVerification.reason ?? 'runtime role could read protected rows without tenant context'
+      }.`);
+      error.code = 'RESTORE_RUNTIME_VERIFICATION_BLOCKED';
+      error.runtimeVerification = runtimeVerification;
+      throw error;
     }
 
     const rtoMs = Date.now() - rtoStartTime;
@@ -457,7 +540,7 @@ export async function runRestore(cliOptions = {}) {
     console.info('============================================================');
 
     // Drop temporary database if requested
-    if (options.dropAfter) {
+    if (options.dropAfter && targetCreated) {
       console.info(`[Real Restore] Cleaning up temporary database '${targetDbName}'...`);
       const dropClient = new pg.Client({ connectionString: adminUrl.toString() });
       await dropClient.connect();
@@ -467,7 +550,7 @@ export async function runRestore(cliOptions = {}) {
           FROM pg_stat_activity 
           WHERE datname = $1 AND pid <> pg_backend_pid()
         `, [targetDbName]);
-        await dropClient.query(`DROP DATABASE "${targetDbName}"`);
+        await dropClient.query(`DROP DATABASE ${quoteRestoreIdentifier(targetDbName)}`);
         console.info(`[Real Restore] Temporary database '${targetDbName}' dropped.`);
       } finally {
         await dropClient.end().catch(() => {});

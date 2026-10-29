@@ -2,16 +2,16 @@
 
 ## 1. Overview & Resilience Strategy
 
-Lamssa provides an automated, end-to-end encrypted backup and disaster recovery subsystem designed to meet strict data sovereignty, privacy, and business continuity requirements for aesthetic clinic operations.
+Lamssa provides encrypted local backups and separate archive-verification and database-restoration workflows. Production data residency, retention, custody and recovery objectives require explicit operational approval.
 
 ### Key Objectives
-- **Zero-Knowledge Backup Confidentiality**: Backups are encrypted at rest using AES-256-GCM authenticated encryption before touching secondary storage or transfer channels.
+- **Encrypted Backup Confidentiality**: Backups are encrypted at rest using AES-256-GCM authenticated encryption before touching secondary storage or transfer channels.
 - **Complete Multi-Clinic Data Capture**: Table-level FORCE ROW LEVEL SECURITY and `--enable-row-security` ensure all clinic data, global identity, migration history, functions, triggers, and RLS policies are completely dumped by the authorized maintenance/migrator role.
 - **Fail-Closed Tamper Resistance**: Restores cryptographically verify SHA-256 digests and AES-GCM authentication tags before decrypting or restoring any data. Corrupt, truncated, or tampered archives abort immediately.
 - **Distinct Verification Modes**:
   1. **Archive Verification Drill (`--drill`)**: Validates cryptographic authenticity, SHA-256 checksum, GCM tag, and Table of Contents (TOC) structure without modifying or creating database structures.
   2. **Genuine Restoration (`db:restore`)**: Executes real `pg_restore` into a target database (such as an isolated staging/temporary database or recovery target), verifying all tables, row counts, RLS enforcement, constraints, functions, triggers, and runtime access isolation.
-- **Destructive Overwrite Protection**: Active databases (`lamssa_dev`, `lamssa_test`, and configured runtime URLs) cannot be overwritten without explicit double confirmation (`--force-destructive-overwrite` and `--confirm=<database_name>`).
+- **Destructive Overwrite Protection**: Existing databases, including `lamssa_dev`, `lamssa_test`, and configured runtime targets, cannot be overwritten without explicit double confirmation (`--force-destructive-overwrite` and `--confirm=<database_name>`).
 - **RTO & RPO Tracking**: Every restore and drill measures Recovery Time Objective (RTO) and Recovery Point Objective (RPO) and outputs actionable reliability metrics.
 
 ---
@@ -27,14 +27,14 @@ HINT: To disable the policy for the table's owner, use ALTER TABLE NO FORCE ROW 
 Passing `--enable-row-security` instructs `pg_dump` to execute with `row_security = on`.
 
 ### Why Backups Capture All Clinics Completely
-All 29 tenant-isolated tables in Lamssa define a permissive table-owner maintenance policy:
+All 32 current tenant-isolated tables in Lamssa define a permissive table-owner maintenance policy:
 ```sql
 CREATE POLICY maintenance_owner ON public.<table_name> FOR ALL TO <owner_name> USING (true) WITH CHECK (true);
 ```
 Because PostgreSQL evaluates multiple permissive policies using boolean `OR`, queries executed by the maintenance/migrator role evaluate `USING (true OR false) -> true`. The owner role sees 100% of rows across all clinics.
 
 ### Runtime Application User Rejection
-Application runtime users (`lamssa_dev_app`, `lamssa_test_app`) have `NOSUPERUSER NOBYPASSRLS` and no ownership over tables. Furthermore, because runtime roles rely on `app.current_session_token` to evaluate `lamssa_security.context_allows()`, dumping as an application role would produce 0 rows for tenant tables.
+Application runtime users (`lamssa_dev_app`, `lamssa_test_app`) have `NOSUPERUSER NOBYPASSRLS` and no ownership over tables. Furthermore, because runtime roles rely on validated transaction-local clinic, user and session context to evaluate `lamssa_security.context_allows()`, dumping as an application role would produce 0 rows for tenant tables.
 
 `scripts/backup-database.mjs` enforces an explicit security guard at startup:
 ```javascript
@@ -49,8 +49,8 @@ if (unprivilegedAppRoles.includes(currentUser)) {
 
 ### Pre-Encryption Table-of-Contents (TOC) Verification
 Before encrypting and storing any backup archive, `scripts/backup-database.mjs` executes an in-memory inspection of the `pg_dump` Table of Contents via `pg_restore -l`. It verifies:
-- `TABLE DATA` exists for all public tables (33 tables).
-- RLS `POLICY` definitions are present (145 policies).
+- `TABLE DATA` exists for all public tables (39 at final verification).
+- RLS `POLICY` definitions are present (151 policies at final verification).
 - Extensions, triggers, functions, and `_prisma_migrations` are fully represented.
 - If any table or structural artifact is omitted, the backup fails immediately and no files are written.
 
@@ -104,8 +104,8 @@ flowchart TD
   - **Server-Side Encryption (SSE-KMS)**: Additional layer of encryption at the cloud storage tier.
 
 ### Database vs. Clinic Asset Backup Boundary
-- **What Database Backups Contain**: All relational clinic data, clinical records, appointments, visits, invoices, audit trails, user accounts, and database-level metadata.
-- **What Database Backups Do NOT Contain**: Uploaded clinic assets, logos, and stamps stored on the filesystem under `var/clinic-assets/` (e.g. SVG/PNG logo files referenced by `ClinicAsset.storageKey`).
+- **What Database Backups Contain**: All implemented administrative clinic data, appointments, visits, invoices, audit trails, user accounts, and database-level metadata.
+- **What Database Backups Do NOT Contain**: Uploaded clinic assets, logos, and stamps stored on the filesystem under `var/clinic-assets/` (PNG/WebP derivatives referenced by `ClinicAsset.storageKey`).
 - **Asset Backup Implementation**: `npm run assets:backup` creates a separate AES-256-GCM archive with a hash-verified manifest. It accepts regular UUID-keyed PNG/WebP derivatives only, rejects symlinks, and keeps paths and bytes inside the encrypted payload. `npm run assets:restore -- --file=...` verifies by default; add `--restore=true --target=/new/non-existing/path` for a real restore into a new volume. Pair and copy database and asset archives off-site together.
 - **Current Limit**: the local adapter bundles at most 1 GiB in memory. It is suitable and tested for the initial deployment; streaming object-storage replication, off-site transfer and WORM retention remain deployment operations.
 
@@ -130,7 +130,7 @@ BACKUP_ENCRYPTION_KEY="your-secure-passphrase" npm run db:backup:drill
 ```
 - Verifies ciphertext SHA-256 and AES-256-GCM authentication tag.
 - Inspects decrypted archive Table of Contents (`pg_restore -l`).
-- Validates 607+ TOC items, migration baseline, and schema integrity.
+- Checks that the decrypted archive has a readable TOC. It does not verify a restored database, migration state or live RLS.
 - **Does not touch, create, or alter any database.**
 - Measured RTO: ~100ms.
 
@@ -154,12 +154,28 @@ BACKUP_ENCRYPTION_KEY="your-secure-passphrase" npm run db:restore -- \
 
 ---
 
-## 6. Verification Results Baseline
+## 6. Verification evidence
 
-| Test / Drill Type | Target Database | Operation Performed | Measured RTO | Measured RPO | Outcome |
-|---|---|---|---|---|---|
-| **Archive Verification Drill** | None (In-memory TOC) | Decryption, SHA-256, GCM tag, TOC inspection | **102ms** | 0 min | **PASSED** (607 TOC items verified) |
-| **Genuine Full Restore** | `lamssa_restore_tmp` | Decryption + `pg_restore` + 33 table count checks + RLS verify + runtime isolation test | **1,592ms** (1.59s) | 0 min | **PASSED** (1,169 rows across 33 tables, 29 RLS tables, isolation confirmed) |
-| **Runtime Isolation Test** | `lamssa_restore_tmp` | Query `Patient` table as `lamssa_test_app` without session token | < 20ms | N/A | **PASSED** (0 rows visible, RLS fully active post-restore) |
-| **Security Guard Rejection** | `lamssa_dev` / `lamssa_test` | Attempt restore without `--force-destructive-overwrite` | < 5ms | N/A | **PASSED** (Safety abort triggered) |
-| **Tamper Resistance** | Corrupt/Wrong Key | Attempt decryption with invalid key | < 50ms | N/A | **PASSED** (Fail-closed on auth tag verification) |
+The earlier Step 2.1 recovery timing table is superseded. Its runtime verifier could
+mistake a failed connection for successful isolation, so those old success claims are
+not accepted as final recovery evidence. Use the dated independent Docker exercise
+below. Native restoration now reports an explicit skip when CREATEDB is unavailable.
+
+## Phase 2 final recovery verification — 2026-10-29
+
+The reviewed restore now refuses every existing target without explicit overwrite
+authorization, validates identifiers and sidecar inventories, restores transactionally,
+checks the exact expected FORCE-RLS table set and verifies the actual recovery endpoint.
+Runtime verification must successfully connect with a restricted, non-owner role and
+query zero patients without tenant context. A denied connection or failed query is
+reported as blocked verification. Archive-only drills explicitly report that migrations
+were not verified in a restored database. Restore does not grant role privileges.
+
+A paired database/assets restore completed in a separate unpublished Docker environment:
+39 tables, 122 rows, 32 FORCE-RLS tables, 151 policies and one logo. Paired restore time
+was 1.243 seconds on the synthetic local snapshot; this excludes infrastructure boot
+and production cutover. MFA, relationships, financial hashes, logo bytes and 16 recovered
+application checks passed. Wrong keys, corrupt ciphertext, missing assets and existing
+target overwrite attempts failed safely. The native NOCREATEDB test is one explicit skip,
+not successful recovery evidence. Full procedure and limitations are recorded in
+[deployment.md](deployment.md#paired-recovery-result-and-procedure).

@@ -4,6 +4,7 @@ dist/
 .env
 .env.*
 !.env.example
+/deploy/staging.env
 *.local
 npm-debug.log*
 apps/api/src/generated/

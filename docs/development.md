@@ -967,9 +967,25 @@ docs/development.md
 `package-lock.json`, existing migrations, legacy demo models/forms/storage key and
 all environment secrets remain unchanged.
 
+## Phase 2 final verification — 2026-10-29
+
+The current Docker workflow was verified on Linux Mint 22.3 without replacing native
+PostgreSQL. See [deployment evidence and paired recovery](deployment.md#isolated-staging-and-recovery-evidence-2026-10-29)
+for image IDs, exact results, database/assets restore timings and launch gates.
+`npm run test:deployment-runtime` checks a running isolated staging stack and trusts
+only its generated local CA; it changes no database records or services. It requires
+Docker socket access and ignored `deploy/staging.env` with generated staging secrets.
+The API environment is explicitly allowlisted and excludes maintenance/backup secrets.
+
+The final suite reported 86 unit passes, 199 database passes, one native restore skip
+(NOCREATEDB), 34 browser journeys, 30 deployment checks, 35 HTTPS business checks and
+10 additional Chrome staging checks. Independent Docker recovery passed with actual
+restricted runtime credentials and 16 recovered application checks. No dev/test role
+was granted CREATEDB. Do not treat the native skip as a successful restore.
+
 ## Requirements and versions
 
-- Node 24 LTS (`>=24.11 <25`), npm 11; `.nvmrc` selects Node 24.
+- Node 24 LTS (`>=24.15 <25`), npm 11; `.nvmrc` selects Node 24.
 - Native PostgreSQL **16** from Linux Mint 22.3 / Ubuntu 24.04 repositories is the
   preferred local setup (candidate 16.15 at inspection). Optional Docker Compose
   uses PostgreSQL 17; both use the existing PostgreSQL schema and pg adapter.

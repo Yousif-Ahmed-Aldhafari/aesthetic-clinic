@@ -26,6 +26,82 @@ const createdFiles: string[] = [];
 let runBackup: any;
 let runRestore: any;
 
+const scriptsCandidates = [
+  resolve(import.meta.dirname, '../../../scripts'),
+  resolve(import.meta.dirname, '../../../../scripts'),
+  resolve(process.cwd(), 'scripts'),
+  resolve(process.cwd(), '../../scripts'),
+];
+const scriptsDir = scriptsCandidates.find((d) => existsSync(d)) || resolve(process.cwd(), 'scripts');
+const restoreMod = await import(pathToFileURL(resolve(scriptsDir, 'restore-database.mjs')).href);
+const { quoteRestoreIdentifier, validateRestoreMetadata, checkExistingRestoreTarget,
+  assessRestoredRls, isRestrictedRuntimeRole, verifyRuntimeRestriction } = restoreMod;
+
+test('restore identifiers and sidecar baselines reject SQL fragments and incomplete metadata', () => {
+  const metadata = {
+    status: 'completed', cipher: 'aes-256-gcm', kdf: 'scrypt', timestamp: new Date().toISOString(),
+    latestMigration: '20261027000100_privacy_governance', migrationCount: 15,
+    tableCounts: { Patient: 2, User: 1 }, tableCount: 2, totalRows: 3,
+    rlsTables: ['Patient'], sourceUser: 'lamssa_test_migrator',
+  };
+  assert.equal(validateRestoreMetadata(metadata), metadata);
+  assert.equal(quoteRestoreIdentifier('lamssa_restore_123'), '"lamssa_restore_123"');
+  for (const identifier of ['', 'restore"; DROP DATABASE lamssa_test; --', '../lamssa_test', 'x'.repeat(64)]) {
+    assert.throws(() => quoteRestoreIdentifier(identifier), /Unsafe PostgreSQL restore identifier/);
+  }
+  assert.throws(() => validateRestoreMetadata({ ...metadata, tableCounts: { 'Patient"; SELECT 1; --': 2, User: 1 } }), /Unsafe PostgreSQL restore identifier/);
+  assert.throws(() => validateRestoreMetadata({ ...metadata, sourceUser: 'x"; SELECT 1; --' }), /Unsafe PostgreSQL restore identifier/);
+  assert.throws(() => validateRestoreMetadata({ ...metadata, tableCounts: {}, tableCount: 0, totalRows: 0 }), /Invalid backup table baseline/);
+  assert.throws(() => validateRestoreMetadata({ ...metadata, totalRows: 4 }), /Invalid backup total-row baseline/);
+  assert.throws(() => validateRestoreMetadata({ ...metadata, rlsTables: [] }), /Invalid backup RLS baseline/);
+  assert.throws(() => validateRestoreMetadata({ ...metadata, rlsTables: ['Absent'] }), /Invalid backup RLS baseline/);
+});
+
+test('every existing restore target requires both explicit overwrite safeguards', () => {
+  assert.doesNotThrow(() => checkExistingRestoreTarget('isolated_restore', false, {}));
+  for (const options of [{}, { forceOverwrite: true }, { confirm: 'isolated_restore' },
+    { forceOverwrite: true, confirm: 'another_database' }]) {
+    assert.throws(() => checkExistingRestoreTarget('isolated_restore', true, options), /Refusing to overwrite existing database/);
+  }
+  assert.doesNotThrow(() => checkExistingRestoreTarget('isolated_restore', true,
+    { forceOverwrite: true, confirm: 'isolated_restore' }));
+});
+
+test('restored RLS must cover the exact baseline including tables with both flags removed', () => {
+  const rows = [
+    { tablename: 'Patient', relrowsecurity: true, relforcerowsecurity: true },
+    { tablename: 'ClinicBranding', relrowsecurity: true, relforcerowsecurity: true },
+    { tablename: 'User', relrowsecurity: false, relforcerowsecurity: false },
+  ];
+  assert.equal(assessRestoredRls(['Patient', 'ClinicBranding'], rows).rlsEnforced, true);
+  for (const flags of [{ relrowsecurity: false, relforcerowsecurity: false },
+    { relrowsecurity: true, relforcerowsecurity: false }]) {
+    const result = assessRestoredRls(['Patient', 'ClinicBranding'], [{ ...rows[0], ...flags }, ...rows.slice(1)]);
+    assert.equal(result.rlsEnforced, false);
+    assert.deepEqual(result.missingRlsTables, ['Patient']);
+  }
+  assert.equal(assessRestoredRls(['Patient', 'ClinicBranding'], rows.slice(1)).rlsEnforced, false);
+  assert.equal(assessRestoredRls([], []).rlsEnforced, false);
+  assert.equal(assessRestoredRls(['Patient'], rows).rlsEnforced, false);
+});
+
+test('runtime verification refuses privileged, inheriting, owning, or unknown database roles', () => {
+  const restricted = { rolsuper: false, rolbypassrls: false, rolcreaterole: false,
+    owns_application_tables: false, can_assume_bypass_role: false, has_tenant_context: false };
+  assert.equal(isRestrictedRuntimeRole(restricted), true);
+  for (const flag of Object.keys(restricted)) assert.equal(isRestrictedRuntimeRole({ ...restricted, [flag]: true }), false);
+  assert.equal(isRestrictedRuntimeRole(undefined), false);
+  assert.equal(isRestrictedRuntimeRole({}), false);
+});
+
+test('unrelated runtime endpoints cannot be accepted as recovered database isolation evidence', async () => {
+  const result = await verifyRuntimeRestriction('postgresql://recovery:unused@127.0.0.1:1/recovered', false,
+    { runtimeUrl: 'postgresql://runtime:unused@127.0.0.1:2/recovered' });
+  assert.equal(result.connectionSuccessful, false);
+  assert.equal(result.isolationEnforced, false);
+  assert.match(result.reason, /does not target the recovery database server/);
+});
+
 const clinicIdAlpha = randomUUID();
 const clinicIdBeta = randomUUID();
 const userIdAlpha = randomUUID();
@@ -34,20 +110,11 @@ const patientIdAlpha = randomUUID();
 const patientIdBeta = randomUUID();
 
 if (!enabled) {
-  test('backup-restore integration tests skipped: no TEST_MIGRATION_DATABASE_URL configured', () => {});
+  test('backup-restore integration tests', { skip: 'No TEST_MIGRATION_DATABASE_URL configured' }, () => {});
 } else {
   before(async () => {
-    const scriptsCandidates = [
-      resolve(import.meta.dirname, '../../../scripts'),
-      resolve(import.meta.dirname, '../../../../scripts'),
-      resolve(process.cwd(), 'scripts'),
-      resolve(process.cwd(), '../../scripts'),
-    ];
-    const scriptsDir = scriptsCandidates.find((d) => existsSync(d)) || resolve(process.cwd(), 'scripts');
     const backupScriptPath = resolve(scriptsDir, 'backup-database.mjs');
-    const restoreScriptPath = resolve(scriptsDir, 'restore-database.mjs');
     const backupMod = await import(pathToFileURL(backupScriptPath).href);
-    const restoreMod = await import(pathToFileURL(restoreScriptPath).href);
     runBackup = backupMod.runBackup;
     runRestore = restoreMod.runRestore;
 
@@ -182,6 +249,35 @@ if (!enabled) {
     );
   });
 
+  test('recovered runtime verification proves a real restricted connection sees no patients without tenant context', async (t) => {
+    if (!process.env.TEST_DATABASE_URL) return t.skip('No TEST_DATABASE_URL configured');
+    const result = await verifyRuntimeRestriction(process.env.TEST_MIGRATION_DATABASE_URL, true,
+      { runtimeUrl: process.env.TEST_DATABASE_URL });
+    assert.equal(result.connectionSuccessful, true);
+    assert.equal(result.roleRestricted, true);
+    assert.equal(result.visibleRowsWithoutSession, 0);
+    assert.equal(result.isolationEnforced, true);
+  });
+
+  test('same-endpoint invalid runtime credentials fail closed instead of proving RLS', async (t) => {
+    if (!process.env.TEST_DATABASE_URL) return t.skip('No TEST_DATABASE_URL configured');
+    const invalidRuntimeUrl = new URL(process.env.TEST_DATABASE_URL);
+    invalidRuntimeUrl.password = randomUUID();
+    const result = await verifyRuntimeRestriction(process.env.TEST_MIGRATION_DATABASE_URL, true,
+      { runtimeUrl: invalidRuntimeUrl.toString() });
+    assert.equal(result.connectionSuccessful, false);
+    assert.equal(result.isolationEnforced, false);
+    assert.equal(result.errorCode, '28P01');
+  });
+
+  test('using the migration owner as recovery runtime fails even if no-context row counts could be zero', async () => {
+    const result = await verifyRuntimeRestriction(process.env.TEST_MIGRATION_DATABASE_URL, true,
+      { runtimeUrl: process.env.TEST_MIGRATION_DATABASE_URL });
+    assert.equal(result.connectionSuccessful, true);
+    assert.equal(result.roleRestricted, false);
+    assert.equal(result.isolationEnforced, false);
+  });
+
   test('runRestore in drill mode verifies decryption, SHA-256, auth tag, and TOC without database mutation', async () => {
     const latestMetaPath = createdFiles.find((f) => f.endsWith('.meta.json'));
     assert(latestMetaPath, 'Metadata file from previous test must exist');
@@ -196,26 +292,37 @@ if (!enabled) {
     assert.equal(restoreResult.mode, 'archive_verification');
     assert(typeof restoreResult.rtoMs === 'number' && restoreResult.rtoMs >= 0);
     assert(typeof restoreResult.rpoMinutes === 'number' && restoreResult.rpoMinutes >= 0);
-    assert(restoreResult.verification.migrationMatches);
+    assert.equal(restoreResult.verification.migrationVerified, false, 'Archive inspection must not claim database migration verification');
     assert(restoreResult.verification.tocItemsCount > 0);
   });
 
-  test('runRestore executes genuine restoration into isolated temporary database lamssa_restore_tmp', async () => {
+  test('runRestore executes genuine restoration into an isolated temporary database', async (t) => {
     const latestMetaPath = createdFiles.find((f) => f.endsWith('.meta.json'));
     assert(latestMetaPath, 'Metadata file from previous test must exist');
+    const targetDb = `lamssa_restore_verify_${randomUUID().replaceAll('-', '')}`;
+    const expectedMetadata = JSON.parse(readFileSync(latestMetaPath, 'utf8'));
+
+    // Restricted native migration accounts intentionally cannot create databases.
+    // Report absent genuine-restore evidence as a skip, not a passing assertion.
+    const preflight = new pg.Client({ connectionString: process.env.TEST_MIGRATION_DATABASE_URL });
+    await preflight.connect();
+    try {
+      const { rows: [role] } = await preflight.query('SELECT rolsuper, rolcreatedb FROM pg_roles WHERE rolname = current_user');
+      if (!role?.rolsuper && !role?.rolcreatedb) return t.skip('Migration role has no CREATEDB; genuine recovery requires an isolated recovery operator');
+    } finally { await preflight.end().catch(() => {}); }
 
     try {
       const restoreResult = await runRestore({
         file: latestMetaPath,
         key: testPassphrase,
-        targetDb: 'lamssa_restore_tmp',
+        targetDb,
         drill: false,
         dropAfter: true, // cleans up after test verification
       });
 
       assert(restoreResult.success);
       assert.equal(restoreResult.mode, 'genuine_restore');
-      assert.equal(restoreResult.targetDb, 'lamssa_restore_tmp');
+      assert.equal(restoreResult.targetDb, targetDb);
       assert(typeof restoreResult.rtoMs === 'number' && restoreResult.rtoMs > 0);
 
       // Schema and data verification
@@ -224,7 +331,8 @@ if (!enabled) {
       assert.equal(verification.allCountsMatch, true, 'All table row counts must match baseline');
       assert(verification.totalRestoredRows > 0, 'Restored database must contain rows');
       assert.equal(verification.rlsEnforced, true, 'FORCE ROW LEVEL SECURITY must be enforced');
-      assert(verification.rlsTablesCount >= 29, 'Must enforce RLS on all tenant tables');
+      assert.equal(verification.rlsTablesCount, expectedMetadata.rlsTables.length, 'All baseline RLS tables must be restored');
+      assert.equal(verification.migrationCount, expectedMetadata.migrationCount, 'All baseline migrations must be restored');
       assert.equal(verification.hasCoreSecurityFunctions, true, 'Core security functions must exist');
       assert.equal(verification.hasPatientConstraints, true, 'Check constraints must exist');
 
@@ -234,11 +342,17 @@ if (!enabled) {
       assert(verification.restoredCounts.AuditEvent >= 2, 'Restored AuditEvent table must contain audit records');
 
       // Runtime user restriction verification
+      assert.equal(runtimeVerification.connectionSuccessful, true, 'RLS verification requires a real runtime connection');
+      assert.equal(runtimeVerification.roleRestricted, true, 'Runtime role must be non-owner without elevated privileges');
+      assert.equal(runtimeVerification.visibleRowsWithoutSession, 0);
       assert.equal(runtimeVerification.isolationEnforced, true, 'Runtime application role must be blocked without session');
     } catch (err: any) {
       if (err?.code === '42501' && String(err?.message).includes('permission denied to create database')) {
-        console.warn('[Real Restore Skipped] PostgreSQL role requires CREATEDB privilege to execute genuine temporary DB restoration.');
-        return;
+        return t.skip('PostgreSQL denied CREATEDB; genuine temporary restoration was not verified');
+      }
+      if (err?.code === 'RESTORE_RUNTIME_VERIFICATION_BLOCKED' &&
+          err.runtimeVerification?.connectionSuccessful === false && err.runtimeVerification?.errorCode === '42501') {
+        return t.skip('Recovery runtime role lacks CONNECT; database restored but runtime isolation was not verified');
       }
       throw err;
     }

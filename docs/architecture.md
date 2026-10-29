@@ -1,6 +1,6 @@
 # Lamssa architecture
 
-Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-28.
+Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
 appointment scheduling, visits, live queues, invoices, payments, centralized immutable audit logs,
@@ -32,6 +32,12 @@ routes only the API prefix and static web application. Platform subdomain wildca
 limited to the configured base domain; verified custom names require a separate reviewed
 routing/TLS activation and never become tenant authorization.
 
+Compose explicitly allowlists runtime environment variables so database administrator,
+migration and backup credentials never enter the API container. Caddy's ordered route
+block denies operational endpoints before proxy routing and applies CSP to the frontend
+HTML as well as other security headers. A read-only staging verification command checks
+actual containers, locally trusted TLS, headers, CORS, hosts and cookie attributes.
+
 Global observability has a distinct authorization boundary. `/metrics` accepts only a
 dedicated machine credential and is intended for the internal monitoring network.
 Diagnostics and active alerts require an active global `PLATFORM_ADMIN`. Clinic owner
@@ -40,7 +46,10 @@ clinic-scoped variant in this phase.
 
 PostgreSQL and assets have paired but separate encrypted recovery paths. The asset
 archive validates UUID keys, refuses links, hashes every file and restores to a new
-volume. Off-site object storage, immutable retention and key management are operator
+volume. Genuine recovery verifies the actual target server, exact expected RLS table
+set and a successful non-owner/NOBYPASSRLS runtime query without tenant context;
+connection failures cannot count as successful isolation. Existing restore targets
+require explicit overwrite confirmation. Off-site object storage, immutable retention and key management are operator
 gates. See [deployment](deployment.md) and the
 [production checklist](production-readiness-checklist.md).
 

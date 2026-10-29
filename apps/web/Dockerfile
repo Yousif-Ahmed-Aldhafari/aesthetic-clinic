@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1.7
-FROM node:24.11.0-bookworm-slim AS build
+FROM node:24.21.0-bookworm-slim AS build
 WORKDIR /workspace
 ENV CI=1
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
-RUN npm ci --ignore-scripts=false
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+  npm ci --ignore-scripts=false --no-audit --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 COPY apps/web apps/web
 RUN npm run build:web
 

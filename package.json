@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=24.11.0 <25",
+    "node": ">=24.15.0 <25",
     "npm": ">=11 <12"
   },
   "workspaces": [
@@ -12,6 +12,7 @@
     "apps/api"
   ],
   "scripts": {
+    "test:deployment-runtime": "node scripts/verify-deployment-runtime.mjs",
     "dev": "npm run dev --workspace @lamssa/web --",
     "dev:web": "npm run dev --workspace @lamssa/web --",
     "dev:api": "npm run dev --workspace @lamssa/api --",

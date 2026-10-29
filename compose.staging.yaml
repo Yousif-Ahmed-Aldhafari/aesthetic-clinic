@@ -1,7 +1,7 @@
 name: lamssa-staging
 services:
   postgres:
-    image: postgres:16.10-bookworm
+    image: postgres:16.10-alpine3.22
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?required}
@@ -31,10 +31,24 @@ services:
 
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile, target: production }
-    env_file: [deploy/staging.env]
     environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 3000
       DATABASE_URL: postgresql://lamssa_app:${APP_DATABASE_PASSWORD}@postgres:5432/lamssa?schema=public
       ASSET_STORAGE_DIR: /srv/lamssa/assets
+      CORS_ORIGINS: ${CORS_ORIGINS:?required}
+      API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:?required}
+      PLATFORM_BASE_DOMAIN: ${PLATFORM_BASE_DOMAIN:?required}
+      TRUST_PROXY_HOPS: 1
+      AUTH_CSRF_SECRET: ${AUTH_CSRF_SECRET:?required}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?required}
+      MFA_ENCRYPTION_KEY_PREVIOUS: ${MFA_ENCRYPTION_KEY_PREVIOUS:-}
+      METRICS_SECRET_KEY: ${METRICS_SECRET_KEY:?required}
+      AUTH_SESSION_HOURS: ${AUTH_SESSION_HOURS:-8}
+      AUTH_IDLE_MINUTES: ${AUTH_IDLE_MINUTES:-30}
+      AUTH_LOGIN_ACCOUNT_LIMIT: ${AUTH_LOGIN_ACCOUNT_LIMIT:-5}
+      AUTH_LOGIN_IP_LIMIT: ${AUTH_LOGIN_IP_LIMIT:-30}
     volumes: [staging_assets:/srv/lamssa/assets]
     networks: [app, data, monitoring]
     depends_on:
@@ -43,13 +57,19 @@ services:
     init: true
     read_only: true
     tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "node", "-e", "const r=require('http').get({host:'127.0.0.1',port:3000,path:'/api/v1/health',headers:{host:'api'}},v=>{v.resume();if(v.statusCode!==200)process.exit(1)});r.on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 6
     restart: unless-stopped
 
   web:
     build: { context: ., dockerfile: apps/web/Dockerfile, target: production }
     networks: [app]
     read_only: true
-    tmpfs: [/var/cache/nginx, /var/run]
+    tmpfs: [/tmp, /var/cache/nginx, /var/run]
     restart: unless-stopped
 
   proxy:

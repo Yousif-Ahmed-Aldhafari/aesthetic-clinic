@@ -170,7 +170,10 @@ production use remains gated on authentication, isolation and operational contro
     upload policy, production fail-closed configuration, private machine-only metrics,
     platform-operator-only diagnostics, encrypted clinic-asset backup/restore and CI
     validation workflow. Local production-mode smoke and security regressions are
-    automated. Public deployment, DNS/certificate activation, cloud resources, off-site
+    automated. Isolated Docker/TLS journeys and paired DB/assets recovery have been
+    exercised locally; the read-only deployment verifier checks actual runtime secret
+    boundaries and proxy controls. Recovery checks fail closed on missing evidence.
+    Public deployment, DNS/certificate activation, cloud resources, off-site
     immutable copies and jurisdictional approval require explicit owner action.
     See [deployment.md](deployment.md) and
     [production-readiness-checklist.md](production-readiness-checklist.md).

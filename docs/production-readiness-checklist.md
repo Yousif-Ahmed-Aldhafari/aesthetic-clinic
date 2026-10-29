@@ -33,3 +33,35 @@ not legal, clinical or regulatory certification.
 - [ ] Custom domains are verified separately from reviewed routing/TLS activation.
 - [ ] Provider, cost ceiling, residency, subprocessors and legal/clinical scope approved.
 - [ ] Owner approval recorded before production migration and public traffic cutover.
+
+## Phase 2 final verification evidence — 2026-10-29
+
+The following items have local evidence on `phase/2-security-reliability`:
+
+- [x] Boundaries, Prisma validation/generation, build, 86 unit tests, 199 database tests
+  and 34 browser journeys passed; one native restore test is explicitly skipped for
+  NOCREATEDB. Independent Docker restoration passed separately.
+- [x] Compose rendered without a public PostgreSQL port or embedded repository secret;
+  production-mode images, non-root application users and read-only roots were inspected.
+- [x] Production configuration failed closed in automated tests; runtime and migration
+  roles remained distinct and FORCE RLS isolation passed under runtime credentials.
+- [x] Clinic roles were denied platform telemetry, public proxy telemetry routes returned
+  404, and the dedicated monitoring credential remained API-only.
+- [x] Local TLS verified cookies, CSRF, CORS, CSP, HSTS, hostname rejection and proxy
+  routing with fictional data.
+- [x] Isolated staging restart, graceful shutdown, database-outage readiness and recovery
+  transitions passed.
+- [x] A paired encrypted database/assets backup restored into independent database and
+  asset targets; migrations, 32 FORCE-RLS tables, audit chain, branding relationship and
+  asset hash passed. Wrong keys, corruption and missing assets failed closed.
+
+Still required before merge or launch:
+
+- [x] Identified and patched the Multer advisory via the compatible NestJS Express
+  adapter update; final production npm audit reported zero vulnerabilities.
+- [ ] Review full container OS vulnerabilities, licenses and supported patch versions.
+- [ ] Approve a release commit and image digests after the final secret/artifact scan.
+- [ ] Configure immutable off-site database and asset retention plus production key
+  custody; approve RPO/RTO and demonstrate provider-level point-in-time recovery.
+- [ ] Approve provider, region/residency, subprocessors, production DNS/TLS, external
+  monitoring/on-call routes, legal/clinical scope and production cutover.
