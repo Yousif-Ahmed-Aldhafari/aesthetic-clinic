@@ -14,6 +14,7 @@ export const permissions = [
   'clinical.procedures.read', 'clinical.procedures.document', 'clinical.procedures.perform',
   'clinical.consent-templates.read', 'clinical.consent-templates.manage',
   'clinical.consents.read', 'clinical.consents.prepare', 'clinical.consents.sign', 'clinical.consents.verify', 'clinical.consents.withdraw',
+  'clinical.photos.read', 'clinical.photos.upload', 'clinical.photos.annotate', 'clinical.photos.compare', 'clinical.photos.manage',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -35,7 +36,8 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'clinical.procedure-catalog.read', 'clinical.procedure-catalog.manage',
     'clinical.procedures.read', 'clinical.procedures.document', 'clinical.procedures.perform',
     'clinical.consent-templates.read', 'clinical.consent-templates.manage',
-    'clinical.consents.read', 'clinical.consents.prepare', 'clinical.consents.sign', 'clinical.consents.verify', 'clinical.consents.withdraw'],
+    'clinical.consents.read', 'clinical.consents.prepare', 'clinical.consents.sign', 'clinical.consents.verify', 'clinical.consents.withdraw',
+    'clinical.photos.read', 'clinical.photos.upload', 'clinical.photos.annotate', 'clinical.photos.compare', 'clinical.photos.manage'],
   RECEPTIONIST: ['clinic.branding.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record'],
   ACCOUNTANT: ['clinic.branding.read', 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read'],
 };

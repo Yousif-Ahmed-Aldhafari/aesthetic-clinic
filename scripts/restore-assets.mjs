@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { calculateSha256, decryptBackup } from './backup-crypto.mjs';
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
-const SAFE_KEY = new RegExp(`^${UUID}/${UUID}\\.(?:png|webp)$`, 'i');
+const SAFE_KEY = new RegExp(`^${UUID}/${UUID}(?:\\.(?:thumb))?\\.(?:png|webp|enc)$`, 'i');
 
 export function runAssetRestore(options = {}) {
   const metaPath = resolve(options.metaPath ?? '');

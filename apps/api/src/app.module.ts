@@ -25,6 +25,7 @@ import { ClinicContextController } from './clinics/clinic-context.controller.js'
 import { ClinicalController } from './clinical/clinical.controller.js';
 import { TreatmentController } from './treatments/treatment.controller.js';
 import { ConsentController } from './consent/consent.controller.js';
+import { ClinicalPhotoModule } from './clinical-photos/clinical-photo.module.js';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ConsentController } from './consent/consent.controller.js';
     AuditModule,
     PrivacyModule,
     ObservabilityModule,
+    ClinicalPhotoModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],

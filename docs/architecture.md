@@ -20,6 +20,14 @@
 - Withdrawal and revocation: Withdrawing consent requires an explicit clinical reason, creates an immutable `ConsentWithdrawal` record, and immediately revokes execution eligibility.
 - Doctor-only RBAC and FORCE RLS: All 5 tables enforce `FORCE ROW LEVEL SECURITY`, composite foreign keys `(clinicId, id)`, and doctor-only permissions (`clinical.consents.*`, `clinical.consent-templates.*`). Denied to owners, admins, receptionists, and accountants. See [informed-consent.md](informed-consent.md).
 
+## Phase 3.4 secure before-and-after clinical photography
+`ClinicalPhotoSession`, `ClinicalPhoto`, `PhotoComparisonGroup`, and `PhotoAnnotation` establish secure, encrypted medical photography:
+- Strict consent requirement: Session creation and photo uploads require active, clinician-verified `CLINICAL_PHOTOGRAPHY` consent. Purpose separation ensures procedure or marketing consents cannot authorize clinical photo storage.
+- Private encrypted storage: Assets are stored outside public static roots, encrypted at rest using AES-256-GCM via HKDF key derivation with key rotation support (`CLINICAL_MEDIA_ENCRYPTION_KEY`). Upload operations enforce atomic rollback on disk if database transactions fail.
+- Sharp image processing & EXIF stripping: Normalizes images to WebP, limits input pixels (`4096*4096`) against decompression bombs, strips EXIF/GPS/device metadata, creates canonical masters (max 2560px) and thumbnails (max 320px), and computes SHA-256 digests.
+- Database trigger guards & immutability: `clinical_photo_guard` blocks deletions and raw SQL updates to storage paths or digests. `procedure_execution_guard` enforces procedure consent at the trigger level.
+- Doctor-only RBAC & FORCE RLS: Scoped exclusively to `DOCTOR` (`clinical.photos.*`), forbidden to administrative and finance roles. Streamed responses use `no-store` and `Content-Security-Policy: default-src 'none'`. See [clinical-photography.md](clinical-photography.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,

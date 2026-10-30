@@ -12,6 +12,8 @@ Apply `20261029000300_treatment_plans_procedures` with `npm run db:migrate`, `np
 ## Phase 3.3 informed consent forms, signatures, and procedure consent eligibility
 
 Apply `20261030000100_informed_consent_signatures` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical consent endpoints reside under `/api/v1/clinics/:clinicId/clinical`.
+
+Apply `20261030000200_clinical_photography` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical photography endpoints reside under `/api/v1/clinics/:clinicId/clinical`. Media is encrypted at rest using AES-256-GCM via `CLINICAL_MEDIA_ENCRYPTION_KEY`, stored in `ASSET_STORAGE_DIR`, with EXIF stripped and access restricted strictly to `DOCTOR` role under active, verified `CLINICAL_PHOTOGRAPHY` consent.
 - Unit and policy tests: `apps/api/test/consent-policy.test.ts` and `apps/web/test/consent-flow.test.mjs`.
 - Database integration tests: `apps/api/test/consent.integration.test.ts`.
 - Invariants: Published template versions, signature evidence, and withdrawal records are strictly immutable via triggers. Procedure execution cannot transition to PERFORMED without active verified PROCEDURE consent. Clinical photography or marketing consents cannot satisfy procedure execution. Permissions are doctor-only.

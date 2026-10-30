@@ -434,14 +434,34 @@ export class ConsentRepository {
         revisionNumber = plan.currentRevisionNumber;
       }
 
+      let procedureCatalogId = input.procedureCatalogId || templateVersion.template.procedureCatalogId || null;
+
       if (input.treatmentPlanItemId) {
         const item = await tx.treatmentPlanItem.findFirst({
-          where: { id: input.treatmentPlanItemId, clinicId: c.clinicId },
+          where: {
+            id: input.treatmentPlanItemId,
+            clinicId: c.clinicId,
+            revision: {
+              status: 'APPROVED',
+              treatmentPlan: {
+                patientId: input.patientId,
+                ...(input.treatmentPlanId ? { id: input.treatmentPlanId } : {}),
+              },
+            },
+          },
+          include: { revision: true },
         });
-        if (!item) throw new NotFoundException('Treatment plan item not found');
+        if (!item) throw new NotFoundException('Treatment plan item not found or not in approved plan revision for patient');
+        if (!procedureCatalogId) {
+          procedureCatalogId = item.procedureCatalogId;
+        } else if (procedureCatalogId !== item.procedureCatalogId) {
+          throw new ConflictException('Procedure catalog entry does not match selected treatment plan item');
+        }
+        if (!revisionNumber) {
+          revisionNumber = item.revision.revisionNumber;
+        }
       }
 
-      let procedureCatalogId = input.procedureCatalogId || templateVersion.template.procedureCatalogId || null;
       if (procedureCatalogId) {
         const cat = await tx.aestheticProcedureCatalog.findFirst({
           where: { id: procedureCatalogId, clinicId: c.clinicId },
@@ -527,12 +547,17 @@ export class ConsentRepository {
         },
       });
 
-      const updated = await tx.patientConsent.update({
-        where: { id },
+      const changed = await tx.patientConsent.updateMany({
+        where: { id, clinicId: c.clinicId, status: 'DRAFT', version: input.expectedVersion },
         data: {
           status: 'PENDING_VERIFICATION',
           version: { increment: 1 },
         },
+      });
+      if (changed.count !== 1) throw new ConflictException('Consent version or status mismatch');
+
+      const updated = await tx.patientConsent.findUniqueOrThrow({
+        where: { id },
         include: {
           signatureEvidence: {
             select: {
@@ -579,8 +604,8 @@ export class ConsentRepository {
         throw new ConflictException('Consent validity expiration date must be in the future');
       }
 
-      const updated = await tx.patientConsent.update({
-        where: { id },
+      const changed = await tx.patientConsent.updateMany({
+        where: { id, clinicId: c.clinicId, status: 'PENDING_VERIFICATION', version: input.expectedVersion },
         data: {
           status: 'ACTIVE',
           verifiedAt: now,
@@ -590,6 +615,9 @@ export class ConsentRepository {
           version: { increment: 1 },
         },
       });
+      if (changed.count !== 1) throw new ConflictException('Consent version or status mismatch');
+
+      const updated = await tx.patientConsent.findUniqueOrThrow({ where: { id } });
 
       await this.log(tx, c, 'clinical.consent.verified', id, {
         verifiedAt: now.toISOString(),
@@ -624,13 +652,16 @@ export class ConsentRepository {
         },
       });
 
-      const updated = await tx.patientConsent.update({
-        where: { id },
+      const changed = await tx.patientConsent.updateMany({
+        where: { id, clinicId: c.clinicId, status: { in: ['ACTIVE', 'PENDING_VERIFICATION'] }, version: input.expectedVersion },
         data: {
           status: 'WITHDRAWN',
           version: { increment: 1 },
         },
       });
+      if (changed.count !== 1) throw new ConflictException('Consent version or status mismatch');
+
+      const updated = await tx.patientConsent.findUniqueOrThrow({ where: { id } });
 
       await this.log(tx, c, 'clinical.consent.withdrawn', id, {
         reason: input.reason.trim(),
@@ -652,14 +683,17 @@ export class ConsentRepository {
         throw new ConflictException('Only DRAFT consents can be marked as refused');
       }
 
-      const updated = await tx.patientConsent.update({
-        where: { id },
+      const changed = await tx.patientConsent.updateMany({
+        where: { id, clinicId: c.clinicId, status: 'DRAFT', version: input.expectedVersion },
         data: {
           status: 'REFUSED',
           refusalReason: input.reason.trim(),
           version: { increment: 1 },
         },
       });
+      if (changed.count !== 1) throw new ConflictException('Consent version or status mismatch');
+
+      const updated = await tx.patientConsent.findUniqueOrThrow({ where: { id } });
 
       await this.log(tx, c, 'clinical.consent.refused', id, {
         refusalReason: input.reason.trim(),

@@ -68,8 +68,11 @@ export class ConsentEligibilityService {
       });
 
       for (const consent of candidates) {
-        // Scope matching: if treatment plan or item was specified during preparation, enforce exact match
+        // Scope matching: if treatment plan, revision or item was specified during preparation, enforce exact match
         if (consent.treatmentPlanId && consent.treatmentPlanId !== treatmentPlanId) {
+          continue;
+        }
+        if (consent.treatmentPlanRevisionNumber && consent.treatmentPlanRevisionNumber !== execution.treatmentPlanItem.revision.revisionNumber) {
           continue;
         }
         if (consent.treatmentPlanItemId && consent.treatmentPlanItemId !== treatmentPlanItemId) {

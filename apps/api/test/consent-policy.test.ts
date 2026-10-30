@@ -288,4 +288,112 @@ test('ConsentEligibilityService fails closed and separates photography/marketing
     assert.equal(validResult.consentId, consentId);
     assert.equal(validResult.purpose, 'PROCEDURE');
   }
+
+  // 3. Treatment plan revision mismatch -> MUST FAIL CLOSED!
+  const mockTxMismatchedRevision = {
+    procedureExecution: {
+      findFirst: async () => mockExecution, // revisionNumber: 1
+    },
+    patientConsent: {
+      findMany: async () => [
+        {
+          id: consentId,
+          clinicId,
+          patientId,
+          purpose: 'PROCEDURE',
+          status: 'ACTIVE',
+          procedureCatalogId: catalogId,
+          treatmentPlanId: planId,
+          treatmentPlanRevisionNumber: 2, // Consent was signed for revision 2, but execution is for revision 1!
+          verifiedAt,
+          verifiedByMembershipId: randomUUID(),
+          validFrom,
+          expiresAt: null,
+          templateVersion: { status: 'PUBLISHED' },
+          signatureEvidence: {
+            signerName: 'سارة',
+            signatureData: 'data1234',
+            evidenceHashSha256: 'b'.repeat(64),
+          },
+          withdrawal: null,
+        },
+      ],
+    },
+  };
+
+  const mismatchedRevResult = await service.check(clinicId, patientId, execId, mockTxMismatchedRevision);
+  assert.equal(mismatchedRevResult.eligible, false);
+  assert.equal(mismatchedRevResult.reason, 'VERIFIED_CONSENT_REQUIRED');
+});
+
+test('evidence authenticity and tampering detection: SHA-256 binds exact content and signer evidence', () => {
+  const clinicId = randomUUID();
+  const patientId = randomUUID();
+  const templateVersionId = randomUUID();
+  const nowIso = new Date().toISOString();
+
+  const originalContentDigest = digestContent(
+    'إقرار وموافقة حقن البوتوكس التجميلي',
+    'أوافق على الخضوع لإجراء حقن البوتوكس...',
+    null,
+    null,
+    'كدمات موضعية، صداع خفيف مؤقت',
+    'العلاج الموضعي أو الامتناع عن الحقن',
+  );
+
+  const legitimateEvidenceHash = digestEvidence(
+    clinicId,
+    patientId,
+    templateVersionId,
+    originalContentDigest,
+    'PATIENT',
+    'ريم خالد',
+    'DRAWN_BASE64',
+    'data:image/png;base64,authentic_signature_bytes_stream',
+    nowIso,
+  );
+
+  // Tamper 1: Attacker subtly alters the risks or terms in template content
+  const tamperedContentDigest = digestContent(
+    'إقرار وموافقة حقن البوتوكس التجميلي',
+    'أوافق على الخضوع لإجراء حقن البوتوكس...',
+    null,
+    null,
+    'لا توجد أي مخاطر إطلاقاً', // Tampered!
+    'العلاج الموضعي أو الامتناع عن الحقن',
+  );
+  assert.notEqual(tamperedContentDigest, originalContentDigest);
+
+  // If attacker evaluates evidence hash with tampered content, it will not match legitimate evidence
+  const tamperedEvidenceHash = digestEvidence(
+    clinicId,
+    patientId,
+    templateVersionId,
+    tamperedContentDigest,
+    'PATIENT',
+    'ريم خالد',
+    'DRAWN_BASE64',
+    'data:image/png;base64,authentic_signature_bytes_stream',
+    nowIso,
+  );
+  assert.notEqual(tamperedEvidenceHash, legitimateEvidenceHash);
+
+  // Tamper 2: Attacker alters signer name or capacity
+  const forgedSignerHash = digestEvidence(
+    clinicId,
+    patientId,
+    templateVersionId,
+    originalContentDigest,
+    'GUARDIAN', // Changed capacity
+    'مها خالد', // Changed name
+    'DRAWN_BASE64',
+    'data:image/png;base64,authentic_signature_bytes_stream',
+    nowIso,
+  );
+  assert.notEqual(forgedSignerHash, legitimateEvidenceHash);
+
+  // Technical signature boundary limitation:
+  // A SHA-256 hash confirms cryptographic data binding and detects alteration.
+  // It does NOT by itself prove biometric identity without verified multi-factor or PKI trust certificates.
+  assert.equal(legitimateEvidenceHash.length, 64);
 });
