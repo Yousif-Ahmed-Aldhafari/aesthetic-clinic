@@ -37,3 +37,48 @@ test('asset backup refuses symlinks and unexpected storage keys', () => {
   try { assert.throws(() => runAssetBackup({ source, outdir, key: randomBytes(48).toString('base64url') }), /symbolic links/); }
   finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('encrypted clinical media backup (.enc and .thumb.enc) preserves exact bytes and rejects tampered archives', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'lamssa-clinical-assets-'));
+  const source = resolve(root, 'source'), outdir = resolve(root, 'backups'), target = resolve(root, 'restored');
+  const clinicId = randomUUID(), photoId = randomUUID(), key = randomBytes(48).toString('base64url');
+  const masterCiphertext = Buffer.concat([randomBytes(12), randomBytes(16), Buffer.from('synthetic-master-ciphertext')]);
+  const thumbCiphertext = Buffer.concat([randomBytes(12), randomBytes(16), Buffer.from('synthetic-thumb-ciphertext')]);
+
+  mkdirSync(resolve(source, clinicId), { recursive: true });
+  writeFileSync(resolve(source, clinicId, `${photoId}.enc`), masterCiphertext);
+  writeFileSync(resolve(source, clinicId, `${photoId}.thumb.enc`), thumbCiphertext);
+
+  try {
+    const backup = runAssetBackup({ source, outdir, key });
+    assert.equal(backup.fileCount, 2);
+    assert.equal(backup.totalBytes, masterCiphertext.length + thumbCiphertext.length);
+
+    // Drill verification
+    const drill = runAssetRestore({ metaPath: backup.metaPath, key });
+    assert.deepEqual(drill, { mode: 'verification', fileCount: 2, totalBytes: masterCiphertext.length + thumbCiphertext.length });
+
+    // Restore to new directory
+    const restored = runAssetRestore({ metaPath: backup.metaPath, target, key, drill: false });
+    assert.equal(restored.mode, 'restore');
+    assert.deepEqual(readFileSync(resolve(target, clinicId, `${photoId}.enc`)), masterCiphertext);
+    assert.deepEqual(readFileSync(resolve(target, clinicId, `${photoId}.thumb.enc`)), thumbCiphertext);
+
+    // Tampered archive detection
+    const archiveBytes = readFileSync(backup.archivePath);
+    archiveBytes[archiveBytes.length - 1] ^= 0x01; // flip 1 bit in ciphertext
+    const tamperedPath = resolve(outdir, 'tampered.assets.enc');
+    writeFileSync(tamperedPath, archiveBytes);
+    const tamperedMeta = JSON.parse(readFileSync(backup.metaPath, 'utf8'));
+    tamperedMeta.archiveFile = 'tampered.assets.enc';
+    const tamperedMetaPath = resolve(outdir, 'tampered.assets.meta.json');
+    writeFileSync(tamperedMetaPath, JSON.stringify(tamperedMeta));
+
+    assert.throws(
+      () => runAssetRestore({ metaPath: tamperedMetaPath, target: resolve(root, 'tampered-target'), key, drill: false }),
+      /(ciphertext SHA-256 mismatch|authentication tag verification failed)/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
