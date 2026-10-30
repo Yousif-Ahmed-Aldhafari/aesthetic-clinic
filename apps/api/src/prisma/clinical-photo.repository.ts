@@ -404,22 +404,20 @@ export class ClinicalPhotoRepository {
       const encryptedBytes = await this.store.read(storageKey);
       const decryptedBytes = this.crypto.decryptMedia(encryptedBytes);
 
-      // Audit download/viewing of full image
-      if (variant === 'original') {
-        await this.audit.record(
-          {
-            clinicId: c.clinicId,
-            actorId: c.userId,
-            action: 'clinical.photo.read',
-            category: 'CLINICAL',
-            targetType: 'ClinicalPhoto',
-            targetId: photo.id,
-            outcome: 'SUCCESS',
-            metadata: { variant },
-          },
-          tx,
-        );
-      }
+      // Audit download/viewing of full image or thumbnail
+      await this.audit.record(
+        {
+          clinicId: c.clinicId,
+          actorId: c.userId,
+          action: variant === 'original' ? 'clinical.photo.read' : 'clinical.photo.thumbnail.read',
+          category: 'CLINICAL',
+          targetType: 'ClinicalPhoto',
+          targetId: photo.id,
+          outcome: 'SUCCESS',
+          metadata: { variant },
+        },
+        tx,
+      );
 
       return {
         buffer: decryptedBytes,

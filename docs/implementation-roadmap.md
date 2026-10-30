@@ -186,6 +186,36 @@ production use remains gated on authentication, isolation and operational contro
     See [deployment.md](deployment.md) and
     [production-readiness-checklist.md](production-readiness-checklist.md).
 
+16. **3.1 — Clinical Records, Consultations & Medical History (implemented).**
+    Consultation encounters, signed clinical notes, attributable amendments, medical history,
+    doctor-only RBAC, composite foreign keys `(clinicId, id)`, `FORCE ROW LEVEL SECURITY`, and database immutability triggers.
+    See [clinical-records.md](clinical-records.md).
+
+17. **3.2 — Treatment Plans & Aesthetic Procedures (implemented).**
+    Clinic-specific procedure catalogs, versioned treatment plans, immutable approved revisions,
+    procedure executions, and fail-closed consent eligibility gates.
+    See [treatment-plans.md](treatment-plans.md).
+
+18. **3.3 — Informed Consent Forms, Signature Evidence & Consent Eligibility (implemented).**
+    Versioned consent templates with SHA-256 digests, cryptographic signature evidence capture,
+    strict purpose separation (`PROCEDURE`, `CLINICAL_PHOTOGRAPHY`, `MARKETING_PHOTOGRAPHY`),
+    and live transactional eligibility checks blocking unconsented procedure executions.
+    See [informed-consent.md](informed-consent.md).
+
+19. **3.4 — Secure Before-and-After Clinical Photography (implemented).**
+    Private media vault with AES-256-GCM encryption at rest, Sharp normalization to WebP,
+    EXIF metadata stripping, photo comparison groups, and doctor-only delivery under active consent.
+    See [clinical-photography.md](clinical-photography.md).
+
+20. **3.5 — Clinical Follow-ups, Recovery Monitoring & Treatment Outcomes (implemented).**
+    Post-procedure follow-up lifecycle (`SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `MISSED`) with
+    terminal status immutability, digitally signed clinical assessments (deterministic SHA-256 signatures),
+    attributable amendments preserving original records, objective outcome measurement scales
+    (`VISUAL_ANALOG_SCALE_10`, `PATIENT_SATISFACTION_5_POINT`, `CLINICAL_GLOBAL_IMPRESSION`, `STRUCTURED_OBSERVATION`),
+    adverse events tracking with severity and resolution lifecycles, doctor-only RBAC, composite FKs,
+    and database guard triggers blocking deletions and modifications.
+    See [clinical-follow-ups.md](clinical-follow-ups.md).
+
 ## Migration discipline
 
 - Preserve root development commands and the browser origin used for demo storage.

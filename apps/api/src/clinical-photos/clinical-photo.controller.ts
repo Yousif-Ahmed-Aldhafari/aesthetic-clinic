@@ -85,7 +85,6 @@ export class ClinicalPhotoController {
       'Pragma': 'no-cache',
       'Content-Security-Policy': "default-src 'none'",
       'X-Content-Type-Options': 'nosniff',
-      'ETag': `"${stream.sha256Digest}"`,
     });
     return new StreamableFile(stream.buffer);
   }
@@ -105,7 +104,6 @@ export class ClinicalPhotoController {
       'Pragma': 'no-cache',
       'Content-Security-Policy': "default-src 'none'",
       'X-Content-Type-Options': 'nosniff',
-      'ETag': `"${stream.sha256Digest}"`,
     });
     return new StreamableFile(stream.buffer);
   }

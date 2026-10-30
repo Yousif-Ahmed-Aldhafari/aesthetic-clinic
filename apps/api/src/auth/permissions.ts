@@ -15,6 +15,9 @@ export const permissions = [
   'clinical.consent-templates.read', 'clinical.consent-templates.manage',
   'clinical.consents.read', 'clinical.consents.prepare', 'clinical.consents.sign', 'clinical.consents.verify', 'clinical.consents.withdraw',
   'clinical.photos.read', 'clinical.photos.upload', 'clinical.photos.annotate', 'clinical.photos.compare', 'clinical.photos.manage',
+  'clinical.follow-ups.read', 'clinical.follow-ups.schedule', 'clinical.follow-ups.update', 'clinical.follow-ups.sign', 'clinical.follow-ups.amend',
+  'clinical.outcomes.read', 'clinical.outcomes.record',
+  'clinical.adverse-events.read', 'clinical.adverse-events.record', 'clinical.adverse-events.manage',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -37,7 +40,10 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'clinical.procedures.read', 'clinical.procedures.document', 'clinical.procedures.perform',
     'clinical.consent-templates.read', 'clinical.consent-templates.manage',
     'clinical.consents.read', 'clinical.consents.prepare', 'clinical.consents.sign', 'clinical.consents.verify', 'clinical.consents.withdraw',
-    'clinical.photos.read', 'clinical.photos.upload', 'clinical.photos.annotate', 'clinical.photos.compare', 'clinical.photos.manage'],
+    'clinical.photos.read', 'clinical.photos.upload', 'clinical.photos.annotate', 'clinical.photos.compare', 'clinical.photos.manage',
+    'clinical.follow-ups.read', 'clinical.follow-ups.schedule', 'clinical.follow-ups.update', 'clinical.follow-ups.sign', 'clinical.follow-ups.amend',
+    'clinical.outcomes.read', 'clinical.outcomes.record',
+    'clinical.adverse-events.read', 'clinical.adverse-events.record', 'clinical.adverse-events.manage'],
   RECEPTIONIST: ['clinic.branding.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record'],
   ACCOUNTANT: ['clinic.branding.read', 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read'],
 };

@@ -28,6 +28,15 @@
 - Database trigger guards & immutability: `clinical_photo_guard` blocks deletions and raw SQL updates to storage paths or digests. `procedure_execution_guard` enforces procedure consent at the trigger level.
 - Doctor-only RBAC & FORCE RLS: Scoped exclusively to `DOCTOR` (`clinical.photos.*`), forbidden to administrative and finance roles. Streamed responses use `no-store` and `Content-Security-Policy: default-src 'none'`. See [clinical-photography.md](clinical-photography.md).
 
+## Phase 3.5 clinical follow-ups, recovery monitoring, and treatment outcomes
+`ClinicalFollowUp`, `FollowUpAssessment`, `FollowUpAssessmentAmendment`, `TreatmentOutcome`, and `AdverseEvent` establish post-procedure care, digital assessment integrity, outcome tracking, and complication monitoring:
+- Follow-up lifecycle & terminal immutability: Lifecycle states (`SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `MISSED`) prevent reopening terminal states (`COMPLETED`, `CANCELLED`, `MISSED`) via `clinical_followup_guard`.
+- Cryptographic digital signatures: Completed follow-ups mandate structured assessments (`symptomsObserved`, `healingProgress`, `clinicalNotes`) digitally signed by the assessing doctor using deterministic SHA-256 hashing across canonical JSON representations.
+- Attributable amendments: Signed assessments are immutable (`followup_assessment_guard`); corrections require separate `FollowUpAssessmentAmendment` records retaining author, timestamp, reason, and independent digital signatures.
+- Objective outcome measurement: Standardized scales (`VISUAL_ANALOG_SCALE_10`, `PATIENT_SATISFACTION_5_POINT`, `CLINICAL_GLOBAL_IMPRESSION`, `STRUCTURED_OBSERVATION`) enforce raw score bounds, distinguish clinician evaluation from patient-reported satisfaction without inferred percentages, and link to photo comparison groups and procedure executions.
+- Adverse events: Documented complications capture severity (`MILD`, `MODERATE`, `SEVERE`), observation date, findings, and resolution progression (`REPORTED`, `UNDER_EVALUATION`, `RESOLVED`, `ESCALATED`).
+- Doctor-only RBAC, FORCE RLS & restricted runtime grants: Scoped strictly to `DOCTOR` (`clinical.follow-ups.*`, `clinical.outcomes.*`, `clinical.adverse-events.*`). All 5 tables enforce `FORCE ROW LEVEL SECURITY`, composite foreign keys `(clinicId, id)`, and runtime denial of `DELETE` privilege. See [clinical-follow-ups.md](clinical-follow-ups.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,
