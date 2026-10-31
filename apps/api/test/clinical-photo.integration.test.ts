@@ -535,4 +535,3 @@ live('trigger immutability prevents raw SQL modification of photo storageKey and
     /Clinical photos cannot be deleted/,
   );
 });
-

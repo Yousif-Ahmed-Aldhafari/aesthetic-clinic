@@ -863,4 +863,3 @@ export function ClinicalPhotoPanel({
     </div>
   );
 }
-

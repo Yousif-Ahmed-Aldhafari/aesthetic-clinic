@@ -231,4 +231,3 @@ export const followupApi = (clinicId: string) => {
       api<AdverseEventDto>(`${root}/adverse-events/${encodeURIComponent(id)}`, 'PATCH', body, csrf, signal),
   };
 };
-

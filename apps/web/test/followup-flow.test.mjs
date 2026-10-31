@@ -65,4 +65,3 @@ test('formatArabicDateTime handles valid and invalid inputs gracefully', () => {
   assert.equal(formatArabicDateTime(null), '—');
   assert.equal(formatArabicDateTime(undefined), '—');
 });
-

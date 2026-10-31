@@ -312,4 +312,3 @@ test('ClinicalMediaProcessingService rejects non-image or corrupted files', asyn
     /No image file payload provided/,
   );
 });
-

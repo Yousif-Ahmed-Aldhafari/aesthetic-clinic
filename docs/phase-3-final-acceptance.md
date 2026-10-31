@@ -1,10 +1,10 @@
 # Phase 3: Clinical Management — Final Security Audit & Acceptance Report
 
-**Project**: Lamssa (Arabic-First Multi-Tenant Aesthetic Clinic SaaS)  
-**Branch**: `phase/3-clinical-management`  
-**Base Commit**: `ee96780`  
-**Date**: October 30, 2026  
-**Auditor & Reviewer**: Lead Software Architect, Security Auditor, and Clinical Systems Reviewer  
+**Project**: Lamssa (Arabic-First Multi-Tenant Aesthetic Clinic SaaS)
+**Branch**: `phase/3-clinical-management`
+**Base Commit**: `ee96780`
+**Date**: October 30, 2026
+**Auditor & Reviewer**: Lead Software Architect, Security Auditor, and Clinical Systems Reviewer
 **Status**: **READY FOR CODE MERGE** (Mergeable into `main`) | **PRODUCTION LAUNCH GATED** (Requires external operational prerequisites)
 
 ---
@@ -28,10 +28,10 @@ Phase 3 was developed in five sequential increments (Steps 3.1 through 3.5), fol
 
 ```
 Phase 3 Roadmap:
-Step 3.1: Clinical Records & Immutable Encounters ────────► (Migration 16)
-Step 3.2: Treatment Plans & Procedure Catalog ────────────► (Migration 17)
-Step 3.3: Informed Consent & Signature Evidence ──────────► (Migration 18)
-Step 3.4: Secure Encrypted Clinical Photography ──────────► (Migrations 19 & 20)
+Step 3.1: Clinical Records & Immutable Encounters ────────► (Migrations 16 & 17)
+Step 3.2: Treatment Plans & Procedure Catalog ────────────► (Migration 18)
+Step 3.3: Informed Consent & Signature Evidence ──────────► (Migration 19)
+Step 3.4: Secure Encrypted Clinical Photography ──────────► (Migration 20)
 Step 3.5: Follow-ups, Recovery & Treatment Outcomes ──────► (Migration 21)
 Step 3.6: Clinical Security Audit & Acceptance Verification (This Report)
 ```
@@ -81,12 +81,12 @@ All migrations were authored in raw SQL, rigorously verified for backward compat
 
 | Migration Number & Folder | Core Schema Entities Created | Key Invariants & Security Controls |
 | :--- | :--- | :--- |
-| `0016_clinical_records` | `ClinicalEncounter`, `ClinicalNote`, `ClinicalNoteAmendment`, `MedicalHistory` | `FORCE ROW LEVEL SECURITY`, composite FK `(clinic_id, patient_id)`, immutable signed note trigger `clinical_note_immutability_guard()`. |
-| `0017_treatment_plans` | `AestheticProcedureCatalog`, `TreatmentPlan`, `TreatmentPlanRevision`, `TreatmentPlanItem`, `ProcedureExecution` | `FORCE ROW LEVEL SECURITY`, active plan revision locking trigger `treatment_plan_revision_guard()`, execution consent validation trigger `procedure_execution_guard()`. |
-| `0018_informed_consent` | `ConsentTemplate`, `ConsentTemplateVersion`, `PatientConsent`, `ConsentSignatureEvidence`, `ConsentWithdrawal` | `FORCE ROW LEVEL SECURITY`, sha256 evidence integrity trigger `consent_signature_integrity_guard()`, consent withdrawal transition trigger. |
-| `0019_clinical_photography` | `ClinicalPhotoSession`, `ClinicalPhoto`, `PhotoComparisonGroup`, `PhotoAnnotation` | `FORCE ROW LEVEL SECURITY`, storage path validation, doctor-only access, encryption metadata tracking (IV, auth tag). |
-| `0020_photo_marketing_consent` | `ClinicalPhoto` (marketing fields) | Marketing consent verification trigger ensuring photo cannot be marked public without verified `MARKETING_PHOTOGRAPHY` consent. |
-| `0021_clinical_followups_outcomes` | `ClinicalFollowUp`, `FollowUpAssessment`, `FollowUpAssessmentAmendment`, `TreatmentOutcome`, `AdverseEvent` | `FORCE ROW LEVEL SECURITY`, assessment immutability trigger `followup_assessment_immutability_guard()`, adverse event terminal state lock. |
+| `16: 20261029000100_clinical_records` | `ClinicalEncounter`, `ClinicalNote`, `ClinicalNoteAmendment`, `MedicalHistory` | `FORCE ROW LEVEL SECURITY`, composite FK `(clinic_id, patient_id)`. |
+| `17: 20261029000200_clinical_integrity_hardening` | Triggers on `ClinicalNote`, `MedicalHistory` | Immutable signed note trigger `clinical_note_immutability_guard()`, medical history isolation triggers. |
+| `18: 20261029000300_treatment_plans_procedures` | `AestheticProcedureCatalog`, `TreatmentPlan`, `TreatmentPlanRevision`, `TreatmentPlanItem`, `ProcedureExecution` | `FORCE ROW LEVEL SECURITY`, active plan revision locking trigger `treatment_plan_revision_guard()`, execution consent validation trigger `procedure_execution_guard()`. |
+| `19: 20261030000100_informed_consent_signatures` | `ConsentTemplate`, `ConsentTemplateVersion`, `PatientConsent`, `ConsentSignatureEvidence`, `ConsentWithdrawal` | `FORCE ROW LEVEL SECURITY`, SHA-256 evidence integrity trigger `consent_signature_integrity_guard()`, consent withdrawal transition trigger. |
+| `20: 20261030000200_clinical_photography` | `ClinicalPhotoSession`, `ClinicalPhoto`, `PhotoComparisonGroup`, `PhotoAnnotation` | `FORCE ROW LEVEL SECURITY`, storage path validation, doctor-only access, encryption metadata tracking (IV, auth tag), marketing consent verification trigger. |
+| `21: 20261030000300_clinical_followups_outcomes` | `ClinicalFollowUp`, `FollowUpAssessment`, `FollowUpAssessmentAmendment`, `TreatmentOutcome`, `AdverseEvent` | `FORCE ROW LEVEL SECURITY`, assessment immutability trigger `followup_assessment_immutability_guard()`, adverse event terminal state lock. |
 
 ### Database Security Controls
 

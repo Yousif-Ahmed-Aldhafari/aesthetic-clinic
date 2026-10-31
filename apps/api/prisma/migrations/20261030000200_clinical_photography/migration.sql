@@ -260,4 +260,3 @@ COMMENT ON TABLE public."PhotoComparisonGroup" IS 'Clinical comparison grouping 
 COMMENT ON TABLE public."PhotoAnnotation" IS 'Attributable non-destructive clinical annotation on a clinical photograph.';
 
 COMMIT;
-

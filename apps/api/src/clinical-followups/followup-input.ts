@@ -208,4 +208,3 @@ export class UpdateAdverseEventDto {
   @Min(1, { message: 'expectedVersion must be positive' })
   expectedVersion!: number;
 }
-

@@ -161,4 +161,3 @@ export class ClinicalPhotoController {
     return this.photos.archivePhoto(r.auth!.principal, clinicId, photoId, body);
   }
 }
-

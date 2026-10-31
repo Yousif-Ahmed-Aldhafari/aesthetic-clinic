@@ -28,4 +28,3 @@ test('treatment revision immutability and session ordering boundaries fail close
   assert.equal(items[0].sessionOrder < items[1].sessionOrder, true);
   assert.equal(items.every((i) => i.expectedDurationMinutes > 0 && i.expectedDurationMinutes <= 480), true);
 });
-

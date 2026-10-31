@@ -109,4 +109,3 @@ CREATE TYPE "OutcomeMeasurementScale" AS ENUM ('CLINICAL_GLOBAL_IMPRESSION', 'PA
 | `/api/v1/clinics/:clinicId/clinical/adverse-events` | GET | استرجاع سجل الآثار الجانبية | `clinical.adverse-events.read` |
 | `/api/v1/clinics/:clinicId/clinical/adverse-events` | POST | الإبلاغ عن أثر جانبي جديد | `clinical.adverse-events.create` |
 | `/api/v1/clinics/:clinicId/clinical/adverse-events/:id` | PATCH | تحديث مسار وحالة الأثر الجانبي | `clinical.adverse-events.update` |
-

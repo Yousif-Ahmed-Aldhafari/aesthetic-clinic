@@ -73,4 +73,3 @@ export class ClinicalMediaCryptoService {
     throw lastError ?? new Error('Decryption failed: authentication tag verification failed');
   }
 }
-

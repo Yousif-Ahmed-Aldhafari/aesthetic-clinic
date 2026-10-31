@@ -139,4 +139,3 @@ export class ClinicalFollowUpController {
     return this.followUps.listAdverseEvents(r.auth!.principal, clinicId, patientId);
   }
 }
-

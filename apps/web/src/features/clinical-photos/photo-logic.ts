@@ -55,4 +55,3 @@ export function validateComparisonPair(
 
   return { valid: true };
 }
-

@@ -8,4 +8,3 @@ import { ClinicalFollowUpController } from './clinical-followup.controller.js';
   exports: [],
 })
 export class ClinicalFollowUpModule {}
-

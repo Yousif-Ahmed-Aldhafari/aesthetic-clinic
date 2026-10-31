@@ -25,4 +25,3 @@ import { ClinicalMediaStore, LocalClinicalMediaStore } from './clinical-media-st
   ],
 })
 export class ClinicalPhotoModule {}
-

@@ -172,4 +172,3 @@ export function formatArabicDateTime(dateStr: string | null | undefined): string
     return dateStr;
   }
 }
-
