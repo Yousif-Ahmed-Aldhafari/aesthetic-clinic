@@ -18,6 +18,8 @@ export type Environment = {
   ASSET_STORAGE_DIR: string | null;
   MFA_ENCRYPTION_KEY?: string;
   MFA_ENCRYPTION_KEY_PREVIOUS?: string;
+  CLINICAL_MEDIA_ENCRYPTION_KEY?: string;
+  CLINICAL_MEDIA_ENCRYPTION_KEY_PREVIOUS?: string;
   METRICS_SECRET_KEY?: string;
 };
 
@@ -81,6 +83,14 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
   if (mfaPrevKey && (mfaPrevKey.length < 16 || !/^[A-Za-z0-9_-]{16,128}$/.test(mfaPrevKey))) {
     errors.push('MFA_ENCRYPTION_KEY_PREVIOUS');
   }
+  const mediaKey = typeof input.CLINICAL_MEDIA_ENCRYPTION_KEY === 'string' ? input.CLINICAL_MEDIA_ENCRYPTION_KEY : '';
+  if (mediaKey && (mediaKey.length < 16 || !/^[A-Za-z0-9_-]{16,128}$/.test(mediaKey))) {
+    errors.push('CLINICAL_MEDIA_ENCRYPTION_KEY');
+  }
+  const mediaPrevKey = typeof input.CLINICAL_MEDIA_ENCRYPTION_KEY_PREVIOUS === 'string' ? input.CLINICAL_MEDIA_ENCRYPTION_KEY_PREVIOUS : '';
+  if (mediaPrevKey && (mediaPrevKey.length < 16 || !/^[A-Za-z0-9_-]{16,128}$/.test(mediaPrevKey))) {
+    errors.push('CLINICAL_MEDIA_ENCRYPTION_KEY_PREVIOUS');
+  }
   const metricsKey = typeof input.METRICS_SECRET_KEY === 'string' ? input.METRICS_SECRET_KEY : '';
   if (metricsKey && !/^[A-Za-z0-9_-]{43,128}$/.test(metricsKey)) errors.push('METRICS_SECRET_KEY');
   if (mode === 'production') {
@@ -100,6 +110,8 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     PLATFORM_BASE_DOMAIN:platformBase,API_ALLOWED_HOSTS:[...new Set(hosts)],ASSET_STORAGE_DIR:assetDir as string|null,
     MFA_ENCRYPTION_KEY: mfaKey || undefined,
     MFA_ENCRYPTION_KEY_PREVIOUS: mfaPrevKey || undefined,
+    CLINICAL_MEDIA_ENCRYPTION_KEY: mediaKey || undefined,
+    CLINICAL_MEDIA_ENCRYPTION_KEY_PREVIOUS: mediaPrevKey || undefined,
     METRICS_SECRET_KEY: metricsKey || undefined,
   };
 }

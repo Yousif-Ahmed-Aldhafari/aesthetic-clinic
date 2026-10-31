@@ -1,5 +1,42 @@
 # Lamssa architecture
 
+## Phase 3.1 clinical boundary
+
+`ClinicalEncounter`, `ClinicalNote`, `ClinicalNoteAmendment`, and `MedicalHistory` are sensitive tenant resources protected by doctor-only permissions, assigned-membership filtering, transaction-local tenant context, same-clinic foreign keys, and FORCE RLS. Signed content is database-immutable and corrections are append-only. Patient administration, clinic ownership, and platform administration confer no clinical access. See [clinical-records.md](clinical-records.md).
+
+## Phase 3.2 treatment plans and aesthetic procedures
+
+`AestheticProcedureCatalog`, `TreatmentPlan`, `TreatmentPlanRevision`, `TreatmentPlanItem`, and `ProcedureExecution` extend the clinical domain with governed procedure catalogs, versioned treatment planning, and procedure documentation.
+- Approved revisions (`TreatmentPlanRevision`) and their items (`TreatmentPlanItem`) are strictly immutable, enforced by database triggers `treatment_revision_guard` and `treatment_item_guard` (raising error `42501`).
+- Reopening completed/cancelled plans is prevented by `treatment_plan_guard`.
+- Procedure performance enforces a fail-closed consent gate: transitioning `ProcedureExecution` to `PERFORMED` or `COMPLETED` requires verified informed consent from Step 3.3. Any attempt without verified consent throws 403 Forbidden (`VERIFIED_CONSENT_REQUIRED`) and generates an audit log event `clinical.procedure-execution.blocked`.
+## Phase 3.3 informed consent, signature evidence, and procedure consent eligibility
+
+`ConsentTemplate`, `ConsentTemplateVersion`, `PatientConsent`, `ConsentSignatureEvidence`, and `ConsentWithdrawal` establish legal and clinical consent governance:
+- Template governance: Templates define purpose (`PROCEDURE`, `CLINICAL_PHOTOGRAPHY`, `MARKETING_PHOTOGRAPHY`), titles, and procedure links. Template versions carry full Arabic/English text, risks, alternatives, and deterministic SHA-256 content digests. Published and retired versions are immutable (`consent_template_version_guard`).
+- Cryptographic signature evidence: Captures drawn canvas signatures (`DRAWN_BASE64`) or typed confirmations (`TYPED_CONFIRMATION`), signer capacity (`PATIENT`, `GUARDIAN`, `LEGAL_REPRESENTATIVE`), relationship, ID snapshot, and a deterministic SHA-256 evidence hash binding template content digest, patient ID, clinic ID, signer info, and server timestamp. Strictly immutable (`consent_signature_evidence_guard`).
+- Strict purpose separation: Photography and marketing consents can NEVER satisfy procedure execution consent.
+- Fail-closed procedure execution gate: `ConsentEligibilityService` evaluates live transactional database state. Transitioning `ProcedureExecution` to `PERFORMED` requires active, doctor-verified `PROCEDURE` consent matching the procedure. Unauthorized execution attempts are rejected (403 `VERIFIED_CONSENT_REQUIRED`) and logged to audit trails.
+- Withdrawal and revocation: Withdrawing consent requires an explicit clinical reason, creates an immutable `ConsentWithdrawal` record, and immediately revokes execution eligibility.
+- Doctor-only RBAC and FORCE RLS: All 5 tables enforce `FORCE ROW LEVEL SECURITY`, composite foreign keys `(clinicId, id)`, and doctor-only permissions (`clinical.consents.*`, `clinical.consent-templates.*`). Denied to owners, admins, receptionists, and accountants. See [informed-consent.md](informed-consent.md).
+
+## Phase 3.4 secure before-and-after clinical photography
+`ClinicalPhotoSession`, `ClinicalPhoto`, `PhotoComparisonGroup`, and `PhotoAnnotation` establish secure, encrypted medical photography:
+- Strict consent requirement: Session creation and photo uploads require active, clinician-verified `CLINICAL_PHOTOGRAPHY` consent. Purpose separation ensures procedure or marketing consents cannot authorize clinical photo storage.
+- Private encrypted storage: Assets are stored outside public static roots, encrypted at rest using AES-256-GCM via HKDF key derivation with key rotation support (`CLINICAL_MEDIA_ENCRYPTION_KEY`). Upload operations enforce atomic rollback on disk if database transactions fail.
+- Sharp image processing & EXIF stripping: Normalizes images to WebP, limits input pixels (`4096*4096`) against decompression bombs, strips EXIF/GPS/device metadata, creates canonical masters (max 2560px) and thumbnails (max 320px), and computes SHA-256 digests.
+- Database trigger guards & immutability: `clinical_photo_guard` blocks deletions and raw SQL updates to storage paths or digests. `procedure_execution_guard` enforces procedure consent at the trigger level.
+- Doctor-only RBAC & FORCE RLS: Scoped exclusively to `DOCTOR` (`clinical.photos.*`), forbidden to administrative and finance roles. Streamed responses use `no-store` and `Content-Security-Policy: default-src 'none'`. See [clinical-photography.md](clinical-photography.md).
+
+## Phase 3.5 clinical follow-ups, recovery monitoring, and treatment outcomes
+`ClinicalFollowUp`, `FollowUpAssessment`, `FollowUpAssessmentAmendment`, `TreatmentOutcome`, and `AdverseEvent` establish post-procedure care, digital assessment integrity, outcome tracking, and complication monitoring:
+- Follow-up lifecycle & terminal immutability: Lifecycle states (`SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `MISSED`) prevent reopening terminal states (`COMPLETED`, `CANCELLED`, `MISSED`) via `clinical_followup_guard`.
+- Cryptographic digital signatures: Completed follow-ups mandate structured assessments (`symptomsObserved`, `healingProgress`, `clinicalNotes`) digitally signed by the assessing doctor using deterministic SHA-256 hashing across canonical JSON representations.
+- Attributable amendments: Signed assessments are immutable (`followup_assessment_guard`); corrections require separate `FollowUpAssessmentAmendment` records retaining author, timestamp, reason, and independent digital signatures.
+- Objective outcome measurement: Standardized scales (`VISUAL_ANALOG_SCALE_10`, `PATIENT_SATISFACTION_5_POINT`, `CLINICAL_GLOBAL_IMPRESSION`, `STRUCTURED_OBSERVATION`) enforce raw score bounds, distinguish clinician evaluation from patient-reported satisfaction without inferred percentages, and link to photo comparison groups and procedure executions.
+- Adverse events: Documented complications capture severity (`MILD`, `MODERATE`, `SEVERE`), observation date, findings, and resolution progression (`REPORTED`, `UNDER_EVALUATION`, `RESOLVED`, `ESCALATED`).
+- Doctor-only RBAC, FORCE RLS & restricted runtime grants: Scoped strictly to `DOCTOR` (`clinical.follow-ups.*`, `clinical.outcomes.*`, `clinical.adverse-events.*`). All 5 tables enforce `FORCE ROW LEVEL SECURITY`, composite foreign keys `(clinicId, id)`, and runtime denial of `DELETE` privilege. See [clinical-follow-ups.md](clinical-follow-ups.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,

@@ -1,5 +1,31 @@
 # Development setup
 
+## Phase 3.1 clinical records
+
+Apply `20261029000100_clinical_records` and `20261029000200_clinical_integrity_hardening` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`; never reset or schema-push. Routes are under `/api/v1/clinics/:clinicId/clinical`. Use fictional records only. Runtime has no delete privilege and remains FORCE-RLS constrained.
+
+## Phase 3.2 treatment plans and aesthetic procedures
+
+Apply `20261029000300_treatment_plans_procedures` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical treatment plan and procedure endpoints reside under `/api/v1/clinics/:clinicId/clinical`.
+- Unit and policy tests: `apps/api/test/treatment-policy.test.ts`.
+- Database integration tests: `apps/api/test/treatment.integration.test.ts`.
+## Phase 3.3 informed consent forms, signatures, and procedure consent eligibility
+
+Apply `20261030000100_informed_consent_signatures` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical consent endpoints reside under `/api/v1/clinics/:clinicId/clinical`.
+
+## Phase 3.4 secure before-and-after clinical photography
+
+Apply `20261030000200_clinical_photography` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical photography endpoints reside under `/api/v1/clinics/:clinicId/clinical`. Media is encrypted at rest using AES-256-GCM via `CLINICAL_MEDIA_ENCRYPTION_KEY`, stored in `ASSET_STORAGE_DIR`, with EXIF stripped and access restricted strictly to `DOCTOR` role under active, verified `CLINICAL_PHOTOGRAPHY` consent.
+- Unit and policy tests: `apps/api/test/clinical-photo-policy.test.ts` and `apps/web/test/clinical-photos.test.mjs`.
+- Database integration tests: `apps/api/test/clinical-photo.integration.test.ts`.
+
+## Phase 3.5 clinical follow-ups, recovery monitoring, and treatment outcomes
+
+Apply `20261030000300_clinical_followups_outcomes` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical follow-up, outcome, and adverse event endpoints reside under `/api/v1/clinics/:clinicId/clinical`.
+- Unit and policy tests: `apps/api/test/followup-policy.test.ts` and `apps/web/test/followup-flow.test.mjs`.
+- Database integration tests: `apps/api/test/followup.integration.test.ts`.
+- Invariants: Terminal follow-up statuses (`COMPLETED`, `CANCELLED`, `MISSED`) are immutable and cannot reopen. Completed follow-ups require signed assessments with deterministic SHA-256 digital signatures. Assessments are immutable; corrections require attributable amendments. Treatment outcomes validate raw score boundaries and support photo comparison links. Adverse events capture severity and resolution progression. Runtime role has no `DELETE` privilege and all 5 tables enforce `FORCE ROW LEVEL SECURITY` with doctor-only permissions.
+
 ## Step 2.5 — Deployment Infrastructure & Production Verification (2026-10-28)
 
 Active branch: `phase/2-security-reliability`. Production deployment is not performed.

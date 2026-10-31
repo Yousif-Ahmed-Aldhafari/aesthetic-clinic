@@ -1,0 +1,304 @@
+/* Clinical Follow-ups & Outcomes Styles - Arabic RTL First */
+
+.clinical-followups-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  background: var(--bg-surface, #ffffff);
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  direction: rtl;
+}
+
+.clinical-followups-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+}
+
+.clinical-followups-header h4 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--text-primary, #0f172a);
+}
+
+.clinical-followups-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid var(--border-subtle, #e2e8f0);
+  padding-bottom: 0.25rem;
+  overflow-x: auto;
+}
+
+.followup-tab-btn {
+  background: transparent;
+  border: none;
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  border-radius: 0.375rem 0.375rem 0 0;
+  transition: all 0.15s ease-in-out;
+  white-space: nowrap;
+}
+
+.followup-tab-btn.active {
+  color: var(--brand-primary, #0284c7);
+  border-bottom: 2px solid var(--brand-primary, #0284c7);
+  background: var(--bg-hover, #f8fafc);
+}
+
+/* Badges */
+.badge-status {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-scheduled {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.badge-in-progress {
+  background: #fef9c3;
+  color: #854d0e;
+  border: 1px solid #fef08a;
+}
+
+.badge-completed {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.badge-cancelled, .badge-missed {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.badge-severity-mild {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.badge-severity-moderate {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.badge-severity-severe {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.badge-ae-reported {
+  background: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+.badge-ae-evaluation {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.badge-ae-resolved {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.badge-ae-escalated {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+/* Cards & Lists */
+.followup-card {
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 0.625rem;
+  padding: 1.125rem;
+  background: var(--bg-panel, #f8fafc);
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.followup-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.followup-reason {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
+}
+
+.followup-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: var(--text-muted, #475569);
+  background: #ffffff;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+}
+
+.followup-instructions {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #1e40af;
+}
+
+.followup-cancel-alert {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #991b1b;
+}
+
+/* Digital Signed Assessment Card */
+.assessment-signed-box {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-right: 4px solid #0284c7;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.assessment-signature-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.825rem;
+  color: #166534;
+}
+
+.signature-hash {
+  font-family: monospace;
+  direction: ltr;
+  background: #ffffff;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  border: 1px solid #bbf7d0;
+  font-size: 0.75rem;
+}
+
+.amendments-list {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.amendment-card {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-right: 3px solid #d97706;
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.85rem;
+}
+
+/* Outcome & Adverse Event Cards */
+.outcome-card, .adverse-event-card {
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 0.625rem;
+  padding: 1rem;
+  background: #ffffff;
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.outcome-score-row {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  background: #f8fafc;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid #e2e8f0;
+}
+
+.score-badge {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0284c7;
+}
+
+/* Forms & Dialogs */
+.followup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  text-align: right;
+  direction: rtl;
+}
+
+.followup-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary, #0f172a);
+}
+
+.followup-form input,
+.followup-form select,
+.followup-form textarea {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid #cbd5e1;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.followup-form textarea {
+  resize: vertical;
+}
+
+.followup-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}

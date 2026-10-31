@@ -15,10 +15,15 @@ import { VerifiedSessions } from './verified-sessions.js';
 import { PublicBrandingRepository } from './public-branding.repository.js';
 import { ClinicRepository } from './clinic.repository.js';
 import { DatabaseHealthService } from './database-health.service.js';
+import { ClinicalRepository } from './clinical.repository.js';
+import { ConsentRepository } from './consent.repository.js';
+import { TreatmentRepository } from './treatment.repository.js';
+import { ConsentEligibilityService } from '../treatments/consent-eligibility.service.js';
+import { ClinicalFollowUpRepository } from './clinical-followup.repository.js';
 
 @Module({
-  providers:[AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
+  providers:[ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
   // Raw Prisma is private to database infrastructure, never exported to features.
-  exports:[AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
+  exports:[ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
 })
 export class PrismaModule {}

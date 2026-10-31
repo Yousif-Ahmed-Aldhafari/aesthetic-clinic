@@ -1,5 +1,26 @@
 # Phase 2, Step 2.3 — Privacy, Data Retention and Data Governance
 
+## Phase 3.1 clinical data addendum
+
+Clinical encounters, notes, amendments, allergies, medications, assessments, and medical history are `SENSITIVE_PERSONAL`. They are covered by encrypted database backups but deliberately excluded from the current administrative export. Retention remains dry-run only; no clinical row is automatically deleted. Export scope, legal holds, access disclosure, and jurisdiction-specific retention require clinical/legal approval.
+
+## Phase 3.2 treatment plans & procedures addendum
+
+Aesthetic procedure catalog definitions, treatment plans, revisions, plan items, and procedure execution documentation are classified as `SENSITIVE_PERSONAL`.
+- They are covered by multi-clinic encrypted database backups (`pg_dump -Fc --enable-row-security`).
+- They are strictly excluded from administrative patient exports (`PatientExport`).
+- Audit logging records operational metadata (`revisionNumber`, `sessionOrder`, `status`, `targetStatus`, `reason`) while strictly withholding medical content, instructions, observations, and patient identifiers.
+- Retention simulation remains dry-run only; clinical rows are never automatically deleted by retention tasks.
+
+## Phase 3.3 informed consent & signature evidence addendum
+
+Informed consent templates, template versions, patient consents, signature evidence, and withdrawal records are classified as `SENSITIVE_PERSONAL`.
+- Signature evidence (`ConsentSignatureEvidence`) contains drawn base64 image data or typed confirmation strings alongside signer capacity, relationship, and identity snapshots. It is strictly database-immutable via `consent_signature_evidence_guard`.
+- Audit metadata sanitizer recursively redacts `signatureData`, `signerIdentitySnapshot`, and raw consent text bodies from general audit logs.
+- Patient consent documents are strictly excluded from administrative patient exports.
+- Multi-clinic encrypted database backups capture all 5 consent tables under dedicated non-bypass backup roles and verified by restoration drills.
+- Retention simulation remains dry-run only; consent records and legal signature evidence are never automatically pruned.
+
 ## 1. Executive Summary
 
 Lamssa is an Arabic-first, RTL-native, multi-tenant SaaS for aesthetic clinics. This document defines the privacy engineering architecture, data classification, retention framework, rights management lifecycle, export protection, and data governance controls introduced in **Phase 2, Step 2.3**.
@@ -14,13 +35,13 @@ All data stored, processed, or transmitted across PostgreSQL, local storage, mem
 |---|---|---|---|---|---|---|
 | **Tier 1** | `AUTH_SECRET` | Critical cryptographic material, session secrets, credentials | User password hashes (Argon2id), MFA TOTP secrets (AES-256-GCM encrypted), recovery code hashes (SHA-256), session tokens, CSRF HMAC keys | `User`, `MfaRecoveryCode`, `Session`, secure environment variables | Lifespan of user/session; revoked immediately upon compromise or rotation | **Zero external disclosure**. Never sent in API responses or written to audit logs |
 | **Tier 2** | `FINANCIAL` | Invoices, receipts, payments, refunds, ledger entries | Invoice lines, payment amounts, refund notes, tax calculations, hash-chained ledger events | `Invoice`, `InvoiceLine`, `Payment`, `FinancialLedgerEvent`, `ClinicBillingProfile` | Statutory retention period based on clinic operating jurisdiction (e.g., 10 years in Saudi Arabia, 5–7 years in other GCC/international jurisdictions; subject to local legal review) | Scoped strictly to clinic owner and accountant; locked at issuance; never cross-clinic |
-| **Tier 3** | `SENSITIVE_PERSONAL` | Future clinical/medical notes, diagnostic records | Consultation notes, medical histories, aesthetic procedure photos | Future clinical modules (explicitly separated from current admin data) | Minimum statutory retention for health records (10+ years); requires explicit consent | Strict medical confidentiality; doctor-patient access boundary; patient rights restrictions |
+| **Tier 3** | `SENSITIVE_PERSONAL` | Clinical/medical notes, histories, consents, photographs, follow-ups, and outcomes | Consultation notes, medical histories, treatment plans, procedure executions, informed consent signatures, encrypted clinical photographs, follow-up assessments, treatment outcomes, and adverse events | `ClinicalEncounter`, `ClinicalNote`, `ClinicalNoteAmendment`, `MedicalHistory`, `TreatmentPlan`, `ProcedureExecution`, `PatientConsent`, `ConsentSignatureEvidence`, `ClinicalPhotoSession`, `ClinicalPhoto`, `PhotoComparisonGroup`, `PhotoAnnotation`, `ClinicalFollowUp`, `FollowUpAssessment`, `FollowUpAssessmentAmendment`, `TreatmentOutcome`, `AdverseEvent` | Jurisdiction-specific duration pending legal review; automatic deletion disabled | Strict clinical confidentiality; assigned-doctor boundary; encrypted at rest via AES-256-GCM for media; digital SHA-256 signatures for assessments; excluded from administrative exports and browser storage |
 | **Tier 4** | `PERSONAL` | Patient administrative & demographic information | Full name, phone number, national ID/Iqama, date of birth, emergency contact, appointment history | `Patient`, `Appointment`, `Visit`, `QueueTicket`, `PatientExport`, `PrivacyRequest` | Governed by `RetentionPolicy` (minimum 180 days default; subject to legal minimums) | Accessible to reception, doctor, clinic admin/owner within the tenant; strictly isolated by RLS |
 | **Tier 5** | `INTERNAL` | Administrative configuration, clinic settings, audit trails | Clinic profile, business hours, services, rooms, audit logs, retention policies | `Clinic`, `Membership`, `AuditEvent`, `RetentionPolicy`, `Resource` | Audit minimum 90 days; clinic config lifetime of subscription | Clinic staff according to RBAC; global platform administrators (read-only); isolated by RLS |
 | **Tier 6** | `PUBLIC` | White-label branding, public board displays | Clinic display name, public logo URL, primary/accent colors, anonymous queue ticket numbers | `ClinicBranding`, public queue SSE endpoint | Public cache lifetime | Public internet access via unauthenticated endpoints (no patient identity exposed) |
 
-### Administrative Data vs Future Clinical Data
-Current patient profiles are strictly **administrative**: contact details, national ID/passport numbers for billing, appointments, and waiting queue tokens. Future clinical records (aesthetic procedures, clinical charting, dermatological photographs) will reside in segregated clinical schemas with field-level encryption, heightened consent logging, and granular access boundaries.
+### Administrative Data vs Clinical & Photography Data
+Patient profiles remain strictly **administrative**. Clinical consultations, treatment plans, informed consents, signature evidence, and clinical photographs (`ClinicalPhoto`, `ClinicalPhotoSession`) are stored in separate clinic-owned tables with granular doctor-only permissions, encrypted backups, FORCE RLS, and dedicated AES-256-GCM encryption at rest for media assets. EXIF and GPS metadata are stripped prior to storage. Clinical photography consent (`CLINICAL_PHOTOGRAPHY`) strictly governs medical chart photography and is separate from external marketing consent (`MARKETING_PHOTOGRAPHY`).
 
 ---
 

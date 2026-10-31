@@ -1,5 +1,13 @@
 # Lamssa implementation roadmap
 
+## Phase 3
+
+1. **3.1 — Clinical consultations and EMR foundation (implemented):** doctor-assigned encounters, structured history, signed-note immutability, append-only amendments, RLS, audit/privacy controls, and Arabic RTL workflow.
+2. **3.2 — Treatment plans and aesthetic procedures (implemented):** persistent clinic-owned treatment plans, immutable approved revisions, clinic-defined aesthetic procedure catalog, procedure execution drafting with metadata snapshotting, fail-closed consent gate (`VERIFIED_CONSENT_REQUIRED`), doctor-only RBAC, FORCE RLS, optimistic concurrency, and Arabic RTL treatment planning UI.
+3. **3.3 — Informed Consent Forms, Signature Evidence & Procedure Consent Eligibility (implemented):** legal consent templates with immutable published versions, deterministic SHA-256 content digests, digital patient/guardian signature evidence (`DRAWN_BASE64` and `TYPED_CONFIRMATION`) with evidence hash binding, doctor verification workflow, mandatory-reason withdrawal with instant revocation, strict purpose separation (procedure vs clinical photo vs marketing), fail-closed procedure execution gate (`VERIFIED_CONSENT_REQUIRED`), doctor-only RBAC, FORCE RLS, and Arabic RTL UI with printable branded snapshot view.
+4. **3.4 — Clinical Photography & Before/After Media Governance (implemented):** private encrypted-at-rest media storage (`AES-256-GCM`), strict `CLINICAL_PHOTOGRAPHY` consent enforcement and purpose separation, Sharp image processing with decompression bomb limits and EXIF stripping, canonical WebP masters and thumbnails, database trigger guards (`clinical_photo_guard`), doctor-only RBAC, FORCE RLS, non-destructive annotations, interactive split-slider comparisons, optimistic concurrency archival, and Arabic RTL UI.
+5. **3.5 — Aesthetic Packages, Memberships & Clinical Continuity (next):** procedure bundling, session redemption, and longitudinal clinical outcomes.
+
 Updated after Step 1.9, 2026-10-26. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All
 production use remains gated on authentication, isolation and operational controls.
@@ -177,6 +185,36 @@ production use remains gated on authentication, isolation and operational contro
     immutable copies and jurisdictional approval require explicit owner action.
     See [deployment.md](deployment.md) and
     [production-readiness-checklist.md](production-readiness-checklist.md).
+
+16. **3.1 — Clinical Records, Consultations & Medical History (implemented).**
+    Consultation encounters, signed clinical notes, attributable amendments, medical history,
+    doctor-only RBAC, composite foreign keys `(clinicId, id)`, `FORCE ROW LEVEL SECURITY`, and database immutability triggers.
+    See [clinical-records.md](clinical-records.md).
+
+17. **3.2 — Treatment Plans & Aesthetic Procedures (implemented).**
+    Clinic-specific procedure catalogs, versioned treatment plans, immutable approved revisions,
+    procedure executions, and fail-closed consent eligibility gates.
+    See [treatment-plans.md](treatment-plans.md).
+
+18. **3.3 — Informed Consent Forms, Signature Evidence & Consent Eligibility (implemented).**
+    Versioned consent templates with SHA-256 digests, cryptographic signature evidence capture,
+    strict purpose separation (`PROCEDURE`, `CLINICAL_PHOTOGRAPHY`, `MARKETING_PHOTOGRAPHY`),
+    and live transactional eligibility checks blocking unconsented procedure executions.
+    See [informed-consent.md](informed-consent.md).
+
+19. **3.4 — Secure Before-and-After Clinical Photography (implemented).**
+    Private media vault with AES-256-GCM encryption at rest, Sharp normalization to WebP,
+    EXIF metadata stripping, photo comparison groups, and doctor-only delivery under active consent.
+    See [clinical-photography.md](clinical-photography.md).
+
+20. **3.5 — Clinical Follow-ups, Recovery Monitoring & Treatment Outcomes (implemented).**
+    Post-procedure follow-up lifecycle (`SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `MISSED`) with
+    terminal status immutability, digitally signed clinical assessments (deterministic SHA-256 signatures),
+    attributable amendments preserving original records, objective outcome measurement scales
+    (`VISUAL_ANALOG_SCALE_10`, `PATIENT_SATISFACTION_5_POINT`, `CLINICAL_GLOBAL_IMPRESSION`, `STRUCTURED_OBSERVATION`),
+    adverse events tracking with severity and resolution lifecycles, doctor-only RBAC, composite FKs,
+    and database guard triggers blocking deletions and modifications.
+    See [clinical-follow-ups.md](clinical-follow-ups.md).
 
 ## Migration discipline
 
