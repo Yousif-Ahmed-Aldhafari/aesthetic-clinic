@@ -139,6 +139,18 @@ after(async () => {
       await ownerDb.$executeRawUnsafe('ALTER TABLE public."TreatmentPlanItem" DISABLE TRIGGER treatment_item_guard').catch(() => {});
       await ownerDb.$executeRawUnsafe('ALTER TABLE public."TreatmentPlan" DISABLE TRIGGER treatment_plan_guard').catch(() => {});
 
+      await ownerDb.inventoryAlertAcknowledgment.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryStockCountItem.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryStockCount.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryStockCountCounter.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryGoodsReceiptLine.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryGoodsReceipt.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryGoodsReceiptCounter.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryPurchaseOrderLine.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryPurchaseOrder.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryPurchaseOrderCounter.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventorySupplier.deleteMany({ where: { clinicId: { in: clinics } } });
+
       await ownerDb.inventoryClinicalConsumption.deleteMany({ where: { clinicId: { in: clinics } } });
       await ownerDb.inventoryBatchBalance.deleteMany({ where: { clinicId: { in: clinics } } });
       await ownerDb.inventoryStockMovement.deleteMany({ where: { clinicId: { in: clinics } } });
@@ -1233,19 +1245,20 @@ live('clinical consumption: atomic stock deduction, consent eligibility, doctor 
   // Confidentiality projection: notes property is omitted or undefined for inventory-only role
   assert.equal(adminConsData.items[0].notes, undefined);
 
-  // 7. Doctor voids clinical consumption with valid reason
+  // 7. Doctor voids clinical consumption with genuine unopened return
   const voidRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consumption.id}/void`), 'POST', {
-    reason: 'تم إلغاء الجلسة بعد الفتح واسترجاع الفيال السليم',
+    reason: 'تم إلغاء الجلسة واسترجاع الفيال السليم غير المفتوح',
+    restockAction: 'RESTOCK_UNOPENED',
   });
   assert.equal(voidRes.status, 201);
   const voided = (await voidRes.json()) as any;
   assert.equal(voided.status, 'VOIDED');
-  assert.equal(voided.voidReason, 'تم إلغاء الجلسة بعد الفتح واسترجاع الفيال السليم');
+  assert.equal(voided.voidReason, 'تم إلغاء الجلسة واسترجاع الفيال السليم غير المفتوح');
 
-  // Stock is restored by 1.2: 8.8 + 1.2 = 10
+  // Stock is restored ONLY by administered quantity (1.0000), waste (0.2000) is NEVER restocked: 8.8 + 1.0 = 9.8
   const restoredBal = await admin.request(admin.path(0, `/stock/balances?productId=${prod.id}&locationId=${loc.id}`));
   const [restoredRow] = (await restoredBal.json()) as any[];
-  assert.equal(restoredRow.onHandQuantity, '10');
+  assert.equal(restoredRow.onHandQuantity, '9.8');
 
   // Attempting to void again is rejected
   const voidAgainRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consumption.id}/void`), 'POST', {
@@ -1309,6 +1322,540 @@ live('database immutability and integrity triggers on batches, batch balances, a
           return true;
         },
       );
+    }
+  } finally {
+    await ownerClient.end().catch(() => {});
+  }
+});
+
+// =============================================================================
+// Phase 4 Step 4.3: Suppliers, Purchasing & Inventory Operations
+// =============================================================================
+
+live('inventory: supplier management: registration, uniqueness, tenant isolation, and updates', async () => {
+  const admin = await new Browser().login(1, 0);
+  const doctor = await new Browser().login(2, 0);
+
+  // 1. Clinic A creates a supplier
+  const docSupRes = await doctor.request(doctor.path(0, '/suppliers'), 'POST', {
+    code: 'DOC-SUP',
+    nameAr: 'طبيب يحاول إضافة مورد',
+  });
+  assert.equal(docSupRes.status, 403);
+
+  const supRes = await admin.request(admin.path(0, '/suppliers'), 'POST', {
+    code: `SUP-ALLERGAN-${suffix.slice(0, 6)}`,
+    nameAr: 'شركة أليرجان للأدوية والمستحضرات',
+    nameEn: 'Allergan Pharmaceuticals',
+    contactPerson: 'د. خالد العمري',
+    email: 'khaled@allergan-example.com',
+    phone: '+967771234567',
+    taxNumber: '300123456700003',
+    commercialRegister: '1010123456',
+    notes: 'المورد الرئيسي لمستحضرات البوتوكس والفيلر',
+  });
+  assert.equal(supRes.status, 201);
+  const supplier = (await supRes.json()) as any;
+  assert.equal(supplier.code, `SUP-ALLERGAN-${suffix.slice(0, 6).toUpperCase()}`);
+  assert.equal(supplier.nameAr, 'شركة أليرجان للأدوية والمستحضرات');
+  assert.equal(supplier.status, 'ACTIVE');
+
+  // 2. Duplicate supplier code within Clinic A is rejected (409)
+  const dupRes = await admin.request(admin.path(0, '/suppliers'), 'POST', {
+    code: `SUP-ALLERGAN-${suffix.slice(0, 6)}`,
+    nameAr: 'شركة أخرى بنفس الرمز',
+  });
+  assert.equal(dupRes.status, 409);
+
+  // 3. Multi-tenant isolation: Clinic B can use the same supplier code independently
+  const adminClinic1 = await new Browser().login(1, 1);
+  const clinicBSupRes = await adminClinic1.request(adminClinic1.path(1, '/suppliers'), 'POST', {
+    code: `SUP-ALLERGAN-${suffix.slice(0, 6)}`,
+    nameAr: 'شركة أليرجان فرع العيادة الثانية',
+  });
+  assert.equal(clinicBSupRes.status, 201);
+  const clinicBSupplier = (await clinicBSupRes.json()) as any;
+  assert.notEqual(clinicBSupplier.id, supplier.id);
+
+  // Clinic B cannot read Clinic A's supplier
+  const crossGet = await adminClinic1.request(adminClinic1.path(1, `/suppliers/${supplier.id}`));
+  assert.equal(crossGet.status, 404);
+
+  // 4. Update supplier details
+  const updateRes = await admin.request(admin.path(0, `/suppliers/${supplier.id}`), 'PATCH', {
+    expectedVersion: supplier.version,
+    contactPerson: 'د. عمار السقاف',
+    phone: '+967779876543',
+  });
+  assert.equal(updateRes.status, 200);
+  const updated = (await updateRes.json()) as any;
+  assert.equal(updated.contactPerson, 'د. عمار السقاف');
+  assert.equal(updated.version, supplier.version + 1);
+
+  // Stale version update is rejected (409)
+  const staleRes = await admin.request(admin.path(0, `/suppliers/${supplier.id}`), 'PATCH', {
+    expectedVersion: supplier.version,
+    contactPerson: 'محاولة تعديل قديمة',
+  });
+  assert.equal(staleRes.status, 409);
+
+  // 5. List suppliers with search and status filters
+  const listRes = await admin.request(admin.path(0, `/suppliers?search=أليرجان`));
+  assert.equal(listRes.status, 200);
+  const listData = (await listRes.json()) as any;
+  assert(listData.items.some((s: any) => s.id === supplier.id));
+});
+
+live('inventory: purchase orders: lifecycle DRAFT -> SUBMITTED -> APPROVED, multi-line financial math, and immutability', async () => {
+  const admin = await new Browser().login(1, 0);
+  const doctor = await new Browser().login(2, 0);
+
+  // 1. Setup supplier, destination location and two products
+  const supRes = await admin.request(admin.path(0, '/suppliers'), 'POST', {
+    code: `SUP-PO-${suffix.slice(0, 6)}`,
+    nameAr: 'مورد أجهزة ومواد طبية',
+  });
+  const supplier = (await supRes.json()) as any;
+
+  const locRes = await admin.request(admin.path(0, '/locations'), 'POST', {
+    code: `LOC-PO-${suffix.slice(0, 6)}`,
+    nameAr: 'مستودع التوريدات المركزي',
+  });
+  const location = (await locRes.json()) as any;
+
+  const p1Res = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `PO-PROD1-${suffix.slice(0, 6)}`,
+    nameAr: 'فيلر جوفيديرم الترا',
+    category: 'INJECTABLE',
+    unit: 'SYRINGE',
+    requiresBatchTracking: true,
+  });
+  const prod1 = (await p1Res.json()) as any;
+
+  const p2Res = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `PO-PROD2-${suffix.slice(0, 6)}`,
+    nameAr: 'كريم مخدر موضعي بريلوكائين',
+    category: 'CONSUMABLE',
+    unit: 'PIECE',
+    requiresBatchTracking: false,
+  });
+  const prod2 = (await p2Res.json()) as any;
+
+  // 2. Create Purchase Order in DRAFT
+  // Line 1: 20 syringes @ 150.0000 each + 15% VAT = 3000 + 450 = 3450
+  // Line 2: 10 tubes @ 25.0000 each + 15% VAT = 250 + 37.5 = 287.5
+  // Subtotal = 3250.0000, Tax = 487.5000, Total = 3737.5000
+  const poRes = await admin.request(admin.path(0, '/purchase-orders'), 'POST', {
+    supplierId: supplier.id,
+    destinationLocationId: location.id,
+    currency: 'YER',
+    expectedDeliveryDate: '2027-01-15',
+    notes: 'طلبية الربع الأول التجميلية',
+    lines: [
+      {
+        productId: prod1.id,
+        orderedQuantity: '20.0000',
+        unitCost: '150.0000',
+        taxRate: '0.1500',
+      },
+      {
+        productId: prod2.id,
+        orderedQuantity: '10.0000',
+        unitCost: '25.0000',
+        taxRate: '0.1500',
+      },
+    ],
+  });
+  assert.equal(poRes.status, 201);
+  const po = (await poRes.json()) as any;
+  assert.equal(po.status, 'DRAFT');
+  assert(po.orderNumber.startsWith('PO-'));
+  assert.equal(po.subtotal, '3250');
+  assert.equal(po.taxAmount, '487.5');
+  assert.equal(po.totalAmount, '3737.5');
+  assert.equal(po.lines.length, 2);
+
+  // 3. Submit Purchase Order
+  const submitRes = await admin.request(admin.path(0, `/purchase-orders/${po.id}/submit`), 'POST', {
+    expectedVersion: po.version,
+  });
+  assert.equal(submitRes.status, 201);
+  const submittedPo = (await submitRes.json()) as any;
+  assert.equal(submittedPo.status, 'SUBMITTED');
+
+  // Doctor cannot approve PO (forbidden)
+  const docApprove = await doctor.request(doctor.path(0, `/purchase-orders/${po.id}/approve`), 'POST', {
+    expectedVersion: submittedPo.version,
+  });
+  assert.equal(docApprove.status, 403);
+
+  // 4. Admin approves Purchase Order
+  const approveRes = await admin.request(admin.path(0, `/purchase-orders/${po.id}/approve`), 'POST', {
+    expectedVersion: submittedPo.version,
+  });
+  assert.equal(approveRes.status, 201);
+  const approvedPo = (await approveRes.json()) as any;
+  assert.equal(approvedPo.status, 'APPROVED');
+
+  // 5. Approved PO lines are immutable (cannot update or delete lines)
+  const updateApproved = await admin.request(admin.path(0, `/purchase-orders/${po.id}`), 'PATCH', {
+    expectedVersion: approvedPo.version,
+    lines: [
+      {
+        productId: prod1.id,
+        orderedQuantity: '50.0000',
+        unitCost: '100.0000',
+      },
+    ],
+  });
+  assert.equal(updateApproved.status, 400);
+});
+
+live('inventory: goods receiving: partial delivery, batch creation, ledger posting, and over-receipt prevention', async () => {
+  const admin = await new Browser().login(1, 0);
+  const doctor = await new Browser().login(2, 0);
+
+  // 1. Setup PO with approved status
+  const supRes = await admin.request(admin.path(0, '/suppliers'), 'POST', {
+    code: `SUP-GR-${suffix.slice(0, 6)}`,
+    nameAr: 'مورد توريد واستلام',
+  });
+  const supplier = (await supRes.json()) as any;
+
+  const locRes = await admin.request(admin.path(0, '/locations'), 'POST', {
+    code: `LOC-GR-${suffix.slice(0, 6)}`,
+    nameAr: 'صيدلية العيادة',
+  });
+  const location = (await locRes.json()) as any;
+
+  const prodRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `GR-BTX-${suffix.slice(0, 6)}`,
+    nameAr: 'ديسبورت 300 وحدة',
+    category: 'INJECTABLE',
+    unit: 'VIAL',
+    requiresBatchTracking: true,
+  });
+  const product = (await prodRes.json()) as any;
+
+  const poRes = await admin.request(admin.path(0, '/purchase-orders'), 'POST', {
+    supplierId: supplier.id,
+    destinationLocationId: location.id,
+    currency: 'YER',
+    lines: [
+      {
+        productId: product.id,
+        orderedQuantity: '10.0000',
+        unitCost: '200.0000',
+        taxRate: '0.1500',
+      },
+    ],
+  });
+  const po = (await poRes.json()) as any;
+  await admin.request(admin.path(0, `/purchase-orders/${po.id}/submit`), 'POST', { expectedVersion: po.version });
+  await admin.request(admin.path(0, `/purchase-orders/${po.id}/approve`), 'POST', { expectedVersion: po.version + 1 });
+
+  // Doctor cannot record goods receipt (403)
+  const docGrRes = await doctor.request(doctor.path(0, '/goods-receipts'), 'POST', {
+    purchaseOrderId: po.id,
+    lines: [],
+  });
+  assert.equal(docGrRes.status, 403);
+
+  // 2. Delivery 1: Partial delivery of 6 vials with batch capture
+  const gr1Res = await admin.request(admin.path(0, '/goods-receipts'), 'POST', {
+    purchaseOrderId: po.id,
+    deliveryNoteNumber: `DN-${suffix.slice(0, 6)}`,
+    lines: [
+      {
+        purchaseOrderLineId: po.lines[0].id,
+        receivedQuantity: '6.0000',
+        batchNumber: `LOT-DYSP-${suffix.slice(0, 6)}`,
+        expirationDate: '2028-06-30',
+        disposition: 'ACCEPTED',
+      },
+    ],
+  });
+  assert.equal(gr1Res.status, 201);
+  const gr1 = (await gr1Res.json()) as any;
+  assert(gr1.receiptNumber.startsWith('GR-'));
+  assert.equal(gr1.lines[0].receivedQuantity, '6');
+  assert(gr1.lines[0].batchId, 'Batch record must be created for batch-tracked product');
+
+  // Verify PO transitioned to PARTIALLY_RECEIVED
+  const checkPo1 = await admin.request(admin.path(0, `/purchase-orders/${po.id}`));
+  const poData1 = (await checkPo1.json()) as any;
+  assert.equal(poData1.status, 'PARTIALLY_RECEIVED');
+
+  // Verify stock balance updated to 6
+  const balRes1 = await admin.request(admin.path(0, `/stock/balances?productId=${product.id}&locationId=${location.id}`));
+  const [balRow1] = (await balRes1.json()) as any[];
+  assert.equal(balRow1.onHandQuantity, '6');
+
+  // 3. Over-receipt attempt: trying to receive 5 more when only 4 remain (6 + 5 = 11 > 10)
+  const overReceiptRes = await admin.request(admin.path(0, '/goods-receipts'), 'POST', {
+    purchaseOrderId: po.id,
+    lines: [
+      {
+        purchaseOrderLineId: po.lines[0].id,
+        receivedQuantity: '5.0000',
+        batchNumber: `LOT-DYSP-${suffix.slice(0, 6)}`,
+        expirationDate: '2028-06-30',
+      },
+    ],
+  });
+  assert.equal(overReceiptRes.status, 400);
+
+  // 4. Delivery 2: Final delivery of remaining 4 vials completes the PO
+  const gr2Res = await admin.request(admin.path(0, '/goods-receipts'), 'POST', {
+    purchaseOrderId: po.id,
+    lines: [
+      {
+        purchaseOrderLineId: po.lines[0].id,
+        receivedQuantity: '4.0000',
+        batchNumber: `LOT-DYSP-${suffix.slice(0, 6)}`,
+        expirationDate: '2028-06-30',
+        disposition: 'ACCEPTED',
+      },
+    ],
+  });
+  assert.equal(gr2Res.status, 201);
+
+  // Verify PO is now RECEIVED
+  const checkPo2 = await admin.request(admin.path(0, `/purchase-orders/${po.id}`));
+  const poData2 = (await checkPo2.json()) as any;
+  assert.equal(poData2.status, 'RECEIVED');
+
+  // Verify stock balance is now 10
+  const balRes2 = await admin.request(admin.path(0, `/stock/balances?productId=${product.id}&locationId=${location.id}`));
+  const [balRow2] = (await balRes2.json()) as any[];
+  assert.equal(balRow2.onHandQuantity, '10');
+});
+
+live('inventory: physical stocktaking: snapshotting, variance entry, and compensating reconciliation', async () => {
+  const admin = await new Browser().login(1, 0);
+  const doctor = await new Browser().login(2, 0);
+
+  // 1. Setup location and product with known stock
+  const locRes = await admin.request(admin.path(0, '/locations'), 'POST', {
+    code: `LOC-ST-${suffix.slice(0, 6)}`,
+    nameAr: 'غرفة جرد المنتجات',
+  });
+  const location = (await locRes.json()) as any;
+
+  const prodRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `ST-PROD-${suffix.slice(0, 6)}`,
+    nameAr: 'شاش معقم غير منسوج',
+    category: 'CONSUMABLE',
+    unit: 'BOX',
+    requiresBatchTracking: false,
+  });
+  const product = (await prodRes.json()) as any;
+
+  // Add opening balance of 50 packs
+  await admin.request(admin.path(0, '/stock/opening-balance'), 'POST', {
+    productId: product.id,
+    locationId: location.id,
+    quantity: '50.0000',
+  });
+
+  // Doctor cannot create stock count (403)
+  const docScRes = await doctor.request(doctor.path(0, '/stock-counts'), 'POST', {
+    locationId: location.id,
+  });
+  assert.equal(docScRes.status, 403);
+
+  // 2. Create Stock Count session
+  const countRes = await admin.request(admin.path(0, '/stock-counts'), 'POST', {
+    locationId: location.id,
+    notes: 'جرد شهري دوري لغرفة المواد المستهلكة',
+    productIds: [product.id],
+  });
+  assert.equal(countRes.status, 201);
+  const stockCount = (await countRes.json()) as any;
+  assert.equal(stockCount.status, 'DRAFT');
+  assert(stockCount.countNumber.startsWith('SC-'));
+  assert.equal(stockCount.items.length, 1);
+  assert.equal(stockCount.items[0].systemQuantity, '50');
+
+  // 3. Record physical count: observed 46 packs (deficit of 4 packs, variance = -4)
+  const recordRes = await admin.request(admin.path(0, `/stock-counts/${stockCount.id}/items`), 'POST', {
+    expectedVersion: stockCount.version,
+    items: [
+      {
+        productId: product.id,
+        countedQuantity: '46.0000',
+        discrepancyReason: 'تلف عبوات أثناء النقل',
+      },
+    ],
+  });
+  assert.equal(recordRes.status, 201);
+  const submittedCount = (await recordRes.json()) as any;
+  assert.equal(submittedCount.status, 'SUBMITTED');
+  assert.equal(submittedCount.items[0].countedQuantity, '46');
+  assert.equal(submittedCount.items[0].varianceQuantity, '-4');
+
+  // 4. Reconcile Stock Count: posts atomic compensating adjustment
+  const reconcileRes = await admin.request(admin.path(0, `/stock-counts/${stockCount.id}/reconcile`), 'POST', {
+    expectedVersion: submittedCount.version,
+    notes: 'تم اعتماد تسوية الفاقد',
+  });
+  assert.equal(reconcileRes.status, 201);
+  const reconciled = (await reconcileRes.json()) as any;
+  assert.equal(reconciled.status, 'RECONCILED');
+
+  // Verify stock balance adjusted from 50 to 46
+  const balRes = await admin.request(admin.path(0, `/stock/balances?productId=${product.id}&locationId=${location.id}`));
+  const [balRow] = (await balRes.json()) as any[];
+  assert.equal(balRow.onHandQuantity, '46');
+
+  // Reconciled stock count cannot be reconciled again (409)
+  const reconcileAgain = await admin.request(admin.path(0, `/stock-counts/${stockCount.id}/reconcile`), 'POST', {
+    expectedVersion: reconciled.version,
+  });
+  assert.equal(reconcileAgain.status, 409);
+});
+
+live('inventory: alerts and operational notifications: derivation and snoozing', async () => {
+  const admin = await new Browser().login(1, 0);
+  const doctor = await new Browser().login(2, 0);
+
+  // 1. Setup product with reorder threshold 20, but stock is 5 (triggers LOW_STOCK)
+  const locRes = await admin.request(admin.path(0, '/locations'), 'POST', {
+    code: `LOC-AL-${suffix.slice(0, 6)}`,
+    nameAr: 'مستودع التنبيهات',
+  });
+  const location = (await locRes.json()) as any;
+
+  const lowProdRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `AL-LOW-${suffix.slice(0, 6)}`,
+    nameAr: 'خيوط شد جراحية بولي ديوكسانون',
+    category: 'CONSUMABLE',
+    unit: 'BOX',
+    reorderThreshold: '20.0000',
+  });
+  const lowProduct = (await lowProdRes.json()) as any;
+
+  await admin.request(admin.path(0, '/stock/opening-balance'), 'POST', {
+    productId: lowProduct.id,
+    locationId: location.id,
+    quantity: '5.0000',
+  });
+
+  // 2. Fetch inventory alerts
+  const alertsRes = await admin.request(admin.path(0, '/alerts'));
+  assert.equal(alertsRes.status, 200);
+  const alertData = (await alertsRes.json()) as any;
+  assert(alertData.summary.total >= 1);
+  const lowStockAlert = alertData.items.find((a: any) => a.targetId === lowProduct.id && a.alertType === 'LOW_STOCK');
+  assert(lowStockAlert, 'Must identify product below reorder threshold');
+  assert.equal(lowStockAlert.severity, 'WARNING');
+
+  // Doctor cannot acknowledge alerts (403)
+  const docAckRes = await doctor.request(doctor.path(0, '/alerts/acknowledge'), 'POST', {
+    alertType: 'LOW_STOCK',
+    targetType: 'PRODUCT',
+    targetId: lowProduct.id,
+  });
+  assert.equal(docAckRes.status, 403);
+
+  // 3. Acknowledge and snooze alert for 7 days
+  const futureSnooze = new Date(Date.now() + 7 * 86400000).toISOString();
+  const ackRes = await admin.request(admin.path(0, '/alerts/acknowledge'), 'POST', {
+    alertType: 'LOW_STOCK',
+    targetType: 'PRODUCT',
+    targetId: lowProduct.id,
+    snoozedUntil: futureSnooze,
+    notes: 'تم إصدار أمر شراء بالمتبقي',
+  });
+  assert.equal(ackRes.status, 201);
+
+  // 4. Alert is now snoozed and excluded from active alerts list
+  const refreshedAlerts = await admin.request(admin.path(0, '/alerts'));
+  const refreshedData = (await refreshedAlerts.json()) as any;
+  const snoozedAlert = refreshedData.items.find((a: any) => a.targetId === lowProduct.id && a.alertType === 'LOW_STOCK');
+  assert.equal(snoozedAlert, undefined, 'Snoozed alert must not appear in active inventory alerts');
+});
+
+live('inventory: security hardening: direct SQL bypass triggers on balances, po lines, and consumption insert guard', async () => {
+  const migrationUrl = process.env.TEST_MIGRATION_DATABASE_URL;
+  if (!migrationUrl) return;
+
+  const ownerClient = new pg.Client({ connectionString: migrationUrl });
+  await ownerClient.connect();
+
+  try {
+    // 1. Direct DELETE on InventoryBalance is blocked by inventory_balance_integrity_guard
+    const balRow = await ownerClient.query(
+      `SELECT id FROM public."InventoryBalance" WHERE "clinicId" = $1 LIMIT 1`,
+      [clinics[0]],
+    );
+    if (balRow.rows.length > 0) {
+      await assert.rejects(
+        ownerClient.query(`DELETE FROM public."InventoryBalance" WHERE id = $1`, [balRow.rows[0].id]),
+        (err: any) => {
+          assert(err.message.includes('Inventory balances cannot be deleted'));
+          assert.equal(err.code, '42501');
+          return true;
+        },
+      );
+    }
+
+    // 2. Direct UPDATE modifying productId or locationId on InventoryBalance is blocked
+    if (balRow.rows.length > 0) {
+      await assert.rejects(
+        ownerClient.query(`UPDATE public."InventoryBalance" SET "productId" = $1 WHERE id = $2`, [randomUUID(), balRow.rows[0].id]),
+        (err: any) => {
+          assert(err.message.includes('Product and location identities on balance records cannot be modified'));
+          assert.equal(err.code, '42501');
+          return true;
+        },
+      );
+    }
+
+    // 3. Direct SQL insert of clinical consumption with a RECALLED batch is blocked by trigger
+    // Create a recalled batch directly
+    const recalledBatchId = randomUUID();
+    const prodRow = await ownerClient.query(
+      `SELECT id FROM public."InventoryProduct" WHERE "clinicId" = $1 LIMIT 1`,
+      [clinics[0]],
+    );
+    const locRow = await ownerClient.query(
+      `SELECT id FROM public."InventoryLocation" WHERE "clinicId" = $1 LIMIT 1`,
+      [clinics[0]],
+    );
+
+    if (prodRow.rows.length > 0 && locRow.rows.length > 0) {
+      await ownerClient.query(
+        `INSERT INTO public."InventoryBatch" (id, "clinicId", "productId", "batchNumber", "expirationDate", status, "initialQuantity", "updatedAt")
+         VALUES ($1, $2, $3, $4, '2028-12-31', 'RECALLED', 10, NOW())`,
+        [recalledBatchId, clinics[0], prodRow.rows[0].id, `RECALLED-${suffix.slice(0, 6)}`],
+      );
+
+      // Attempt direct SQL INSERT into InventoryClinicalConsumption referencing this recalled batch
+      const procRow = await ownerClient.query(
+        `SELECT id FROM public."ProcedureExecution" WHERE "clinicId" = $1 LIMIT 1`,
+        [clinics[0]],
+      );
+      const memRow = await ownerClient.query(
+        `SELECT id FROM public."ClinicMembership" WHERE "clinicId" = $1 LIMIT 1`,
+        [clinics[0]],
+      );
+
+      if (procRow.rows.length > 0 && memRow.rows.length > 0) {
+        await assert.rejects(
+          ownerClient.query(
+            `INSERT INTO public."InventoryClinicalConsumption"
+             (id, "clinicId", "procedureExecutionId", "productId", "batchId", "locationId", quantity, "wasteQuantity", unit, status, "actorMembershipId", "updatedAt")
+             VALUES ($1, $2, $3, $4, $5, $6, 1, 0, 'VIAL', 'RECORDED', $7, NOW())`,
+            [randomUUID(), clinics[0], procRow.rows[0].id, prodRow.rows[0].id, recalledBatchId, locRow.rows[0].id, memRow.rows[0].id],
+          ),
+          (err: any) => {
+            assert(err.message.includes('recalled batch'));
+            assert.equal(err.code, '42501');
+            return true;
+          },
+        );
+      }
     }
   } finally {
     await ownerClient.end().catch(() => {});

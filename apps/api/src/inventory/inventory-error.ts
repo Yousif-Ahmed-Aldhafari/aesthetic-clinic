@@ -25,6 +25,19 @@ export const inventoryErrors = {
   INVENTORY_CLINICIAN_MISMATCH: [403, 'غير مصرح: يجب أن يكون الطبيب المعين للإجراء هو من يوثق الاستهلاك.'],
   INVENTORY_CONSENT_REQUIRED: [403, 'يلزم وجود موافقة مستنيرة سارية ومحققة قبل تسجيل استهلاك الإجراء.'],
   INVENTORY_CONSUMPTION_ALREADY_VOIDED: [409, 'تم إلغاء سجل الاستهلاك السريري مسبقًا.'],
+  INVENTORY_DUPLICATE_SUPPLIER_CODE: [409, 'كود المورد مسجل بالفعل في هذه العيادة.'],
+  INVENTORY_SUPPLIER_NOT_FOUND: [404, 'المورد غير موجود.'],
+  INVENTORY_SUPPLIER_INACTIVE: [400, 'المورد غير نشط ولا يمكن إنشاء طلبات شراء له.'],
+  INVENTORY_PURCHASE_ORDER_NOT_FOUND: [404, 'أمر الشراء غير موجود.'],
+  INVENTORY_PURCHASE_ORDER_NOT_DRAFT: [400, 'لا يمكن تعديل أمر الشراء إلا إذا كان في حالة مسودة.'],
+  INVENTORY_PURCHASE_ORDER_NOT_APPROVED: [400, 'لا يمكن استلام البضاعة إلا لأمر شراء معتمد.'],
+  INVENTORY_PURCHASE_ORDER_CLOSED: [400, 'أمر الشراء مغلق أو مكتمل بالفعل.'],
+  INVENTORY_PURCHASE_ORDER_CANNOT_CANCEL: [400, 'لا يمكن إلغاء أمر شراء تم استلام بضائع له أو مغلق.'],
+  INVENTORY_GOODS_RECEIPT_OVER_RECEIPT: [400, 'الكمية المستلمة تتجاوز الكمية المطلوبة في أمر الشراء.'],
+  INVENTORY_GOODS_RECEIPT_NOT_FOUND: [404, 'سند الاستلام غير موجود.'],
+  INVENTORY_STOCK_COUNT_NOT_FOUND: [404, 'جلسة الجرد غير موجودة.'],
+  INVENTORY_STOCK_COUNT_NOT_DRAFT: [400, 'لا يمكن تسجيل الأصناف إلا لجلسة جرد قيد الإجراء.'],
+  INVENTORY_STOCK_COUNT_ALREADY_RECONCILED: [409, 'تمت تسوية جلسة الجرد مسبقًا ولا يمكن تعديلها.'],
 } as const;
 
 export class InventoryError extends HttpException {

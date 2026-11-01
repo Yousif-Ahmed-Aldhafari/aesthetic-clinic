@@ -126,6 +126,17 @@ model Clinic {
   inventoryBatches InventoryBatch[]
   inventoryBatchBalances InventoryBatchBalance[]
   inventoryClinicalConsumptions InventoryClinicalConsumption[]
+  inventorySuppliers InventorySupplier[]
+  inventoryPurchaseOrders InventoryPurchaseOrder[]
+  inventoryPurchaseOrderLines InventoryPurchaseOrderLine[]
+  inventoryPurchaseOrderCounter InventoryPurchaseOrderCounter?
+  inventoryGoodsReceipts InventoryGoodsReceipt[]
+  inventoryGoodsReceiptLines InventoryGoodsReceiptLine[]
+  inventoryGoodsReceiptCounter InventoryGoodsReceiptCounter?
+  inventoryStockCounts InventoryStockCount[]
+  inventoryStockCountItems InventoryStockCountItem[]
+  inventoryStockCountCounter InventoryStockCountCounter?
+  inventoryAlertAcknowledgments InventoryAlertAcknowledgment[]
 
   @@index([status, createdAt])
 }
@@ -278,6 +289,12 @@ model ClinicMembership {
   reportedAdverseEvents AdverseEvent[] @relation("AdverseEventReporter")
   inventoryMovements InventoryStockMovement[] @relation("InventoryActor")
   inventoryConsumptions InventoryClinicalConsumption[] @relation("ConsumptionActor")
+  purchaseOrdersCreated InventoryPurchaseOrder[] @relation("POCreator")
+  purchaseOrdersApproved InventoryPurchaseOrder[] @relation("POApprover")
+  goodsReceiptsReceived InventoryGoodsReceipt[] @relation("GRReceiver")
+  stockCountsCounted InventoryStockCount[] @relation("SCCounter")
+  stockCountsApproved InventoryStockCount[] @relation("SCApprover")
+  alertAcknowledgments InventoryAlertAcknowledgment[]
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -1796,6 +1813,9 @@ model InventoryProduct {
   batches               InventoryBatch[]
   batchBalances         InventoryBatchBalance[]
   clinicalConsumptions  InventoryClinicalConsumption[]
+  purchaseOrderLines    InventoryPurchaseOrderLine[]
+  goodsReceiptLines     InventoryGoodsReceiptLine[]
+  stockCountItems       InventoryStockCountItem[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, sku])
@@ -1822,6 +1842,10 @@ model InventoryLocation {
   balances        InventoryBalance[]
   batchBalances   InventoryBatchBalance[]
   clinicalConsumptions InventoryClinicalConsumption[]
+  destinationPurchaseOrders InventoryPurchaseOrder[]
+  destinationGoodsReceipts  InventoryGoodsReceipt[]
+  goodsReceiptLines         InventoryGoodsReceiptLine[]
+  stockCounts               InventoryStockCount[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, code])
@@ -1838,6 +1862,7 @@ model InventoryBatch {
   initialQuantity  Decimal                 @db.Decimal(12, 4)
   manufacturerName String?                 @db.VarChar(200)
   supplierName     String?                 @db.VarChar(200)
+  supplierId       String?                 @db.Uuid
   quarantinedAt    DateTime?               @db.Timestamptz(3)
   quarantineReason String?                 @db.VarChar(500)
   recalledAt       DateTime?               @db.Timestamptz(3)
@@ -1848,9 +1873,12 @@ model InventoryBatch {
 
   clinic           Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   product          InventoryProduct        @relation(fields: [clinicId, productId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  supplier         InventorySupplier?      @relation(fields: [clinicId, supplierId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   batchBalances    InventoryBatchBalance[]
   movements        InventoryStockMovement[]
   consumptions     InventoryClinicalConsumption[]
+  goodsReceiptLines InventoryGoodsReceiptLine[]
+  stockCountItems  InventoryStockCountItem[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, productId, batchNumber])
@@ -1884,6 +1912,8 @@ model InventoryStockMovement {
   balancesAsLast    InventoryBalance[]    @relation("LastMovement")
   consumptionsAsSource InventoryClinicalConsumption[] @relation("ConsumptionSourceMovement")
   consumptionsAsVoid   InventoryClinicalConsumption[] @relation("ConsumptionVoidMovement")
+  goodsReceiptLines    InventoryGoodsReceiptLine[]
+  stockCountItems      InventoryStockCountItem[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, idempotencyKey])
@@ -1973,4 +2003,284 @@ model InventoryClinicalConsumption {
   @@index([clinicId, batchId])
   @@index([clinicId, productId])
   @@index([clinicId, status, createdAt])
+}
+
+// Phase 4 Step 4.3 — Suppliers, Purchasing & Inventory Operations
+
+enum InventorySupplierStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  REJECTED
+  CANCELLED
+}
+
+enum GoodsReceiptDisposition {
+  ACCEPTED
+  QUARANTINED
+  REJECTED
+}
+
+enum StockCountStatus {
+  DRAFT
+  SUBMITTED
+  RECONCILED
+  CANCELLED
+}
+
+model InventorySupplier {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  clinicId           String                  @db.Uuid
+  code               String                  @db.VarChar(50)
+  nameAr             String                  @db.VarChar(150)
+  nameEn             String?                 @db.VarChar(150)
+  contactPerson      String?                 @db.VarChar(100)
+  email              String?                 @db.VarChar(150)
+  phone              String?                 @db.VarChar(50)
+  address            String?                 @db.Text
+  taxNumber          String?                 @db.VarChar(50)
+  commercialRegister String?                 @db.VarChar(50)
+  status             InventorySupplierStatus @default(ACTIVE)
+  notes              String?                 @db.Text
+  version            Int                     @default(1)
+  createdAt          DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                @updatedAt @db.Timestamptz(3)
+
+  clinic             Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  purchaseOrders     InventoryPurchaseOrder[]
+  goodsReceipts      InventoryGoodsReceipt[]
+  batches            InventoryBatch[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, code])
+  @@index([clinicId, status, createdAt])
+}
+
+model InventoryPurchaseOrder {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  clinicId               String                    @db.Uuid
+  orderNumber            String                    @db.VarChar(50)
+  supplierId             String                    @db.Uuid
+  destinationLocationId  String                    @db.Uuid
+  status                 PurchaseOrderStatus       @default(DRAFT)
+  orderDate              DateTime                  @default(now()) @db.Timestamptz(3)
+  expectedDeliveryDate   String?                   @db.VarChar(10)
+  currency               String                    @db.VarChar(3)
+  subtotal               Decimal                   @default(0) @db.Decimal(12, 4)
+  taxAmount              Decimal                   @default(0) @db.Decimal(12, 4)
+  totalAmount            Decimal                   @default(0) @db.Decimal(12, 4)
+  notes                  String?                   @db.Text
+  rejectionReason        String?                   @db.Text
+  cancellationReason     String?                   @db.Text
+  createdByMembershipId  String                    @db.Uuid
+  approvedByMembershipId String?                   @db.Uuid
+  approvedAt             DateTime?                 @db.Timestamptz(3)
+  closedAt               DateTime?                 @db.Timestamptz(3)
+  version                Int                       @default(1)
+  createdAt              DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  supplier               InventorySupplier         @relation(fields: [clinicId, supplierId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  destinationLocation    InventoryLocation         @relation(fields: [clinicId, destinationLocationId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy              ClinicMembership          @relation("POCreator", fields: [clinicId, createdByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy             ClinicMembership?         @relation("POApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  lines                  InventoryPurchaseOrderLine[]
+  goodsReceipts          InventoryGoodsReceipt[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, orderNumber])
+  @@index([clinicId, status, orderDate])
+  @@index([clinicId, supplierId])
+}
+
+model InventoryPurchaseOrderLine {
+  id               String                 @id @default(uuid()) @db.Uuid
+  clinicId         String                 @db.Uuid
+  purchaseOrderId  String                 @db.Uuid
+  productId        String                 @db.Uuid
+  lineNumber       Int
+  orderedQuantity  Decimal                @db.Decimal(12, 4)
+  receivedQuantity Decimal                @default(0) @db.Decimal(12, 4)
+  unitCost         Decimal                @db.Decimal(12, 4)
+  taxRate          Decimal                @default(0) @db.Decimal(6, 4)
+  totalCost        Decimal                @db.Decimal(12, 4)
+  notes            String?                @db.Text
+  version          Int                    @default(1)
+  createdAt        DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic           Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  purchaseOrder    InventoryPurchaseOrder @relation(fields: [clinicId, purchaseOrderId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  product          InventoryProduct       @relation(fields: [clinicId, productId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  receiptLines     InventoryGoodsReceiptLine[]
+
+  @@unique([clinicId, id])
+  @@unique([purchaseOrderId, lineNumber])
+  @@index([clinicId, productId])
+}
+
+model InventoryPurchaseOrderCounter {
+  id         String   @id @default(uuid()) @db.Uuid
+  clinicId   String   @unique @db.Uuid
+  lastNumber Int      @default(0)
+
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model InventoryGoodsReceipt {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  clinicId               String                    @db.Uuid
+  receiptNumber          String                    @db.VarChar(50)
+  purchaseOrderId        String?                   @db.Uuid
+  supplierId             String                    @db.Uuid
+  destinationLocationId  String                    @db.Uuid
+  receiptDate            DateTime                  @default(now()) @db.Timestamptz(3)
+  supplierInvoiceNumber  String?                   @db.VarChar(100)
+  supplierDeliveryNote   String?                   @db.VarChar(100)
+  receiverMembershipId   String                    @db.Uuid
+  notes                  String?                   @db.Text
+  idempotencyKey         String?                   @db.VarChar(100)
+  version                Int                       @default(1)
+  createdAt              DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  purchaseOrder          InventoryPurchaseOrder?   @relation(fields: [clinicId, purchaseOrderId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  supplier               InventorySupplier         @relation(fields: [clinicId, supplierId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  destinationLocation    InventoryLocation         @relation(fields: [clinicId, destinationLocationId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  receiver               ClinicMembership          @relation("GRReceiver", fields: [clinicId, receiverMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  lines                  InventoryGoodsReceiptLine[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, receiptNumber])
+  @@unique([clinicId, idempotencyKey])
+  @@index([clinicId, supplierId])
+  @@index([clinicId, receiptDate])
+}
+
+model InventoryGoodsReceiptLine {
+  id                  String                     @id @default(uuid()) @db.Uuid
+  clinicId            String                     @db.Uuid
+  receiptId           String                     @db.Uuid
+  purchaseOrderLineId String?                    @db.Uuid
+  productId           String                     @db.Uuid
+  batchId             String?                    @db.Uuid
+  locationId          String                     @db.Uuid
+  receivedQuantity    Decimal                    @db.Decimal(12, 4)
+  rejectedQuantity    Decimal                    @default(0) @db.Decimal(12, 4)
+  rejectionReason     String?                    @db.Text
+  unitCost            Decimal                    @db.Decimal(12, 4)
+  disposition         GoodsReceiptDisposition    @default(ACCEPTED)
+  movementId          String?                    @db.Uuid
+  version             Int                        @default(1)
+  createdAt           DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                   @updatedAt @db.Timestamptz(3)
+
+  clinic              Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  receipt             InventoryGoodsReceipt      @relation(fields: [clinicId, receiptId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  purchaseOrderLine   InventoryPurchaseOrderLine? @relation(fields: [clinicId, purchaseOrderLineId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  product             InventoryProduct           @relation(fields: [clinicId, productId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  batch               InventoryBatch?            @relation(fields: [clinicId, batchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  location            InventoryLocation          @relation(fields: [clinicId, locationId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  movement            InventoryStockMovement?    @relation(fields: [clinicId, movementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, productId])
+  @@index([clinicId, receiptId])
+}
+
+model InventoryGoodsReceiptCounter {
+  id         String   @id @default(uuid()) @db.Uuid
+  clinicId   String   @unique @db.Uuid
+  lastNumber Int      @default(0)
+
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model InventoryStockCount {
+  id                     String                 @id @default(uuid()) @db.Uuid
+  clinicId               String                 @db.Uuid
+  countNumber            String                 @db.VarChar(50)
+  locationId             String                 @db.Uuid
+  status                 StockCountStatus       @default(DRAFT)
+  countDate              DateTime               @default(now()) @db.Timestamptz(3)
+  counterMembershipId    String                 @db.Uuid
+  approvedByMembershipId String?                @db.Uuid
+  approvedAt             DateTime?              @db.Timestamptz(3)
+  notes                  String?                @db.Text
+  version                Int                    @default(1)
+  createdAt              DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  location               InventoryLocation      @relation(fields: [clinicId, locationId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  counter                ClinicMembership       @relation("SCCounter", fields: [clinicId, counterMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy             ClinicMembership?      @relation("SCApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  items                  InventoryStockCountItem[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, countNumber])
+  @@index([clinicId, locationId, status])
+}
+
+model InventoryStockCountItem {
+  id                String              @id @default(uuid()) @db.Uuid
+  clinicId          String              @db.Uuid
+  stockCountId      String              @db.Uuid
+  productId         String              @db.Uuid
+  batchId           String?             @db.Uuid
+  systemQuantity    Decimal             @db.Decimal(12, 4)
+  countedQuantity   Decimal             @db.Decimal(12, 4)
+  varianceQuantity  Decimal             @db.Decimal(12, 4)
+  discrepancyReason String?             @db.Text
+  movementId        String?             @db.Uuid
+  version           Int                 @default(1)
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
+
+  clinic            Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  stockCount        InventoryStockCount @relation(fields: [clinicId, stockCountId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  product           InventoryProduct    @relation(fields: [clinicId, productId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  batch             InventoryBatch?     @relation(fields: [clinicId, batchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  movement          InventoryStockMovement? @relation(fields: [clinicId, movementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, productId])
+  @@index([clinicId, stockCountId])
+}
+
+model InventoryStockCountCounter {
+  id         String   @id @default(uuid()) @db.Uuid
+  clinicId   String   @unique @db.Uuid
+  lastNumber Int      @default(0)
+
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model InventoryAlertAcknowledgment {
+  id                         String           @id @default(uuid()) @db.Uuid
+  clinicId                   String           @db.Uuid
+  alertKey                   String           @db.VarChar(150)
+  acknowledgedByMembershipId String           @db.Uuid
+  acknowledgedAt             DateTime         @default(now()) @db.Timestamptz(3)
+  dismissedUntil             DateTime?        @db.Timestamptz(3)
+  notes                      String?          @db.Text
+  version                    Int              @default(1)
+  createdAt                  DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime         @updatedAt @db.Timestamptz(3)
+
+  clinic                     Clinic           @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  acknowledgedBy             ClinicMembership @relation(fields: [clinicId, acknowledgedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, alertKey])
 }

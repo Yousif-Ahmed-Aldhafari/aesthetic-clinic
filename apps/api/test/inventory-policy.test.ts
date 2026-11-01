@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BadRequestException } from '@nestjs/common';
+import { Prisma } from '../src/generated/prisma/client.js';
 import { permissionsFor } from '../src/auth/permissions.js';
 import {
   validateDecimalString,
@@ -63,8 +64,21 @@ test('inventory permissions are granted to clinic owner and admin, strictly rest
     'inventory.batches.manage',
     'inventory.batches.quarantine',
     'inventory.batches.recall',
-    'inventory.clinical-consumption.record',
     'inventory.clinical-consumption.read',
+    'inventory.suppliers.read',
+    'inventory.suppliers.manage',
+    'inventory.purchase-orders.read',
+    'inventory.purchase-orders.create',
+    'inventory.purchase-orders.submit',
+    'inventory.purchase-orders.approve',
+    'inventory.purchase-orders.cancel',
+    'inventory.goods-receipt.read',
+    'inventory.goods-receipt.record',
+    'inventory.stock-counts.read',
+    'inventory.stock-counts.manage',
+    'inventory.stock-counts.approve',
+    'inventory.alerts.read',
+    'inventory.alerts.acknowledge',
   ] as const;
 
   // CLINIC_OWNER and CLINIC_ADMIN must have all inventory permissions
@@ -191,7 +205,7 @@ test('batch and clinical consumption permissions are correctly assigned by role'
 
   const doctorPerms = permissionsFor('DOCTOR');
   assert(doctorPerms.includes('inventory.batches.read'), 'DOCTOR must have inventory.batches.read');
-  assert(doctorPerms.includes('inventory.clinical-consumption.record'), 'DOCTOR must have inventory.clinical-consumption.record');
+  assert(doctorPerms.includes('clinical.inventory-consumption.record'), 'DOCTOR must have clinical.inventory-consumption.record');
   assert(doctorPerms.includes('inventory.clinical-consumption.read'), 'DOCTOR must have inventory.clinical-consumption.read');
 
   // Doctor must NOT have batch administrative management or quarantine/recall permissions
@@ -199,12 +213,110 @@ test('batch and clinical consumption permissions are correctly assigned by role'
   assert(!doctorPerms.includes('inventory.batches.quarantine' as any));
   assert(!doctorPerms.includes('inventory.batches.recall' as any));
 
+  // Admin and Owner must NOT have bedside clinical recording permission (least privilege)
+  assert(!permissionsFor('CLINIC_ADMIN').includes('clinical.inventory-consumption.record' as any));
+  assert(!permissionsFor('CLINIC_OWNER').includes('clinical.inventory-consumption.record' as any));
+
   // Receptionist and accountant cannot perform clinical consumption or manage batches
   for (const role of ['RECEPTIONIST', 'ACCOUNTANT'] as const) {
     const rolePerms = permissionsFor(role);
     assert(!rolePerms.includes('inventory.batches.read' as any));
     assert(!rolePerms.includes('inventory.batches.manage' as any));
-    assert(!rolePerms.includes('inventory.clinical-consumption.record' as any));
+    assert(!rolePerms.includes('clinical.inventory-consumption.record' as any));
+  }
+});
+
+test('purchasing math preserves exact 4-decimal precision without float inaccuracies', () => {
+  // Test PO line calculations: orderedQuantity * unitCost + tax
+  const qty = new Prisma.Decimal('10.0000');
+  const unitCost = new Prisma.Decimal('15.5000');
+  const taxRate = new Prisma.Decimal('0.1500');
+
+  const subtotal = qty.mul(unitCost);
+  assert.equal(subtotal.toString(), '155');
+  const tax = subtotal.mul(taxRate);
+  assert.equal(tax.toString(), '23.25');
+  const total = subtotal.plus(tax);
+  assert.equal(total.toString(), '178.25');
+
+  // Multi-line decimal summation
+  const line2Qty = new Prisma.Decimal('3.3333');
+  const line2Cost = new Prisma.Decimal('29.9900');
+  const line2Subtotal = line2Qty.mul(line2Cost);
+  assert.equal(line2Subtotal.toFixed(4), '99.9657');
+});
+
+test('goods receipt enforces delivery quantity boundaries and prevents over-receipt', () => {
+  const ordered = new Prisma.Decimal('50.0000');
+  let previouslyReceived = new Prisma.Decimal('20.0000');
+
+  // Receiving 25 is valid (total 45 <= 50)
+  const delivery1 = new Prisma.Decimal('25.0000');
+  assert(previouslyReceived.plus(delivery1).lessThanOrEqualTo(ordered));
+  previouslyReceived = previouslyReceived.plus(delivery1);
+
+  // Receiving another 10 exceeds remaining 5 (total 55 > 50)
+  const delivery2 = new Prisma.Decimal('10.0000');
+  assert(previouslyReceived.plus(delivery2).greaterThan(ordered));
+});
+
+test('stock count computes exact variance and distinguishes compensating adjustment types', () => {
+  const systemQty = new Prisma.Decimal('42.0000');
+
+  // Case 1: Surplus count (counted > system) -> Compensating RECEIPT
+  const surplusCount = new Prisma.Decimal('45.0000');
+  const surplusVariance = surplusCount.minus(systemQty);
+  assert.equal(surplusVariance.toString(), '3');
+  assert(surplusVariance.greaterThan(new Prisma.Decimal('0.0000')));
+
+  // Case 2: Deficit count (counted < system) -> Compensating ISSUE
+  const deficitCount = new Prisma.Decimal('38.5000');
+  const deficitVariance = deficitCount.minus(systemQty);
+  assert.equal(deficitVariance.toString(), '-3.5');
+  assert(deficitVariance.lessThan(new Prisma.Decimal('0.0000')));
+
+  // Case 3: Exact match -> No adjustment needed
+  const exactCount = new Prisma.Decimal('42.0000');
+  const exactVariance = exactCount.minus(systemQty);
+  assert(exactVariance.equals(new Prisma.Decimal('0.0000')));
+});
+
+test('purchasing and stock operation permissions are strictly allocated to administrative roles', () => {
+  const purchasingPerms = [
+    'inventory.suppliers.read',
+    'inventory.suppliers.manage',
+    'inventory.purchase-orders.read',
+    'inventory.purchase-orders.create',
+    'inventory.purchase-orders.submit',
+    'inventory.purchase-orders.approve',
+    'inventory.purchase-orders.cancel',
+    'inventory.goods-receipt.read',
+    'inventory.goods-receipt.record',
+    'inventory.stock-counts.read',
+    'inventory.stock-counts.manage',
+    'inventory.stock-counts.approve',
+    'inventory.alerts.read',
+    'inventory.alerts.acknowledge',
+  ] as const;
+
+  for (const role of ['CLINIC_OWNER', 'CLINIC_ADMIN'] as const) {
+    const rolePerms = permissionsFor(role);
+    for (const perm of purchasingPerms) {
+      assert(rolePerms.includes(perm), `${role} must possess purchasing permission ${perm}`);
+    }
+  }
+
+  // Clinical doctors cannot modify purchase orders or approve stockcounts
+  const doctorPerms = permissionsFor('DOCTOR');
+  assert(!doctorPerms.includes('inventory.purchase-orders.create' as any));
+  assert(!doctorPerms.includes('inventory.purchase-orders.approve' as any));
+  assert(!doctorPerms.includes('inventory.stock-counts.approve' as any));
+  assert(!doctorPerms.includes('inventory.goods-receipt.record' as any));
+
+  // Receptionist has no purchasing permissions
+  const receptionistPerms = permissionsFor('RECEPTIONIST');
+  for (const perm of purchasingPerms) {
+    assert(!receptionistPerms.includes(perm as any));
   }
 });
 

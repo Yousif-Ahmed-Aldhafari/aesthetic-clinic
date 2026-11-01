@@ -54,6 +54,15 @@
 - Non-destructive voiding: Clinical consumptions cannot be deleted; voiding records mandatory reasons and logs an atomic compensating return movement to restore stock.
 - Confidentiality boundary & FORCE RLS: Inventory-only roles receive operational metadata with clinical consultation notes omitted. PostgreSQL `FORCE ROW LEVEL SECURITY` is enforced across all 3 tables with database triggers preventing deletion or reactivation of recalled/expired lots. See [inventory-lot-traceability.md](inventory-lot-traceability.md).
 
+## Phase 4.3 suppliers, purchase orders, goods receiving & stock operations
+`InventorySupplier`, `InventoryPurchaseOrder`, `InventoryPurchaseOrderLine`, `InventoryGoodsReceipt`, `InventoryGoodsReceiptLine`, `InventoryStockCount`, `InventoryStockCountItem`, and `InventoryAlertAcknowledgment` establish the clinical purchasing and operational stocktaking lifecycle:
+- Supplier Directory: Clinic-scoped `InventorySupplier` records with uppercase code uniqueness per clinic, tax numbers, commercial registers, and contact management.
+- Purchase Orders & Financial Integrity: Multi-line orders with atomic sequential number allocation (`PO-000001`), line item calculation with exact `numeric(12, 4)` Decimal math, and lifecycle state transitions (`DRAFT` ➔ `SUBMITTED` ➔ `APPROVED` ➔ `PARTIALLY_RECEIVED` ➔ `RECEIVED` / `CANCELLED` / `REJECTED`).
+- Goods Receiving: Delivery note recording against approved purchase orders (`GR-000001`), line-level quality disposition (`ACCEPTED`, `QUARANTINED`, `REJECTED`), automatic batch and expiry registration for batch-tracked items, and atomic stock movement posting. Over-receipt is strictly prevented.
+- Physical Stocktaking: Location and product balance snapshots (`SC-000001`), discrepancy and variance tracking (`varianceQuantity = countedQuantity - systemQuantity`), and single-transaction compensating stock adjustments upon reconciliation approval.
+- Operational Alerts: Dynamic derivation of low-stock, expiring-soon, expired, and recalled batch alerts with customizable snooze periods and audit trail.
+- FORCE RLS & Table Security: All 11 new tables enforce PostgreSQL `FORCE ROW LEVEL SECURITY`. See [inventory-purchasing.md](inventory-purchasing.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,

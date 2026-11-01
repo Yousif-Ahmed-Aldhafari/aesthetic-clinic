@@ -248,8 +248,12 @@ export interface RecordClinicalConsumptionDto {
   idempotencyKey?: string;
 }
 
+export type ClinicalConsumptionRestockAction = 'NO_RESTOCK' | 'RESTOCK_UNOPENED';
+
 export interface VoidClinicalConsumptionDto {
   reason: string;
+  restockAction?: ClinicalConsumptionRestockAction;
+  restockQuantity?: string;
   idempotencyKey?: string;
 }
 
@@ -274,4 +278,168 @@ export interface ClinicalConsumptionListQuery {
   batchId?: string;
   limit?: number;
   cursor?: string;
+}
+
+// --- Step 4.3: Suppliers, Purchasing & Stock Operations ---
+
+export interface CreateSupplierDto {
+  code: string;
+  nameAr: string;
+  nameEn?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  taxNumber?: string;
+  commercialRegister?: string;
+  notes?: string;
+}
+
+export interface UpdateSupplierDto {
+  expectedVersion: number;
+  nameAr?: string;
+  nameEn?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  taxNumber?: string;
+  commercialRegister?: string;
+  status?: 'ACTIVE' | 'INACTIVE';
+  notes?: string;
+}
+
+export interface SupplierListQuery {
+  status?: 'ACTIVE' | 'INACTIVE';
+  search?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface CreatePurchaseOrderLineInput {
+  productId: string;
+  orderedQuantity: string;
+  unitCost: string;
+  taxRate?: string;
+  notes?: string;
+}
+
+export interface CreatePurchaseOrderDto {
+  supplierId: string;
+  destinationLocationId: string;
+  currency: string;
+  expectedDeliveryDate?: string;
+  notes?: string;
+  lines: CreatePurchaseOrderLineInput[];
+}
+
+export interface UpdatePurchaseOrderDto {
+  expectedVersion: number;
+  supplierId?: string;
+  destinationLocationId?: string;
+  currency?: string;
+  expectedDeliveryDate?: string;
+  notes?: string;
+  lines?: CreatePurchaseOrderLineInput[];
+}
+
+export interface SubmitPurchaseOrderDto {
+  expectedVersion: number;
+  notes?: string;
+}
+
+export interface ApprovePurchaseOrderDto {
+  expectedVersion: number;
+  notes?: string;
+}
+
+export interface RejectPurchaseOrderDto {
+  expectedVersion: number;
+  reason: string;
+}
+
+export interface CancelPurchaseOrderDto {
+  expectedVersion: number;
+  reason: string;
+}
+
+export interface PurchaseOrderListQuery {
+  supplierId?: string;
+  status?: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CLOSED' | 'REJECTED' | 'CANCELLED';
+  destinationLocationId?: string;
+  search?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface ReceiveGoodsLineInput {
+  purchaseOrderLineId: string;
+  receivedQuantity: string;
+  rejectedQuantity?: string;
+  rejectionReason?: string;
+  disposition?: 'ACCEPTED' | 'QUARANTINED' | 'REJECTED';
+  batchNumber?: string;
+  expirationDate?: string;
+  notes?: string;
+}
+
+export interface ReceiveGoodsDto {
+  purchaseOrderId: string;
+  destinationLocationId?: string;
+  deliveryNoteNumber?: string;
+  notes?: string;
+  lines: ReceiveGoodsLineInput[];
+  idempotencyKey?: string;
+}
+
+export interface GoodsReceiptListQuery {
+  purchaseOrderId?: string;
+  supplierId?: string;
+  destinationLocationId?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface CreateStockCountDto {
+  locationId: string;
+  notes?: string;
+  productIds?: string[];
+}
+
+export interface StockCountItemInput {
+  productId: string;
+  batchId?: string;
+  countedQuantity: string;
+  discrepancyReason?: string;
+}
+
+export interface RecordStockCountItemsDto {
+  expectedVersion: number;
+  items: StockCountItemInput[];
+}
+
+export interface ReconcileStockCountDto {
+  expectedVersion: number;
+  notes?: string;
+  idempotencyKey?: string;
+}
+
+export interface StockCountListQuery {
+  locationId?: string;
+  status?: 'DRAFT' | 'SUBMITTED' | 'RECONCILED' | 'CANCELLED';
+  limit?: number;
+  cursor?: string;
+}
+
+export interface InventoryAlertQuery {
+  locationId?: string;
+  type?: 'LOW_STOCK' | 'OUT_OF_STOCK' | 'NEAR_EXPIRY' | 'EXPIRED' | 'QUARANTINED_BATCH' | 'PENDING_PO';
+}
+
+export interface AcknowledgeAlertDto {
+  alertType: 'LOW_STOCK' | 'OUT_OF_STOCK' | 'NEAR_EXPIRY' | 'EXPIRED' | 'QUARANTINED_BATCH' | 'PENDING_PO';
+  targetType: 'PRODUCT' | 'BATCH' | 'PURCHASE_ORDER';
+  targetId: string;
+  snoozedUntil?: string;
+  notes?: string;
 }

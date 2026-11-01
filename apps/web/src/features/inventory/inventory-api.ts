@@ -29,6 +29,212 @@ export type InventoryBatchStatus =
 
 export type ClinicalConsumptionStatus = 'RECORDED' | 'VOIDED';
 
+export type SupplierStatus = 'ACTIVE' | 'INACTIVE';
+
+export type PurchaseOrderStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'PARTIALLY_RECEIVED'
+  | 'RECEIVED'
+  | 'CLOSED'
+  | 'CANCELLED'
+  | 'REJECTED';
+
+export type GoodsReceiptDisposition = 'ACCEPTED' | 'QUARANTINED' | 'REJECTED';
+
+export type StockCountStatus =
+  | 'DRAFT'
+  | 'COUNTING'
+  | 'SUBMITTED'
+  | 'RECONCILED'
+  | 'CANCELLED';
+
+export type InventoryAlertType = 'LOW_STOCK' | 'EXPIRING_SOON' | 'EXPIRED' | 'RECALLED_BATCH' | 'STOCK_OUT';
+export type InventoryAlertSeverity = 'CRITICAL' | 'WARNING' | 'INFO';
+
+export interface InventorySupplierRecord {
+  id: string;
+  clinicId: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  contactPerson: string | null;
+  email: string | null;
+  phone: string | null;
+  taxNumber: string | null;
+  commercialRegister: string | null;
+  address: string | null;
+  notes: string | null;
+  status: SupplierStatus;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InventoryPurchaseOrderLineRecord {
+  id: string;
+  lineNumber: number;
+  productId: string;
+  orderedQuantity: string;
+  receivedQuantity: string;
+  unitCost: string;
+  taxRate: string;
+  totalCost: string;
+  notes: string | null;
+  product?: {
+    id: string;
+    sku: string;
+    nameAr: string;
+    unit: InventoryUnit;
+    requiresBatchTracking: boolean;
+  };
+}
+
+export interface InventoryPurchaseOrderRecord {
+  id: string;
+  orderNumber: string;
+  supplierId: string;
+  destinationLocationId: string;
+  status: PurchaseOrderStatus;
+  orderDate: string;
+  expectedDeliveryDate: string | null;
+  currency: string;
+  subtotal: string;
+  taxAmount: string;
+  totalAmount: string;
+  notes: string | null;
+  createdByMembershipId: string;
+  approvedByMembershipId: string | null;
+  approvedAt: string | null;
+  rejectionReason: string | null;
+  cancellationReason: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  supplier?: { id: string; code: string; nameAr: string; phone?: string | null };
+  destinationLocation?: { id: string; code: string; nameAr: string };
+  lines?: InventoryPurchaseOrderLineRecord[];
+}
+
+export interface InventoryGoodsReceiptLineRecord {
+  id: string;
+  purchaseOrderLineId: string | null;
+  productId: string;
+  batchId: string | null;
+  locationId: string;
+  receivedQuantity: string;
+  rejectedQuantity: string;
+  rejectionReason: string | null;
+  unitCost: string;
+  disposition: GoodsReceiptDisposition;
+  movementId: string | null;
+  product?: { id: string; sku: string; nameAr: string; unit: InventoryUnit };
+  batch?: { id: string; batchNumber: string; expirationDate: string } | null;
+}
+
+export interface InventoryGoodsReceiptRecord {
+  id: string;
+  receiptNumber: string;
+  purchaseOrderId: string | null;
+  supplierId: string | null;
+  destinationLocationId: string;
+  supplierDeliveryNote: string | null;
+  receivedAt: string;
+  receiverMembershipId: string;
+  notes: string | null;
+  version: number;
+  createdAt: string;
+  supplier?: { id: string; code: string; nameAr: string } | null;
+  destinationLocation?: { id: string; code: string; nameAr: string };
+  lines?: InventoryGoodsReceiptLineRecord[];
+}
+
+export interface InventoryStockCountItemRecord {
+  id: string;
+  productId: string;
+  batchId: string | null;
+  systemQuantity: string;
+  countedQuantity: string;
+  varianceQuantity: string;
+  discrepancyReason: string | null;
+  movementId: string | null;
+  product?: { id: string; sku: string; nameAr: string; unit: InventoryUnit };
+  batch?: { id: string; batchNumber: string; expirationDate: string } | null;
+}
+
+export interface InventoryStockCountRecord {
+  id: string;
+  countNumber: string;
+  locationId: string;
+  status: StockCountStatus;
+  notes: string | null;
+  counterMembershipId: string;
+  approvedByMembershipId: string | null;
+  approvedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  location?: { id: string; code: string; nameAr: string };
+  items?: InventoryStockCountItemRecord[];
+}
+
+export interface InventoryAlertItem {
+  id: string;
+  alertType: InventoryAlertType;
+  severity: InventoryAlertSeverity;
+  titleAr: string;
+  titleEn: string;
+  messageAr: string;
+  messageEn: string;
+  targetType: 'PRODUCT' | 'BATCH' | 'LOCATION';
+  targetId: string;
+  targetName: string;
+  locationId?: string | null;
+  locationName?: string | null;
+  currentQuantity?: string;
+  thresholdQuantity?: string;
+  expirationDate?: string;
+  daysRemaining?: number;
+  createdAt: string;
+}
+
+export interface InventoryAlertsReport {
+  clinicTimezone: string;
+  generatedAt: string;
+  summary: {
+    critical: number;
+    warning: number;
+    info: number;
+    total: number;
+  };
+  items: InventoryAlertItem[];
+}
+
+export const PURCHASE_ORDER_STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
+  DRAFT: 'مسودة',
+  SUBMITTED: 'بانتظار الاعتماد',
+  APPROVED: 'معتمد',
+  PARTIALLY_RECEIVED: 'مستلم جزئياً',
+  RECEIVED: 'مستلم بالكامل',
+  CLOSED: 'مغلق',
+  CANCELLED: 'ملغى',
+  REJECTED: 'مرفوض',
+};
+
+export const STOCK_COUNT_STATUS_LABELS: Record<StockCountStatus, string> = {
+  DRAFT: 'مسودة',
+  COUNTING: 'قيد الجرد',
+  SUBMITTED: 'بانتظار التسوية',
+  RECONCILED: 'تمت التسوية',
+  CANCELLED: 'ملغى',
+};
+
+export const SUPPLIER_STATUS_LABELS: Record<SupplierStatus, string> = {
+  ACTIVE: 'نشط',
+  INACTIVE: 'غير نشط',
+};
+
 export interface InventoryBatchRecord {
   id: string;
   clinicId: string;
@@ -404,5 +610,142 @@ export const inventoryApi = (clinicId: string) => {
         undefined,
         signal,
       ),
+
+    // Suppliers
+    listSuppliers: (query?: URLSearchParams, signal?: AbortSignal) =>
+      api<{ items: InventorySupplierRecord[]; nextCursor: string | null }>(
+        `${root}/suppliers${query ? `?${query}` : ''}`,
+        'GET',
+        undefined,
+        undefined,
+        signal,
+      ),
+
+    getSupplier: (supplierId: string, signal?: AbortSignal) =>
+      api<InventorySupplierRecord>(`${root}/suppliers/${supplierId}`, 'GET', undefined, undefined, signal),
+
+    createSupplier: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventorySupplierRecord>(`${root}/suppliers`, 'POST', input, csrf, signal),
+
+    updateSupplier: (supplierId: string, input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventorySupplierRecord>(`${root}/suppliers/${supplierId}`, 'PATCH', input, csrf, signal),
+
+    // Purchase Orders
+    listPurchaseOrders: (query?: URLSearchParams, signal?: AbortSignal) =>
+      api<{ items: InventoryPurchaseOrderRecord[]; nextCursor: string | null }>(
+        `${root}/purchase-orders${query ? `?${query}` : ''}`,
+        'GET',
+        undefined,
+        undefined,
+        signal,
+      ),
+
+    getPurchaseOrder: (poId: string, signal?: AbortSignal) =>
+      api<InventoryPurchaseOrderRecord>(`${root}/purchase-orders/${poId}`, 'GET', undefined, undefined, signal),
+
+    createPurchaseOrder: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryPurchaseOrderRecord>(`${root}/purchase-orders`, 'POST', input, csrf, signal),
+
+    updatePurchaseOrder: (poId: string, input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryPurchaseOrderRecord>(`${root}/purchase-orders/${poId}`, 'PATCH', input, csrf, signal),
+
+    submitPurchaseOrder: (poId: string, expectedVersion: number, csrf: string, signal?: AbortSignal) =>
+      api<InventoryPurchaseOrderRecord>(
+        `${root}/purchase-orders/${poId}/submit`,
+        'POST',
+        { expectedVersion },
+        csrf,
+        signal,
+      ),
+
+    approvePurchaseOrder: (
+      poId: string,
+      expectedVersion: number,
+      notes: string | undefined,
+      csrf: string,
+      signal?: AbortSignal,
+    ) =>
+      api<InventoryPurchaseOrderRecord>(
+        `${root}/purchase-orders/${poId}/approve`,
+        'POST',
+        { expectedVersion, notes },
+        csrf,
+        signal,
+      ),
+
+    rejectPurchaseOrder: (
+      poId: string,
+      expectedVersion: number,
+      reason: string,
+      csrf: string,
+      signal?: AbortSignal,
+    ) =>
+      api<InventoryPurchaseOrderRecord>(
+        `${root}/purchase-orders/${poId}/reject`,
+        'POST',
+        { expectedVersion, reason },
+        csrf,
+        signal,
+      ),
+
+    cancelPurchaseOrder: (
+      poId: string,
+      expectedVersion: number,
+      reason: string,
+      csrf: string,
+      signal?: AbortSignal,
+    ) =>
+      api<InventoryPurchaseOrderRecord>(
+        `${root}/purchase-orders/${poId}/cancel`,
+        'POST',
+        { expectedVersion, reason },
+        csrf,
+        signal,
+      ),
+
+    // Goods Receipts
+    listGoodsReceipts: (query?: URLSearchParams, signal?: AbortSignal) =>
+      api<{ items: InventoryGoodsReceiptRecord[]; nextCursor: string | null }>(
+        `${root}/goods-receipts${query ? `?${query}` : ''}`,
+        'GET',
+        undefined,
+        undefined,
+        signal,
+      ),
+
+    getGoodsReceipt: (receiptId: string, signal?: AbortSignal) =>
+      api<InventoryGoodsReceiptRecord>(`${root}/goods-receipts/${receiptId}`, 'GET', undefined, undefined, signal),
+
+    receiveGoods: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryGoodsReceiptRecord>(`${root}/goods-receipts`, 'POST', input, csrf, signal),
+
+    // Stock Counts
+    listStockCounts: (query?: URLSearchParams, signal?: AbortSignal) =>
+      api<{ items: InventoryStockCountRecord[]; nextCursor: string | null }>(
+        `${root}/stock-counts${query ? `?${query}` : ''}`,
+        'GET',
+        undefined,
+        undefined,
+        signal,
+      ),
+
+    getStockCount: (stockCountId: string, signal?: AbortSignal) =>
+      api<InventoryStockCountRecord>(`${root}/stock-counts/${stockCountId}`, 'GET', undefined, undefined, signal),
+
+    createStockCount: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryStockCountRecord>(`${root}/stock-counts`, 'POST', input, csrf, signal),
+
+    recordStockCountItems: (stockCountId: string, input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryStockCountRecord>(`${root}/stock-counts/${stockCountId}/items`, 'POST', input, csrf, signal),
+
+    reconcileStockCount: (stockCountId: string, input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryStockCountRecord>(`${root}/stock-counts/${stockCountId}/reconcile`, 'POST', input, csrf, signal),
+
+    // Alerts
+    getAlerts: (signal?: AbortSignal) =>
+      api<InventoryAlertsReport>(`${root}/alerts`, 'GET', undefined, undefined, signal),
+
+    acknowledgeAlert: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<{ id: string; acknowledgedAt: string }>(`${root}/alerts/acknowledge`, 'POST', input, csrf, signal),
   };
 };

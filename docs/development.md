@@ -1,5 +1,14 @@
 # Development setup
 
+## Phase 4.3 suppliers, purchase orders, goods receiving, stock corrections & inventory alerts
+
+Apply `20261101000300_inventory_purchasing_operations` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All procurement, receiving, stocktaking and alert endpoints reside under `/api/v1/clinics/:clinicId/inventory`.
+- Migration: `apps/api/prisma/migrations/20261101000300_inventory_purchasing_operations/migration.sql` creates 11 models: `InventorySupplier`, `InventoryPurchaseOrder`, `InventoryPurchaseOrderLine`, `InventoryPurchaseOrderCounter`, `InventoryGoodsReceipt`, `InventoryGoodsReceiptLine`, `InventoryGoodsReceiptCounter`, `InventoryStockCount`, `InventoryStockCountItem`, `InventoryStockCountCounter`, and `InventoryAlertAcknowledgment` with `FORCE ROW LEVEL SECURITY` and trigger guards.
+- Unit and policy tests: `apps/api/test/inventory-policy.test.ts`.
+- Database integration tests: `apps/api/test/inventory.integration.test.ts` (covers supplier uniqueness, PO creation, multi-line financial math, approval workflow, goods receiving against POs, over-receipt prevention, stocktaking variance entry, compensating reconciliation adjustments, derived alerts, alert snoozing, and SQL bypass triggers).
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies inventory purchasing, suppliers, purchase orders, and stocktaking tabs).
+- Core invariants: All financial line items and physical quantities use exact `numeric(12, 4)` Decimal math. PO lines and goods receipts are immutable. Stocktaking reconciliation automatically posts compensating adjustment movements. Bedside recording permission `clinical.inventory-consumption.record` is strictly restricted to `DOCTOR`.
+
 ## Phase 4.2 batch/lot tracking, expiry management, and clinical procedure consumption
 
 Apply `20261101000200_inventory_batch_tracking` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All batch tracking and clinical consumption endpoints reside under `/api/v1/clinics/:clinicId/inventory`.

@@ -6,6 +6,7 @@ import {
   type InventoryBalanceRecord,
   type InventoryMovementRecord,
   type InventoryMovementType,
+  type InventorySupplierRecord,
   inventoryApi,
 } from './inventory-api';
 import { ProductCatalogPanel } from './ProductCatalogPanel';
@@ -14,6 +15,10 @@ import { StockOperationsModal } from './StockOperationsModal';
 import { StockMovementsHistory } from './StockMovementsHistory';
 import { LedgerReconciliationPanel } from './LedgerReconciliationPanel';
 import { BatchManagementPanel } from './BatchManagementPanel';
+import { SupplierManagementPanel } from './SupplierManagementPanel';
+import { PurchaseOrderManagementPanel } from './PurchaseOrderManagementPanel';
+import { StockCountPanel } from './StockCountPanel';
+import { InventoryAlertsBanner } from './InventoryAlertsBanner';
 import './inventory.css';
 
 interface Props {
@@ -22,7 +27,17 @@ interface Props {
   onAuthError: (error: unknown) => void;
 }
 
-type MainTab = 'OVERVIEW' | 'PRODUCTS' | 'LOCATIONS' | 'BALANCES' | 'BATCHES' | 'MOVEMENTS' | 'RECONCILE';
+type MainTab =
+  | 'OVERVIEW'
+  | 'PRODUCTS'
+  | 'LOCATIONS'
+  | 'BALANCES'
+  | 'BATCHES'
+  | 'SUPPLIERS'
+  | 'PURCHASE_ORDERS'
+  | 'STOCK_COUNTS'
+  | 'MOVEMENTS'
+  | 'RECONCILE';
 
 export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('OVERVIEW');
@@ -30,6 +45,7 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
   const [locations, setLocations] = useState<InventoryLocationRecord[]>([]);
   const [balances, setBalances] = useState<InventoryBalanceRecord[]>([]);
   const [movements, setMovements] = useState<InventoryMovementRecord[]>([]);
+  const [suppliers, setSuppliers] = useState<InventorySupplierRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
   const [operationsModalOpen, setOperationsModalOpen] = useState(false);
@@ -43,21 +59,30 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
     permissions.includes('inventory.stock.transfer') ||
     permissions.includes('inventory.stock.adjust');
   const canReconcile = permissions.includes('inventory.reconcile');
+  const canManageSuppliers = permissions.includes('inventory.suppliers.manage');
+  const canCreatePO = permissions.includes('inventory.purchase-orders.create');
+  const canApprovePO = permissions.includes('inventory.purchase-orders.approve');
+  const canReceiveGoods = permissions.includes('inventory.goods-receipt.record');
+  const canManageStockCounts = permissions.includes('inventory.stock-counts.manage');
+  const canReconcileStockCounts = permissions.includes('inventory.stock-counts.reconcile');
+  const canAcknowledgeAlerts = permissions.includes('inventory.alerts.acknowledge');
 
   const loadData = useCallback(async () => {
     setLoading(true);
     const api = inventoryApi(clinic.clinicId);
     try {
-      const [prodRes, locRes, balRes, movRes] = await Promise.all([
+      const [prodRes, locRes, balRes, movRes, supRes] = await Promise.all([
         api.listProducts(new URLSearchParams({ limit: '100' })),
         api.listLocations(),
         api.listBalances(new URLSearchParams()),
         api.listMovements(new URLSearchParams({ limit: '50' })),
+        api.listSuppliers(new URLSearchParams({ limit: '100' })),
       ]);
       setProducts(prodRes.items || []);
       setLocations(locRes || []);
       setBalances(balRes || []);
       setMovements(movRes.items || []);
+      setSuppliers(supRes.items || []);
     } catch (err: any) {
       if (err?.status === 401 || err?.status === 403) {
         onAuthError(err);
@@ -109,6 +134,14 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
           </button>
         </div>
       )}
+
+      {/* Operations & Expiry Alerts Banner */}
+      <InventoryAlertsBanner
+        clinicId={clinic.clinicId}
+        csrfToken={csrfToken}
+        canAcknowledge={canAcknowledgeAlerts}
+        onRefreshNeeded={loadData}
+      />
 
       {/* Main KPI Cards */}
       <div className="inventory-summary-grid">
@@ -169,6 +202,24 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
             onClick={() => setActiveTab('BATCHES')}
           >
             <span>🧪</span> التشغيلات والصلاحية (Lots)
+          </button>
+          <button
+            className={`inventory-tab-btn ${activeTab === 'SUPPLIERS' ? 'active' : ''}`}
+            onClick={() => setActiveTab('SUPPLIERS')}
+          >
+            <span>🤝</span> الموردون
+          </button>
+          <button
+            className={`inventory-tab-btn ${activeTab === 'PURCHASE_ORDERS' ? 'active' : ''}`}
+            onClick={() => setActiveTab('PURCHASE_ORDERS')}
+          >
+            <span>📋</span> أوامر الشراء
+          </button>
+          <button
+            className={`inventory-tab-btn ${activeTab === 'STOCK_COUNTS' ? 'active' : ''}`}
+            onClick={() => setActiveTab('STOCK_COUNTS')}
+          >
+            <span>📝</span> الجرد والتسوية
           </button>
           <button
             className={`inventory-tab-btn ${activeTab === 'MOVEMENTS' ? 'active' : ''}`}
@@ -386,6 +437,44 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
               locations={locations}
               canManage={canManageProducts || permissions.includes('inventory.batches.manage')}
               onRefresh={loadData}
+              onSuccess={handleSuccess}
+            />
+          )}
+
+          {activeTab === 'SUPPLIERS' && (
+            <SupplierManagementPanel
+              clinicId={clinic.clinicId}
+              csrfToken={csrfToken}
+              canManage={canManageSuppliers}
+              onAuthError={onAuthError}
+              onSuccess={handleSuccess}
+            />
+          )}
+
+          {activeTab === 'PURCHASE_ORDERS' && (
+            <PurchaseOrderManagementPanel
+              clinicId={clinic.clinicId}
+              csrfToken={csrfToken}
+              suppliers={suppliers}
+              locations={locations}
+              products={products}
+              canCreate={canCreatePO}
+              canApprove={canApprovePO}
+              canReceive={canReceiveGoods}
+              onAuthError={onAuthError}
+              onSuccess={handleSuccess}
+            />
+          )}
+
+          {activeTab === 'STOCK_COUNTS' && (
+            <StockCountPanel
+              clinicId={clinic.clinicId}
+              csrfToken={csrfToken}
+              locations={locations}
+              products={products}
+              canManage={canManageStockCounts}
+              canReconcile={canReconcileStockCounts}
+              onAuthError={onAuthError}
               onSuccess={handleSuccess}
             />
           )}

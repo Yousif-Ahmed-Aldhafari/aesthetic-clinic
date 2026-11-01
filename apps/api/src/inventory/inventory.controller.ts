@@ -24,6 +24,24 @@ import type {
   BatchListQuery,
   ExpiryReportQuery,
   ClinicalConsumptionListQuery,
+  CreateSupplierDto,
+  UpdateSupplierDto,
+  SupplierListQuery,
+  CreatePurchaseOrderDto,
+  UpdatePurchaseOrderDto,
+  SubmitPurchaseOrderDto,
+  ApprovePurchaseOrderDto,
+  RejectPurchaseOrderDto,
+  CancelPurchaseOrderDto,
+  PurchaseOrderListQuery,
+  ReceiveGoodsDto,
+  GoodsReceiptListQuery,
+  CreateStockCountDto,
+  RecordStockCountItemsDto,
+  ReconcileStockCountDto,
+  StockCountListQuery,
+  InventoryAlertQuery,
+  AcknowledgeAlertDto,
 } from './inventory-input.js';
 
 @Controller('clinics/:clinicId/inventory')
@@ -335,7 +353,7 @@ export class InventoryController {
 
   // Clinical Consumption
   @Post('clinical-consumption')
-  @ClinicPermissions('inventory.clinical-consumption.record')
+  @ClinicPermissions('clinical.inventory-consumption.record')
   recordClinicalConsumption(
     @Req() req: AuthRequest,
     @Param('clinicId') clinicId: string,
@@ -350,7 +368,7 @@ export class InventoryController {
   }
 
   @Post('clinical-consumption/:consumptionId/void')
-  @ClinicPermissions('inventory.clinical-consumption.record')
+  @ClinicPermissions('clinical.inventory-consumption.record')
   voidClinicalConsumption(
     @Req() req: AuthRequest,
     @Param('clinicId') clinicId: string,
@@ -383,6 +401,249 @@ export class InventoryController {
     @Param('procedureExecutionId') procedureExecutionId: string,
   ) {
     return this.inventory.getProcedureConsumptions(req.auth!.principal, clinicId, procedureExecutionId);
+  }
+
+  // Suppliers
+  @Post('suppliers')
+  @ClinicPermissions('inventory.suppliers.manage')
+  createSupplier(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: CreateSupplierDto,
+  ) {
+    return this.inventory.createSupplier(req.auth!.principal, clinicId, body);
+  }
+
+  @Patch('suppliers/:supplierId')
+  @ClinicPermissions('inventory.suppliers.manage')
+  updateSupplier(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('supplierId') supplierId: string,
+    @Body() body: UpdateSupplierDto,
+  ) {
+    return this.inventory.updateSupplier(req.auth!.principal, clinicId, supplierId, body);
+  }
+
+  @Get('suppliers/:supplierId')
+  @ClinicPermissions('inventory.suppliers.read')
+  getSupplier(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('supplierId') supplierId: string,
+  ) {
+    return this.inventory.getSupplier(req.auth!.principal, clinicId, supplierId);
+  }
+
+  @Get('suppliers')
+  @ClinicPermissions('inventory.suppliers.read')
+  listSuppliers(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query() query: SupplierListQuery,
+  ) {
+    return this.inventory.listSuppliers(req.auth!.principal, clinicId, query);
+  }
+
+  // Purchase Orders
+  @Post('purchase-orders')
+  @ClinicPermissions('inventory.purchase-orders.create')
+  createPurchaseOrder(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: CreatePurchaseOrderDto,
+  ) {
+    return this.inventory.createPurchaseOrder(req.auth!.principal, clinicId, body);
+  }
+
+  @Patch('purchase-orders/:poId')
+  @ClinicPermissions('inventory.purchase-orders.create')
+  updatePurchaseOrder(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('poId') poId: string,
+    @Body() body: UpdatePurchaseOrderDto,
+  ) {
+    return this.inventory.updatePurchaseOrder(req.auth!.principal, clinicId, poId, body);
+  }
+
+  @Post('purchase-orders/:poId/submit')
+  @ClinicPermissions('inventory.purchase-orders.submit')
+  submitPurchaseOrder(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('poId') poId: string,
+    @Body() body: SubmitPurchaseOrderDto,
+  ) {
+    return this.inventory.submitPurchaseOrder(req.auth!.principal, clinicId, poId, body);
+  }
+
+  @Post('purchase-orders/:poId/approve')
+  @ClinicPermissions('inventory.purchase-orders.approve')
+  approvePurchaseOrder(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('poId') poId: string,
+    @Body() body: ApprovePurchaseOrderDto,
+  ) {
+    return this.inventory.approvePurchaseOrder(req.auth!.principal, clinicId, poId, body);
+  }
+
+  @Post('purchase-orders/:poId/reject')
+  @ClinicPermissions('inventory.purchase-orders.approve')
+  rejectPurchaseOrder(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('poId') poId: string,
+    @Body() body: RejectPurchaseOrderDto,
+  ) {
+    return this.inventory.rejectPurchaseOrder(req.auth!.principal, clinicId, poId, body);
+  }
+
+  @Post('purchase-orders/:poId/cancel')
+  @ClinicPermissions('inventory.purchase-orders.cancel')
+  cancelPurchaseOrder(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('poId') poId: string,
+    @Body() body: CancelPurchaseOrderDto,
+  ) {
+    return this.inventory.cancelPurchaseOrder(req.auth!.principal, clinicId, poId, body);
+  }
+
+  @Get('purchase-orders/:poId')
+  @ClinicPermissions('inventory.purchase-orders.read')
+  getPurchaseOrder(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('poId') poId: string,
+  ) {
+    return this.inventory.getPurchaseOrder(req.auth!.principal, clinicId, poId);
+  }
+
+  @Get('purchase-orders')
+  @ClinicPermissions('inventory.purchase-orders.read')
+  listPurchaseOrders(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query() query: PurchaseOrderListQuery,
+  ) {
+    return this.inventory.listPurchaseOrders(req.auth!.principal, clinicId, query);
+  }
+
+  // Goods Receipts
+  @Post('goods-receipts')
+  @ClinicPermissions('inventory.goods-receipt.record')
+  receiveGoods(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: ReceiveGoodsDto,
+    @Headers('x-idempotency-key') headerIdempotency?: string,
+  ) {
+    const idempotencyKey = body.idempotencyKey || headerIdempotency;
+    return this.inventory.receiveGoods(req.auth!.principal, clinicId, {
+      ...body,
+      idempotencyKey,
+    });
+  }
+
+  @Get('goods-receipts/:receiptId')
+  @ClinicPermissions('inventory.goods-receipt.read')
+  getGoodsReceipt(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('receiptId') receiptId: string,
+  ) {
+    return this.inventory.getGoodsReceipt(req.auth!.principal, clinicId, receiptId);
+  }
+
+  @Get('goods-receipts')
+  @ClinicPermissions('inventory.goods-receipt.read')
+  listGoodsReceipts(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query() query: GoodsReceiptListQuery,
+  ) {
+    return this.inventory.listGoodsReceipts(req.auth!.principal, clinicId, query);
+  }
+
+  // Stock Counts
+  @Post('stock-counts')
+  @ClinicPermissions('inventory.stock-counts.manage')
+  createStockCount(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: CreateStockCountDto,
+  ) {
+    return this.inventory.createStockCount(req.auth!.principal, clinicId, body);
+  }
+
+  @Post('stock-counts/:countId/items')
+  @ClinicPermissions('inventory.stock-counts.manage')
+  recordStockCountItems(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('countId') countId: string,
+    @Body() body: RecordStockCountItemsDto,
+  ) {
+    return this.inventory.recordStockCountItems(req.auth!.principal, clinicId, countId, body);
+  }
+
+  @Post('stock-counts/:countId/reconcile')
+  @ClinicPermissions('inventory.stock-counts.approve')
+  reconcileStockCount(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('countId') countId: string,
+    @Body() body: ReconcileStockCountDto,
+    @Headers('x-idempotency-key') headerIdempotency?: string,
+  ) {
+    const idempotencyKey = body.idempotencyKey || headerIdempotency;
+    return this.inventory.reconcileStockCount(req.auth!.principal, clinicId, countId, {
+      ...body,
+      idempotencyKey,
+    });
+  }
+
+  @Get('stock-counts/:countId')
+  @ClinicPermissions('inventory.stock-counts.read')
+  getStockCount(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('countId') countId: string,
+  ) {
+    return this.inventory.getStockCount(req.auth!.principal, clinicId, countId);
+  }
+
+  @Get('stock-counts')
+  @ClinicPermissions('inventory.stock-counts.read')
+  listStockCounts(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query() query: StockCountListQuery,
+  ) {
+    return this.inventory.listStockCounts(req.auth!.principal, clinicId, query);
+  }
+
+  // Inventory Alerts
+  @Get('alerts')
+  @ClinicPermissions('inventory.alerts.read')
+  getInventoryAlerts(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query() query: InventoryAlertQuery,
+  ) {
+    return this.inventory.getInventoryAlerts(req.auth!.principal, clinicId, query);
+  }
+
+  @Post('alerts/acknowledge')
+  @ClinicPermissions('inventory.alerts.acknowledge')
+  acknowledgeAlert(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: AcknowledgeAlertDto,
+  ) {
+    return this.inventory.acknowledgeAlert(req.auth!.principal, clinicId, body);
   }
 }
 

@@ -241,3 +241,9 @@ All requests require authentication, clinic scope selection, and `X-CSRF-Token`.
 - `POST /api/v1/clinics/:clinicId/inventory/stock/transfer`: Transfer stock between locations atomically.
 - `POST /api/v1/clinics/:clinicId/inventory/stock/adjust`: Post discrepancy adjustments.
 - `GET /api/v1/clinics/:clinicId/inventory/stock/reconcile`: Execute ledger-to-balance reconciliation audit.
+
+---
+
+## 7. Advanced Modules
+- **Batch / Lot Traceability & Expiry Management (Step 4.2)**: See [inventory-lot-traceability.md](inventory-lot-traceability.md).
+- **Suppliers, Purchase Orders, Goods Receiving, Stocktaking & Alerts (Step 4.3)**: See [inventory-purchasing.md](inventory-purchasing.md).
