@@ -1,5 +1,14 @@
 # Development setup
 
+## Phase 4.1 inventory foundation, product catalog, stock locations & auditable movements
+
+Apply `20261101000100_inventory_foundation` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All inventory endpoints reside under `/api/v1/clinics/:clinicId/inventory`.
+- Migration: `apps/api/prisma/migrations/20261101000100_inventory_foundation/migration.sql` creates `InventoryProduct`, `InventoryLocation`, `InventoryStockMovement`, and `InventoryBalance` with `FORCE ROW LEVEL SECURITY` and trigger `inventory_movement_immutability_guard()`.
+- Unit and policy tests: `apps/api/test/inventory-policy.test.ts`.
+- Database integration tests: `apps/api/test/inventory.integration.test.ts`.
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies inventory workspace, catalog tab, locations tab, and ledger reconciliation).
+- Core invariants: Stock ledger movements are append-only (`42501` on update/delete). Balances enforce non-negative constraints. Generic clinical issue of batch-tracked products (`requiresBatchTracking === true`) is blocked with `"Batch and expiry tracking is required for clinical consumption of this product (Phase 4 Step 4.2)"`.
+
 ## Phase 3.1 clinical records
 
 Apply `20261029000100_clinical_records` and `20261029000200_clinical_integrity_hardening` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`; never reset or schema-push. Routes are under `/api/v1/clinics/:clinicId/clinical`. Use fictional records only. Runtime has no delete privilege and remains FORCE-RLS constrained.

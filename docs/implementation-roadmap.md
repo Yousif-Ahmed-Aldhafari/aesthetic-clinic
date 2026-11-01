@@ -1,12 +1,21 @@
 # Lamssa implementation roadmap
 
-## Phase 3
+## Phase 4 — Inventory Operations, Consumables & Point of Sale
+
+1. **4.1 — Inventory Foundation, Product Catalog, Stock Locations & Auditable Movements (implemented):** clinic-scoped product catalog, multi-location hierarchy, append-only immutable stock ledger (`InventoryStockMovement`) with database trigger enforcement, transactional balances (`InventoryBalance`) with row-level locking, opening balance, receipts, issues, transfers, discrepancy adjustments, regulatory clinical consumption gate for injectables, ledger-to-balance mathematical reconciliation (`/stock/reconcile`), 11 granular permissions, FORCE RLS, and authentic Arabic-first RTL inventory workspace.
+2. **4.2 — Batch & Lot Tracking, Expiry Management, FEFO & Clinical Procedure Consumption (next):** lot numbers, expiry dates, First-Expired First-Out automated deduction, and automated stock deduction on procedure completion.
+3. **4.3 — Suppliers, Purchase Orders & Goods Receipt (planned):** vendor catalogs, purchase requisitions, approval workflows, and multi-step receipt reconciliation.
+4. **4.4 — Point of Sale (POS), Retail Sales & Package Redemptions (planned):** direct retail product sales, integrated invoice line generation, and aesthetic package session redemption.
+5. **4.5 — Multi-Location Inventory Governance & Valuation (planned):** inter-branch requisitions, transit tracking, landed cost valuation (FIFO/weighted average), and comprehensive stocktaking workflows.
+
+## Phase 3 — Clinical Management (Completed & Merged into Main)
 
 1. **3.1 — Clinical consultations and EMR foundation (implemented):** doctor-assigned encounters, structured history, signed-note immutability, append-only amendments, RLS, audit/privacy controls, and Arabic RTL workflow.
 2. **3.2 — Treatment plans and aesthetic procedures (implemented):** persistent clinic-owned treatment plans, immutable approved revisions, clinic-defined aesthetic procedure catalog, procedure execution drafting with metadata snapshotting, fail-closed consent gate (`VERIFIED_CONSENT_REQUIRED`), doctor-only RBAC, FORCE RLS, optimistic concurrency, and Arabic RTL treatment planning UI.
 3. **3.3 — Informed Consent Forms, Signature Evidence & Procedure Consent Eligibility (implemented):** legal consent templates with immutable published versions, deterministic SHA-256 content digests, digital patient/guardian signature evidence (`DRAWN_BASE64` and `TYPED_CONFIRMATION`) with evidence hash binding, doctor verification workflow, mandatory-reason withdrawal with instant revocation, strict purpose separation (procedure vs clinical photo vs marketing), fail-closed procedure execution gate (`VERIFIED_CONSENT_REQUIRED`), doctor-only RBAC, FORCE RLS, and Arabic RTL UI with printable branded snapshot view.
 4. **3.4 — Clinical Photography & Before/After Media Governance (implemented):** private encrypted-at-rest media storage (`AES-256-GCM`), strict `CLINICAL_PHOTOGRAPHY` consent enforcement and purpose separation, Sharp image processing with decompression bomb limits and EXIF stripping, canonical WebP masters and thumbnails, database trigger guards (`clinical_photo_guard`), doctor-only RBAC, FORCE RLS, non-destructive annotations, interactive split-slider comparisons, optimistic concurrency archival, and Arabic RTL UI.
-5. **3.5 — Aesthetic Packages, Memberships & Clinical Continuity (next):** procedure bundling, session redemption, and longitudinal clinical outcomes.
+5. **3.5 — Clinical Follow-ups, Recovery Monitoring & Treatment Outcomes (implemented):** structured follow-up assessments with digital doctor signatures, attributable amendments, standardized measurement scales (VAS, 5-point satisfaction, CGI, structured observation), adverse event tracking, terminal status immutability, and Arabic RTL care management.
+6. **3.6 — Comprehensive Clinical Security Audit & Final Acceptance (implemented):** full regression verification across 130 unit tests, 226 DB integration tests, 36 browser checks, and clean merge into `main`.
 
 Updated after Step 1.9, 2026-10-26. The user's current scope
 supersedes the original separation of workspace/API/database foundation. All

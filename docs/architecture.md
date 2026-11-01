@@ -37,6 +37,15 @@
 - Adverse events: Documented complications capture severity (`MILD`, `MODERATE`, `SEVERE`), observation date, findings, and resolution progression (`REPORTED`, `UNDER_EVALUATION`, `RESOLVED`, `ESCALATED`).
 - Doctor-only RBAC, FORCE RLS & restricted runtime grants: Scoped strictly to `DOCTOR` (`clinical.follow-ups.*`, `clinical.outcomes.*`, `clinical.adverse-events.*`). All 5 tables enforce `FORCE ROW LEVEL SECURITY`, composite foreign keys `(clinicId, id)`, and runtime denial of `DELETE` privilege. See [clinical-follow-ups.md](clinical-follow-ups.md).
 
+## Phase 4.1 inventory foundation, product catalog, stock locations & auditable movements
+`InventoryProduct`, `InventoryLocation`, `InventoryStockMovement`, and `InventoryBalance` establish multi-tenant stock management, double-entry ledger auditing, and regulatory controls:
+- Clinic-scoped product catalog and storage locations: Unique SKUs and location codes per clinic, categorized items (`INJECTABLE`, `MEDICATION`, `SKINCARE`, `CONSUMABLE`, `RETAIL`), measurement units, and reorder thresholds.
+- Transactional real-time balances: `InventoryBalance` stores on-hand quantities with check constraints (`onHandQuantity >= 0`) and optimistic versioning; mutations use row-level locking (`SELECT ... FOR UPDATE`).
+- Append-only stock ledger: `InventoryStockMovement` records every balance change with movement types (`OPENING_BALANCE`, `RECEIPT`, `ISSUE`, `TRANSFER_IN`, `TRANSFER_OUT`, `ADJUSTMENT`), reason codes, snapshot balances, and user attribution. Database trigger `inventory_movement_immutability_guard` prevents updates or deletions (`42501`).
+- Regulatory clinical consumption gate: Generic clinical issue of items requiring batch tracking (`requiresBatchTracking === true`) is blocked at the domain layer with message: `"Batch and expiry tracking is required for clinical consumption of this product (Phase 4 Step 4.2)"`. Non-clinical disposal and damage write-offs remain supported.
+- Ledger-to-balance reconciliation: Mathematical audit endpoint `/stock/reconcile` computes variance $\text{Balance.onHandQuantity} - \sum \text{Movements.quantity}$ across all clinic products and locations.
+- RBAC, FORCE RLS & restricted runtime grants: 11 granular permissions (`inventory.products.*`, `inventory.locations.*`, `inventory.stock.*`, `inventory.movements.read`, `inventory.reconcile`). Doctors have read-only access to products/locations/balances; receptionists and accountants have no inventory access. `FORCE ROW LEVEL SECURITY` is applied to all four tables, and `lamssa_runtime` is denied `UPDATE` and `DELETE` on stock movements. See [inventory-management.md](inventory-management.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,

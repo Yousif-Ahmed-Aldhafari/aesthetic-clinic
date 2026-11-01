@@ -1,5 +1,6 @@
 import { IdentityError, identityErrors } from '../identity/identity-error.js';
 import { BillingError, billingErrors } from '../billing/billing-error.js';
+import { InventoryError, inventoryErrors } from '../inventory/inventory-error.js';
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException } from '@nestjs/common';
 import type { Response } from 'express';
 import { SchedulingError, schedulingErrors } from '../appointments/scheduling-error.js';
@@ -31,7 +32,7 @@ export class SafeExceptionFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
-    const error = exception instanceof IdentityError ? {code:exception.code,message:identityErrors[exception.code][1]} : exception instanceof BillingError ? {code:exception.code,message:billingErrors[exception.code][1]} : exception instanceof QueueError ? {code:exception.code,message:queueErrors[exception.code][1]} : exception instanceof SchedulingError ? { code: exception.code, message: schedulingErrors[exception.code][1] } : exception instanceof AuthError ? { code: exception.code, message: authErrors[exception.code].message } : errors[status] ?? (status >= 500
+    const error = exception instanceof IdentityError ? {code:exception.code,message:identityErrors[exception.code][1]} : exception instanceof BillingError ? {code:exception.code,message:billingErrors[exception.code][1]} : exception instanceof InventoryError ? {code:exception.code,message:inventoryErrors[exception.code][1]} : exception instanceof QueueError ? {code:exception.code,message:queueErrors[exception.code][1]} : exception instanceof SchedulingError ? { code: exception.code, message: schedulingErrors[exception.code][1] } : exception instanceof AuthError ? { code: exception.code, message: authErrors[exception.code].message } : errors[status] ?? (status >= 500
       ? { code: 'INTERNAL_ERROR', message: 'حدث خطأ داخلي' }
       : { code: 'REQUEST_REJECTED', message: 'تعذر تنفيذ الطلب' });
 

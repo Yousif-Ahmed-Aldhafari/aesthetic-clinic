@@ -18,16 +18,27 @@ export const permissions = [
   'clinical.follow-ups.read', 'clinical.follow-ups.schedule', 'clinical.follow-ups.update', 'clinical.follow-ups.sign', 'clinical.follow-ups.amend',
   'clinical.outcomes.read', 'clinical.outcomes.record',
   'clinical.adverse-events.read', 'clinical.adverse-events.record', 'clinical.adverse-events.manage',
+  'inventory.products.read', 'inventory.products.manage',
+  'inventory.locations.read', 'inventory.locations.manage',
+  'inventory.stock.read', 'inventory.stock.receive', 'inventory.stock.issue', 'inventory.stock.adjust', 'inventory.stock.transfer',
+  'inventory.movements.read', 'inventory.reconcile',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
   'patients.read', 'patients.create', 'patients.update', 'appointments.read', 'appointments.create',
   'appointments.update', 'appointments.cancel', 'queue.read', 'queue.manage', 'queue.checkin', 'queue.transfer',
 ];
+const inventoryManagement: Permission[] = [
+  'inventory.products.read', 'inventory.products.manage',
+  'inventory.locations.read', 'inventory.locations.manage',
+  'inventory.stock.read', 'inventory.stock.receive', 'inventory.stock.issue', 'inventory.stock.adjust', 'inventory.stock.transfer',
+  'inventory.movements.read', 'inventory.reconcile',
+];
 const administration: Permission[] = [
   'clinic.settings.read', 'clinic.settings.update', 'clinic.branding.read', 'clinic.branding.update',
   'staff.read', 'staff.manage', ...operations, 'appointments.complete', 'queue.complete',
   'audit.read', 'privacy.requests.read', 'privacy.requests.manage',
+  ...inventoryManagement,
 ];
 export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>> = {
   CLINIC_OWNER: [...administration, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read', 'privacy.export'],
@@ -43,7 +54,8 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'clinical.photos.read', 'clinical.photos.upload', 'clinical.photos.annotate', 'clinical.photos.compare', 'clinical.photos.manage',
     'clinical.follow-ups.read', 'clinical.follow-ups.schedule', 'clinical.follow-ups.update', 'clinical.follow-ups.sign', 'clinical.follow-ups.amend',
     'clinical.outcomes.read', 'clinical.outcomes.record',
-    'clinical.adverse-events.read', 'clinical.adverse-events.record', 'clinical.adverse-events.manage'],
+    'clinical.adverse-events.read', 'clinical.adverse-events.record', 'clinical.adverse-events.manage',
+    'inventory.products.read', 'inventory.locations.read', 'inventory.stock.read'],
   RECEPTIONIST: ['clinic.branding.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record'],
   ACCOUNTANT: ['clinic.branding.read', 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read'],
 };

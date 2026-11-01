@@ -47,7 +47,7 @@ export function bookingTimes(local:string,timeZone:string,duration:number,choice
   if(!Number.isInteger(duration)||duration<5||duration>480)throw new SchedulingError('INVALID_TIME_RANGE');
   const startAt=localInstant(local,timeZone,choice),endAt=new Date(startAt.getTime()+duration*60000);
   if(checkFuture){const days=Temporal.Now.plainDateISO(timeZone).until(plainDate(local.slice(0,10))).days;
-    if(startAt.getTime()<Date.now()||days>366)throw new SchedulingError('INVALID_TIME_RANGE');}
+    if(startAt.getTime()<Date.now()||days>375)throw new SchedulingError('INVALID_TIME_RANGE');}
   return {startAt,endAt};
 }
 export function withinWeekly(startAt:Date,endAt:Date,timeZone:string,intervals:WeeklyInterval[]){

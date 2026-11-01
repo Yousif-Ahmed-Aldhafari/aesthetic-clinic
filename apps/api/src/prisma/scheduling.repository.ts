@@ -62,7 +62,7 @@ export class SchedulingRepository {
   createTimeOff(proof:VerifiedPrincipal,clinicId:string,id:string,input:TimeOffInput){return mutateScheduling(this.database,proof,clinicId,configPermissions,async(tx,c)=>{
     const current=await resource(tx,c,id);if(current.version!==input.expectedVersion)throw new SchedulingError('STALE_VERSION');
     const timeZone=await clinicTimezone(tx,c),startAt=localInstant(input.startLocal,timeZone,input.startDisambiguation),endAt=localInstant(input.endLocal,timeZone,input.endDisambiguation);
-    if(startAt>=endAt||endAt.getTime()-startAt.getTime()>366*86400000)throw new SchedulingError('INVALID_TIME_RANGE');
+    if(startAt>=endAt||endAt.getTime()-startAt.getTime()>375*86400000)throw new SchedulingError('INVALID_TIME_RANGE');
     if((await this.futureBookings(tx,c,id)).some(a=>a.startAt<endAt&&a.endAt>startAt))throw new SchedulingError('SCHEDULE_CHANGE_CONFLICT');
     await tx.bookableResource.update({where:{clinicId_id:{clinicId:c,id},version:input.expectedVersion},data:{version:{increment:1}}});
     return timeOffResponse(await tx.resourceTimeOff.create({data:{clinicId:c,resourceId:id,startAt,endAt}}));
