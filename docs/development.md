@@ -1,5 +1,14 @@
 # Development setup
 
+## Phase 4.4 treatment packages, prepaid session redemptions, installment plans & refunds
+
+Apply `20261101000400_packages_installments_refunds` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All package, installment, and refund endpoints reside under `/api/v1/clinics/:clinicId/billing`.
+- Migration: `apps/api/prisma/migrations/20261101000400_packages_installments_refunds/migration.sql` creates 11 models: `TreatmentPackage`, `TreatmentPackageVersion`, `TreatmentPackageItem`, `PatientPackage`, `PatientPackageEntitlement`, `PackageRedemption`, `PackageRedemptionReversal`, `InstallmentPlan`, `InstallmentSchedule`, `InstallmentAllocation`, and `RefundRequest` with `FORCE ROW LEVEL SECURITY`, check constraints, and trigger guards `package_version_immutability_guard`, `package_item_delete_guard`, and `patient_package_entitlement_guard` with `SECURITY INVOKER` and locked `search_path`.
+- Unit and policy tests: `apps/api/test/billing-money.test.ts`.
+- Database integration tests: `apps/api/test/packages-installments.integration.test.ts` (covers package catalog versioning, patient package redemption against prepaid sessions, redemption reversal with session restoration, installment payment plan creation and schedule tracking, installment allocation, refund request approval/rejection lifecycle, settlement linked to PaymentReversal, and cross-tenant RLS isolation).
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies packages catalog, patient packages, installment plans, and refund requests workspaces).
+- Core invariants: Monetary amounts use integer minor units (`bigint`). Package versions and items are immutable once published. Entitlements enforce non-negative balances (`usedSessions <= totalSessions`). Redemptions are append-only; reversals restore session balance non-destructively. Installment schedules track paid amounts without over-allocation. Refunds require multi-step approval workflow and settle against explicit payment reversals with step-up verification.
+
 ## Phase 4.3 suppliers, purchase orders, goods receiving, stock corrections & inventory alerts
 
 Apply `20261101000300_inventory_purchasing_operations` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All procurement, receiving, stocktaking and alert endpoints reside under `/api/v1/clinics/:clinicId/inventory`.

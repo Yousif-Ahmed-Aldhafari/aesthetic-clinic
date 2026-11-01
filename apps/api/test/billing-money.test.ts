@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { calculate, currencyScale, fixed } from '../src/billing/money.js';
-import { CreateInvoice, RecordPayment } from '../src/billing/billing-input.js';
+import { CreateInvoice, RecordPayment, CreateTreatmentPackageDto, CreateInstallmentPlanDto, CreateRefundRequestDto } from '../src/billing/billing-input.js';
 import { permissionsFor } from '../src/auth/permissions.js';
 const line=(input:Partial<Parameters<typeof calculate>[0][number]>={})=>({serviceName:'خدمة إدارية وهمية',quantity:'1',unitPrice:'0.10',discount:'0',taxBasisPoints:0,...input});
 test('billing uses exact integer minor units, including 0.10 + 0.20',()=>{assert.equal(calculate([line(),line({unitPrice:'0.20'})],2).totals.totalMinor,30n);});
@@ -34,4 +34,76 @@ test('finance privileges remain separate from doctor, clinic administration and 
   for(const p of ['invoices.read','invoices.create','invoices.issue','payments.record'] as const)assert(permissionsFor('RECEPTIONIST').includes(p));
   for(const p of ['payments.reverse','invoices.manage','reports.read'] as const){assert(!permissionsFor('RECEPTIONIST').includes(p));assert(permissionsFor('ACCOUNTANT').includes(p));}
   assert(!permissionsFor('ACCOUNTANT').includes('patients.read'));
+});
+
+test('treatment packages, redemptions, installments, and refunds RBAC permissions remain strictly segregated',()=>{
+  const doctorPerms = permissionsFor('DOCTOR');
+  assert(doctorPerms.includes('packages.redemptions.read'));
+  assert(doctorPerms.includes('packages.redemptions.record'));
+  assert(!doctorPerms.includes('packages.catalog.manage'));
+  assert(!doctorPerms.includes('installments.manage'));
+  assert(!doctorPerms.includes('refunds.settle'));
+
+  const recepPerms = permissionsFor('RECEPTIONIST');
+  assert(recepPerms.includes('packages.catalog.read'));
+  assert(recepPerms.includes('packages.purchases.create'));
+  assert(recepPerms.includes('packages.redemptions.record'));
+  assert(recepPerms.includes('installments.read'));
+  assert(recepPerms.includes('refunds.request'));
+  assert(!recepPerms.includes('packages.redemptions.reverse'));
+  assert(!recepPerms.includes('refunds.approve'));
+  assert(!recepPerms.includes('refunds.settle'));
+
+  const acctPerms = permissionsFor('ACCOUNTANT');
+  assert(acctPerms.includes('packages.catalog.read'));
+  assert(acctPerms.includes('packages.purchases.manage'));
+  assert(acctPerms.includes('installments.manage'));
+  assert(acctPerms.includes('installments.allocate'));
+  assert(acctPerms.includes('refunds.approve'));
+  assert(acctPerms.includes('refunds.settle'));
+
+  const ownerPerms = permissionsFor('CLINIC_OWNER');
+  assert(ownerPerms.includes('packages.redemptions.reverse'));
+});
+
+test('package, installment, and refund input DTOs enforce strict structure and reject mass assignment',()=>{
+  const validUuid = 'c32adc1a-5925-4904-a959-abd7c441a7ce';
+
+  // Package validation
+  const validPkg = {
+    code: 'PKG-GLOW-01',
+    nameAr: 'باقة جلسات نضارة',
+    price: '500.00',
+    items: [{ serviceName: 'جلسة نضارة', sessionQuantity: 3 }],
+  };
+  assert.equal(validateSync(plainToInstance(CreateTreatmentPackageDto, validPkg), { whitelist: true, forbidNonWhitelisted: true }).length, 0);
+  assert(validateSync(plainToInstance(CreateTreatmentPackageDto, { ...validPkg, items: [] })).length > 0);
+  assert(validateSync(plainToInstance(CreateTreatmentPackageDto, { ...validPkg, extraField: 'hacked' }), { whitelist: true, forbidNonWhitelisted: true }).length > 0);
+
+  // Installment plan validation
+  const validPlan = {
+    patientId: validUuid,
+    invoiceId: validUuid,
+    numberOfInstallments: 2,
+    totalAmount: '1000.00',
+    schedules: [
+      { installmentNumber: 1, dueDate: '2026-11-15', expectedAmount: '500.00' },
+      { installmentNumber: 2, dueDate: '2026-12-15', expectedAmount: '500.00' },
+    ],
+    requestKey: validUuid,
+  };
+  assert.equal(validateSync(plainToInstance(CreateInstallmentPlanDto, validPlan), { whitelist: true, forbidNonWhitelisted: true }).length, 0);
+  assert(validateSync(plainToInstance(CreateInstallmentPlanDto, { ...validPlan, numberOfInstallments: 1 })).length > 0);
+
+  // Refund request validation
+  const validRefund = {
+    invoiceId: validUuid,
+    patientId: validUuid,
+    amount: '250.00',
+    reason: 'PATIENT_REFUND',
+    reasonDetails: 'طلب المريض إلغاء الخدمة',
+    requestKey: validUuid,
+  };
+  assert.equal(validateSync(plainToInstance(CreateRefundRequestDto, validRefund), { whitelist: true, forbidNonWhitelisted: true }).length, 0);
+  assert(validateSync(plainToInstance(CreateRefundRequestDto, { ...validRefund, amount: '-10' })).length > 0);
 });

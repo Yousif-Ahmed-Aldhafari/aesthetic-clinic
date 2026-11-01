@@ -63,6 +63,15 @@
 - Operational Alerts: Dynamic derivation of low-stock, expiring-soon, expired, and recalled batch alerts with customizable snooze periods and audit trail.
 - FORCE RLS & Table Security: All 11 new tables enforce PostgreSQL `FORCE ROW LEVEL SECURITY`. See [inventory-purchasing.md](inventory-purchasing.md).
 
+## Phase 4.4 treatment packages, session redemptions, installments & refund requests
+`TreatmentPackage`, `TreatmentPackageVersion`, `TreatmentPackageItem`, `PatientPackage`, `PatientPackageEntitlement`, `PackageRedemption`, `PackageRedemptionReversal`, `InstallmentPlan`, `InstallmentSchedule`, `InstallmentAllocation`, and `RefundRequest` implement multi-service treatment packaging, session quotas, installment plans, and audited refund request lifecycles:
+- Multi-Service Package Catalog: Version-controlled `TreatmentPackage` records with immutable published snapshots (`TreatmentPackageVersion`), multi-service quotas (`TreatmentPackageItem`), validity days, and exact `bigint` minor unit pricing. Trigger `package_version_immutability_guard` blocks modification of published versions.
+- Patient Package Entitlements: Patient purchase contracts (`PatientPackage`) with per-service session counters (`PatientPackageEntitlement`). Trigger `patient_package_entitlement_guard` guarantees `remainingSessions = totalSessions - redeemedSessions - reservedSessions` and `remainingSessions >= 0`. Configurable activation policies (`UPON_INVOICE_ISSUANCE`, `UPON_FULL_PAYMENT`, `MANUAL_OVERRIDE`).
+- Session Redemptions & Reversals: Procedure session redemptions (`PackageRedemption`) recorded by doctors with clinical notes. Audited, non-destructive reversals (`PackageRedemptionReversal`) restore quotas atomically with step-up verification.
+- Installment Payment Agreements: Multi-installment plans (`InstallmentPlan`) linked to invoices, tracking schedules (`InstallmentSchedule`) with due dates and payment allocations (`InstallmentAllocation`) applied deterministically in FIFO order.
+- Refund Governance & Financial Integrity: Formal refund requests (`RefundRequest`) supporting reasons (`PATIENT_REFUND`, `ADMIN_ERROR`, `DUPLICATE`, `OTHER`), dual-custody review/decision (`APPROVED`, `REJECTED`), and settlement linked atomically to `PaymentReversal`.
+- FORCE RLS & Table Security: All 11 tables enforce PostgreSQL `FORCE ROW LEVEL SECURITY`. High-risk financial operations enforce `@RequireStepUp(15)`. See [packages-installments-refunds.md](packages-installments-refunds.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,

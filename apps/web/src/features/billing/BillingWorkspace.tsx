@@ -5,10 +5,17 @@ import { ApiError, type ClinicContext } from '../auth/api';
 import { billingApi, type BillingPage, type BillingProfile, type InvoiceRecord, type PaymentRecord, type Summary } from './billing-api';
 import { DraftForm, FinancialForm, ProfileForm } from './BillingForms';
 import { InvoicePrint } from './InvoicePrint';
+import { PackagesWorkspace } from './PackagesWorkspace';
+import { InstallmentsWorkspace } from './InstallmentsWorkspace';
+import { RefundsWorkspace } from './RefundsWorkspace';
 import { formatMoney, invoiceStatuses, methodNames, reasonNames } from './billing-money';
 import './billing.css';
+
+type BillingTab = 'INVOICES' | 'PACKAGES' | 'INSTALLMENTS' | 'REFUNDS';
+
 const message=(e:unknown)=>e instanceof ApiError?e.message:'تعذّر الاتصال. راجع السجل قبل إعادة المحاولة؛ أعد إرسال الطلب نفسه عند الشك في نتيجته.';
 export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic:ClinicContext;csrfToken:string;onAuthError:(e:unknown)=>void;onLegacy:()=>void}){
+  const [activeTab, setActiveTab] = useState<BillingTab>('INVOICES');
   const client=useMemo(()=>billingApi(clinic.clinicId),[clinic.clinicId]);
   const gates=useMemo(()=>({list:new RequestScope(),detail:new RequestScope(),history:new RequestScope(),settings:new RequestScope(),write:new RequestScope()}),[clinic.clinicId]);
   const can=(p:string)=>clinic.permissions.includes(p),canRead=can('invoices.read'),canCreate=can('invoices.create'),canReport=can('reports.read');
@@ -59,16 +66,58 @@ export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic
   const titles={new:'مسودة فاتورة جديدة',detail:'تفاصيل الفاتورة',edit:'تعديل المسودة',payment:'تسجيل دفعة',refund:'استرداد / عكس دفعة',void:'إلغاء مالي مدقّق',profile:'بيانات العيادة للفوترة'};
   return <section className="billing-workspace" aria-busy={loading}>
     <div className="patient-intro"><div><b>الفوترة والمدفوعات المحفوظة للعيادة</b><p>سجلات مالية مستقلة لكل عيادة. لا تُدخل بيانات حقيقية قبل استكمال مراجعة التشغيل والخصوصية.</p></div><button className="table-btn legacy-patients" onClick={onLegacy}>الفواتير التجريبية القديمة</button></div>
-    {!canRead?<div className="patient-error" role="alert">لا تملك صلاحية عرض السجلات المالية لهذه العيادة.</div>:<>
-      <div className="billing-toolbar"><button className="primary-btn" disabled={!canCreate||!profile||busy} onClick={()=>{setFormError('');setSelected(null);setModal('new');}}>＋ مسودة فاتورة</button><button className="table-btn" onClick={refresh} disabled={busy}>تحديث الفواتير</button>{can('invoices.manage')&&profile&&<button className="table-btn" onClick={()=>{setFormError('');setModal('profile');}}>بيانات الفوترة</button>}</div>
-      {settingsError&&<div className="patient-error" role="alert">{settingsError}<button className="table-btn" onClick={refresh}>إعادة المحاولة</button></div>}
-      {summary&&<div className="billing-overview">{summary.items.length===0?<p>لا توجد فواتير صادرة بعد.</p>:summary.items.map(s=><div className="finance-row" key={s.currency}><div><small>إجمالي الصادر · {s.currency}</small><strong>{formatMoney(s.invoicedMinor,s.currency,s.currencyScale)}</strong></div><div><small>صافي المحصّل</small><strong>{formatMoney(s.collectedMinor,s.currency,s.currencyScale)}</strong></div><div><small>فواتير دون أي سداد</small><strong>{formatMoney(s.unpaidMinor,s.currency,s.currencyScale)}</strong></div><div><small>الرصيد المستحق</small><strong>{formatMoney(s.outstandingMinor,s.currency,s.currencyScale)}</strong></div><div><small>المسترد / المعكوس</small><strong>{formatMoney(s.refundedMinor,s.currency,s.currencyScale)}</strong></div></div>)}<p className="form-hint">ملخص جميع الفترات حسب العملة؛ يستبعد المسودات والفواتير الملغاة. لا تُجمع العملات المختلفة.</p></div>}
-      {notice&&<div className="notice" role="status">{notice}<button onClick={()=>setNotice('')} aria-label="إغلاق التنبيه">×</button></div>}
-      <div className="panel full-panel"><div className="toolbar"><label>بحث بالاسم أو رقم المريض أو الفاتورة<input id="billing-search" className="search" value={q} maxLength={60} onChange={e=>{setQ(e.target.value);setCursors([null]);}}/></label><label>حالة الفاتورة<select id="billing-status" value={status} onChange={e=>{setStatus(e.target.value);setCursors([null]);}}><option value="ALL">جميع الحالات</option>{Object.entries(invoiceStatuses).map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label></div>
-        {loading?<p className="billing-empty" role="status">جارٍ تحميل الفواتير…</p>:error?<div className="patient-error" role="alert">{error}<button className="table-btn" onClick={refresh}>إعادة المحاولة</button></div>:<div className="table-wrap"><table><thead><tr><th>رقم الفاتورة</th><th>المريض</th><th>الإجمالي</th><th>الرصيد</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{page?.items.map(i=><tr key={i.id}><td><bdi>{i.number??'مسودة'}</bdi></td><td className="name-cell">{i.patientName}<small><bdi>{i.patientNumber}</bdi></small></td><td>{formatMoney(i.totalMinor,i.currency,i.currencyScale)}</td><td>{formatMoney(i.balanceMinor,i.currency,i.currencyScale)}</td><td><span className={`status bill-${i.status.toLowerCase()}`}>{invoiceStatuses[i.status]}</span></td><td><button className="table-btn" onClick={()=>void open(i.id)}>عرض الفاتورة</button></td></tr>)}</tbody></table>{page?.items.length===0&&<p className="billing-empty">لا توجد فواتير مطابقة. ابدأ بمسودة جديدة إذا كانت لديك الصلاحية.</p>}</div>}
-        <div className="patient-pagination"><button className="table-btn" disabled={loading||cursors.length<=1} onClick={()=>setCursors(h=>h.slice(0,-1))}>السابق</button><span>صفحة {cursors.length}</span><button className="table-btn" disabled={loading||!page?.hasMore} onClick={()=>setCursors(h=>[...h,page!.nextCursor])}>التالي</button></div>
-      </div>
-    </>}
+
+    <div className="inventory-tabs" style={{ marginBottom: '18px' }}>
+      <button
+        className={`inventory-tab-btn ${activeTab === 'INVOICES' ? 'active' : ''}`}
+        onClick={() => setActiveTab('INVOICES')}
+      >
+        الفواتير والمدفوعات
+      </button>
+      <button
+        className={`inventory-tab-btn ${activeTab === 'PACKAGES' ? 'active' : ''}`}
+        onClick={() => setActiveTab('PACKAGES')}
+      >
+        باقات العلاج والجلسات
+      </button>
+      <button
+        className={`inventory-tab-btn ${activeTab === 'INSTALLMENTS' ? 'active' : ''}`}
+        onClick={() => setActiveTab('INSTALLMENTS')}
+      >
+        خطط التقسيط
+      </button>
+      <button
+        className={`inventory-tab-btn ${activeTab === 'REFUNDS' ? 'active' : ''}`}
+        onClick={() => setActiveTab('REFUNDS')}
+      >
+        طلبات الاسترداد المالي
+      </button>
+    </div>
+
+    {activeTab === 'PACKAGES' && (
+      <PackagesWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} />
+    )}
+    {activeTab === 'INSTALLMENTS' && (
+      <InstallmentsWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} />
+    )}
+    {activeTab === 'REFUNDS' && (
+      <RefundsWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} />
+    )}
+
+    {activeTab === 'INVOICES' && (
+      <>
+        {!canRead?<div className="patient-error" role="alert">لا تملك صلاحية عرض السجلات المالية لهذه العيادة.</div>:<>
+          <div className="billing-toolbar"><button className="primary-btn" disabled={!canCreate||!profile||busy} onClick={()=>{setFormError('');setSelected(null);setModal('new');}}>＋ مسودة فاتورة</button><button className="table-btn" onClick={refresh} disabled={busy}>تحديث الفواتير</button>{can('invoices.manage')&&profile&&<button className="table-btn" onClick={()=>{setFormError('');setModal('profile');}}>بيانات الفوترة</button>}</div>
+          {settingsError&&<div className="patient-error" role="alert">{settingsError}<button className="table-btn" onClick={refresh}>إعادة المحاولة</button></div>}
+          {summary&&<div className="billing-overview">{summary.items.length===0?<p>لا توجد فواتير صادرة بعد.</p>:summary.items.map(s=><div className="finance-row" key={s.currency}><div><small>إجمالي الصادر · {s.currency}</small><strong>{formatMoney(s.invoicedMinor,s.currency,s.currencyScale)}</strong></div><div><small>صافي المحصّل</small><strong>{formatMoney(s.collectedMinor,s.currency,s.currencyScale)}</strong></div><div><small>فواتير دون أي سداد</small><strong>{formatMoney(s.unpaidMinor,s.currency,s.currencyScale)}</strong></div><div><small>الرصيد المستحق</small><strong>{formatMoney(s.outstandingMinor,s.currency,s.currencyScale)}</strong></div><div><small>المسترد / المعكوس</small><strong>{formatMoney(s.refundedMinor,s.currency,s.currencyScale)}</strong></div></div>)}<p className="form-hint">ملخص جميع الفترات حسب العملة؛ يستبعد المسودات والفواتير الملغاة. لا تُجمع العملات المختلفة.</p></div>}
+          {notice&&<div className="notice" role="status">{notice}<button onClick={()=>setNotice('')} aria-label="إغلاق التنبيه">×</button></div>}
+          <div className="panel full-panel"><div className="toolbar"><label>بحث بالاسم أو رقم المريض أو الفاتورة<input id="billing-search" className="search" value={q} maxLength={60} onChange={e=>{setQ(e.target.value);setCursors([null]);}}/></label><label>حالة الفاتورة<select id="billing-status" value={status} onChange={e=>{setStatus(e.target.value);setCursors([null]);}}><option value="ALL">جميع الحالات</option>{Object.entries(invoiceStatuses).map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label></div>
+            {loading?<p className="billing-empty" role="status">جارٍ تحميل الفواتير…</p>:error?<div className="patient-error" role="alert">{error}<button className="table-btn" onClick={refresh}>إعادة المحاولة</button></div>:<div className="table-wrap"><table><thead><tr><th>رقم الفاتورة</th><th>المريض</th><th>الإجمالي</th><th>الرصيد</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{page?.items.map(i=><tr key={i.id}><td><bdi>{i.number??'مسودة'}</bdi></td><td className="name-cell">{i.patientName}<small><bdi>{i.patientNumber}</bdi></small></td><td>{formatMoney(i.totalMinor,i.currency,i.currencyScale)}</td><td>{formatMoney(i.balanceMinor,i.currency,i.currencyScale)}</td><td><span className={`status bill-${i.status.toLowerCase()}`}>{invoiceStatuses[i.status]}</span></td><td><button className="table-btn" onClick={()=>void open(i.id)}>عرض الفاتورة</button></td></tr>)}</tbody></table>{page?.items.length===0&&<p className="billing-empty">لا توجد فواتير مطابقة. ابدأ بمسودة جديدة إذا كانت لديك الصلاحية.</p>}</div>}
+            <div className="patient-pagination"><button className="table-btn" disabled={loading||cursors.length<=1} onClick={()=>setCursors(h=>h.slice(0,-1))}>السابق</button><span>صفحة {cursors.length}</span><button className="table-btn" disabled={loading||!page?.hasMore} onClick={()=>setCursors(h=>[...h,page!.nextCursor])}>التالي</button></div>
+          </div>
+        </>}
+      </>
+    )}
     {modal&&<Modal title={titles[modal]} onClose={close}>
       {modal==='new'&&profile&&<DraftForm clinicId={clinic.clinicId} profile={profile} invoice={null} busy={busy} error={formError} onSave={b=>void write('invoices','POST',b)}/>}
       {modal==='profile'&&profile&&<ProfileForm profile={profile} busy={busy} error={formError} onSave={b=>void write('profile','PATCH',b)}/>}

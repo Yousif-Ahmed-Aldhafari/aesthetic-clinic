@@ -14,7 +14,9 @@ export function canonical(value:unknown):string {
 export const financialHash=(value:unknown)=>createHash('sha256').update(canonical(value)).digest('hex');
 export async function financialWrite<T>(database:TenantDatabaseService,proof:VerifiedPrincipal,clinicId:string,permissions:readonly Permission[],work:(tx:TenantTransaction,c:TenantContext)=>Promise<T>){
   try{return await database.withClinicContext(proof,clinicId,permissions,async(tx,c)=>{
-    await tx.clinicInvoiceCounter.upsert({where:{clinicId:c.clinicId},create:{clinicId:c.clinicId},update:{revision:{increment:1}},select:{clinicId:true}});
+    if (permissions.some(p => ['invoices.create', 'invoices.issue', 'invoices.manage', 'payments.record', 'payments.reverse'].includes(p))) {
+      await tx.clinicInvoiceCounter.upsert({where:{clinicId:c.clinicId},create:{clinicId:c.clinicId},update:{revision:{increment:1}},select:{clinicId:true}});
+    }
     return work(tx,c);
   });}catch(error){
     const has=(v:unknown,code:string,depth=0):boolean=>Boolean(v&&typeof v==='object'&&depth<8&&((v as Record<string,unknown>).code===code||(v as Record<string,unknown>).originalCode===code||['cause','meta','driverAdapterError'].some(k=>has((v as Record<string,unknown>)[k],code,depth+1))));
@@ -53,4 +55,251 @@ export const paymentSelect={id:true,invoiceId:true,amountMinor:true,currency:tru
 export function paymentResponse(p:Prisma.PaymentGetPayload<{select:typeof paymentSelect}>){
   const refunded=p.reversals.reduce((n,r)=>n+r.amountMinor,0n);
   return {id:p.id,invoiceId:p.invoiceId,receiptNumber:'PAY-'+p.id.toUpperCase(),amountMinor:p.amountMinor.toString(),currency:p.currency,currencyScale:p.currencyScale,method:p.method,createdAt:p.createdAt.toISOString(),refundedMinor:refunded.toString(),refundableMinor:(p.amountMinor-refunded).toString(),reversals:p.reversals.map(r=>({id:r.id,kind:r.kind,reason:r.reason,amountMinor:r.amountMinor.toString(),createdAt:r.createdAt.toISOString()}))};
+}
+
+export function packageVersionResponse(v: any) {
+  return {
+    id: v.id,
+    packageId: v.packageId,
+    versionNumber: v.versionNumber,
+    nameAr: v.nameAr,
+    nameEn: v.nameEn,
+    description: v.description,
+    terms: v.terms,
+    priceMinor: v.priceMinor.toString(),
+    currency: v.currency,
+    currencyScale: v.currencyScale,
+    validityDays: v.validityDays,
+    isPublished: v.isPublished,
+    publishedAt: v.publishedAt?.toISOString() ?? null,
+    publishedByMembershipId: v.publishedByMembershipId,
+    notes: v.notes,
+    createdAt: v.createdAt.toISOString(),
+    items: v.items ? v.items.map((i: any) => ({
+      id: i.id,
+      procedureId: i.procedureId,
+      serviceName: i.serviceName,
+      sessionQuantity: i.sessionQuantity,
+      notes: i.notes,
+      procedure: i.procedure ? { id: i.procedure.id, nameAr: i.procedure.nameAr } : null,
+    })) : undefined,
+  };
+}
+
+export function packageResponse(pkg: any) {
+  return {
+    id: pkg.id,
+    code: pkg.code,
+    nameAr: pkg.nameAr,
+    nameEn: pkg.nameEn,
+    description: pkg.description,
+    status: pkg.status,
+    currentVersionId: pkg.currentVersionId,
+    version: pkg.version,
+    createdAt: pkg.createdAt.toISOString(),
+    updatedAt: pkg.updatedAt.toISOString(),
+    currentVersion: pkg.currentVersion ? packageVersionResponse(pkg.currentVersion) : (pkg.versions && pkg.versions.length ? packageVersionResponse(pkg.versions[0]) : null),
+    versions: pkg.versions ? pkg.versions.map(packageVersionResponse) : undefined,
+  };
+}
+
+export function redemptionResponse(r: any) {
+  return {
+    id: r.id,
+    patientPackageId: r.patientPackageId,
+    entitlementId: r.entitlementId,
+    patientId: r.patientId,
+    procedureExecutionId: r.procedureExecutionId,
+    appointmentId: r.appointmentId,
+    visitId: r.visitId,
+    sessionsRedeemed: r.sessionsRedeemed,
+    status: r.status,
+    redeemedAt: r.redeemedAt.toISOString(),
+    redeemedByMembershipId: r.redeemedByMembershipId,
+    notes: r.notes,
+    reversals: r.reversals ? r.reversals.map((rev: any) => ({
+      id: rev.id,
+      reason: rev.reason,
+      reversedAt: rev.reversedAt.toISOString(),
+      reversedByMembershipId: rev.reversedByMembershipId,
+    })) : undefined,
+  };
+}
+
+export function patientPackageResponse(pp: any) {
+  return {
+    id: pp.id,
+    patientId: pp.patientId,
+    packageId: pp.packageId,
+    packageVersionId: pp.packageVersionId,
+    invoiceId: pp.invoiceId,
+    status: pp.status,
+    activationPolicy: pp.activationPolicy,
+    purchasedAt: pp.purchasedAt.toISOString(),
+    activatedAt: pp.activatedAt?.toISOString() ?? null,
+    expiresAt: pp.expiresAt?.toISOString() ?? null,
+    totalSessions: pp.totalSessions,
+    redeemedSessions: pp.redeemedSessions,
+    remainingSessions: pp.remainingSessions,
+    version: pp.version,
+    notes: pp.notes,
+    createdAt: pp.createdAt.toISOString(),
+    patient: pp.patient ? { id: pp.patient.id, fullName: pp.patient.fullName, patientNumber: pp.patient.patientNumber } : undefined,
+    package: pp.package ? { id: pp.package.id, code: pp.package.code, nameAr: pp.package.nameAr } : undefined,
+    packageVersion: pp.packageVersion ? packageVersionResponse(pp.packageVersion) : undefined,
+    entitlements: pp.entitlements ? pp.entitlements.map((e: any) => ({
+      id: e.id,
+      packageItemId: e.packageItemId,
+      procedureId: e.procedureId,
+      serviceName: e.serviceName,
+      totalSessions: e.totalSessions,
+      redeemedSessions: e.redeemedSessions,
+      reservedSessions: e.reservedSessions,
+      remainingSessions: e.remainingSessions,
+      procedure: e.procedure ? { id: e.procedure.id, nameAr: e.procedure.nameAr } : null,
+    })) : undefined,
+    redemptions: pp.redemptions ? pp.redemptions.map(redemptionResponse) : undefined,
+  };
+}
+
+export function installmentPlanResponse(plan: any) {
+  return {
+    id: plan.id,
+    patientId: plan.patientId,
+    invoiceId: plan.invoiceId,
+    patientPackageId: plan.patientPackageId,
+    planNumber: plan.planNumber,
+    totalAmountMinor: plan.totalAmountMinor.toString(),
+    paidAmountMinor: plan.paidAmountMinor.toString(),
+    remainingAmountMinor: plan.remainingAmountMinor.toString(),
+    currency: plan.currency,
+    currencyScale: plan.currencyScale,
+    numberOfInstallments: plan.numberOfInstallments,
+    status: plan.status,
+    notes: plan.notes,
+    version: plan.version,
+    createdAt: plan.createdAt.toISOString(),
+    patient: plan.patient ? { id: plan.patient.id, fullName: plan.patient.fullName, patientNumber: plan.patient.patientNumber } : undefined,
+    invoice: plan.invoice ? { id: plan.invoice.id, number: plan.invoice.number, totalMinor: plan.invoice.totalMinor.toString(), netPaidMinor: plan.invoice.netPaidMinor.toString() } : undefined,
+    schedules: plan.schedules ? plan.schedules.map((s: any) => ({
+      id: s.id,
+      installmentNumber: s.installmentNumber,
+      dueDate: s.dueDate.toISOString().slice(0, 10),
+      expectedAmountMinor: s.expectedAmountMinor.toString(),
+      paidAmountMinor: s.paidAmountMinor.toString(),
+      remainingAmountMinor: (s.expectedAmountMinor - s.paidAmountMinor).toString(),
+      status: s.status,
+      paidAt: s.paidAt?.toISOString() ?? null,
+      allocations: s.allocations ? s.allocations.map((a: any) => ({
+        id: a.id,
+        paymentId: a.paymentId,
+        allocatedMinor: a.allocatedMinor.toString(),
+        allocatedAt: a.allocatedAt.toISOString(),
+        notes: a.notes,
+      })) : undefined,
+    })) : undefined,
+  };
+}
+
+export function refundRequestResponse(r: any) {
+  return {
+    id: r.id,
+    invoiceId: r.invoiceId,
+    patientId: r.patientId,
+    patientPackageId: r.patientPackageId,
+    amountMinor: r.requestedAmountMinor.toString(),
+    requestedAmountMinor: r.requestedAmountMinor.toString(),
+    currency: r.currency,
+    currencyScale: r.currencyScale,
+    reason: r.reason,
+    reasonDetails: r.reasonDetails,
+    status: r.status,
+    requestedByMembershipId: r.requestedByMembershipId,
+    approvedByMembershipId: r.approvedByMembershipId,
+    approvedAt: r.approvedAt?.toISOString() ?? null,
+    rejectedByMembershipId: r.rejectedByMembershipId,
+    rejectedAt: r.rejectedAt?.toISOString() ?? null,
+    rejectionReason: r.rejectionReason,
+    settledAt: r.settledAt?.toISOString() ?? null,
+    settledByMembershipId: r.settledByMembershipId,
+    settlementReference: r.settlementReference,
+    paymentReversalId: r.paymentReversalId,
+    version: r.version,
+    createdAt: r.createdAt.toISOString(),
+    patient: r.patient ? { id: r.patient.id, fullName: r.patient.fullName, patientNumber: r.patient.patientNumber } : undefined,
+    invoice: r.invoice ? { id: r.invoice.id, number: r.invoice.number, totalMinor: r.invoice.totalMinor.toString(), netPaidMinor: r.invoice.netPaidMinor.toString() } : undefined,
+  };
+}
+
+export async function packageDetail(tx: TenantTransaction, clinicId: string, id: string) {
+  const pkg = await tx.treatmentPackage.findFirst({
+    where: { clinicId, id },
+    include: {
+      versions: {
+        where: { clinicId },
+        orderBy: { versionNumber: 'desc' },
+        include: { items: { include: { procedure: { select: { id: true, nameAr: true } } } } },
+      },
+    },
+  });
+  if (!pkg) throw new NotFoundException('PACKAGE_NOT_FOUND');
+  return packageResponse(pkg);
+}
+
+export async function patientPackageDetail(tx: TenantTransaction, clinicId: string, id: string) {
+  const row = await tx.patientPackage.findFirst({
+    where: { clinicId, id },
+    include: {
+      patient: { select: { id: true, fullName: true, patientNumber: true } },
+      package: { select: { id: true, code: true, nameAr: true } },
+      packageVersion: { include: { items: { include: { procedure: { select: { id: true, nameAr: true } } } } } },
+      entitlements: {
+        include: { procedure: { select: { id: true, nameAr: true } } },
+        orderBy: { id: 'asc' },
+      },
+      redemptions: {
+        include: {
+          entitlement: { select: { serviceName: true } },
+          reversals: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  });
+  if (!row) throw new NotFoundException('PATIENT_PACKAGE_NOT_FOUND');
+  return patientPackageResponse(row);
+}
+
+export async function installmentPlanDetail(tx: TenantTransaction, clinicId: string, id: string) {
+  const row = await tx.installmentPlan.findFirst({
+    where: { clinicId, id },
+    include: {
+      patient: { select: { id: true, fullName: true, patientNumber: true } },
+      invoice: { select: { id: true, number: true, totalMinor: true, netPaidMinor: true } },
+      schedules: {
+        orderBy: { installmentNumber: 'asc' },
+        include: {
+          allocations: {
+            include: { payment: { select: { id: true, method: true, amountMinor: true } } },
+          },
+        },
+      },
+    },
+  });
+  if (!row) throw new NotFoundException('INSTALLMENT_PLAN_NOT_FOUND');
+  return installmentPlanResponse(row);
+}
+
+export async function refundRequestDetail(tx: TenantTransaction, clinicId: string, id: string) {
+  const row = await tx.refundRequest.findFirst({
+    where: { clinicId, id },
+    include: {
+      invoice: { select: { id: true, number: true, totalMinor: true, netPaidMinor: true } },
+      patient: { select: { id: true, fullName: true, patientNumber: true } },
+      patientPackage: { select: { id: true, package: { select: { nameAr: true } } } },
+      reversal: { select: { id: true, amountMinor: true, kind: true, createdAt: true } },
+    },
+  });
+  if (!row) throw new NotFoundException('REFUND_REQUEST_NOT_FOUND');
+  return refundRequestResponse(row);
 }

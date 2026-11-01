@@ -1561,10 +1561,12 @@ live('inventory: goods receiving: partial delivery, batch creation, ledger posti
   });
   assert.equal(docGrRes.status, 403);
 
-  // 2. Delivery 1: Partial delivery of 6 vials with batch capture
-  const gr1Res = await admin.request(admin.path(0, '/goods-receipts'), 'POST', {
+  // 2. Delivery 1: Partial delivery of 6 vials with batch capture and idempotency
+  const gr1IdempotencyKey = `gr-idem-${suffix}`;
+  const gr1Payload = {
     purchaseOrderId: po.id,
     deliveryNoteNumber: `DN-${suffix.slice(0, 6)}`,
+    idempotencyKey: gr1IdempotencyKey,
     lines: [
       {
         purchaseOrderLineId: po.lines[0].id,
@@ -1574,12 +1576,20 @@ live('inventory: goods receiving: partial delivery, batch creation, ledger posti
         disposition: 'ACCEPTED',
       },
     ],
-  });
+  };
+  const gr1Res = await admin.request(admin.path(0, '/goods-receipts'), 'POST', gr1Payload);
   assert.equal(gr1Res.status, 201);
   const gr1 = (await gr1Res.json()) as any;
   assert(gr1.receiptNumber.startsWith('GR-'));
   assert.equal(gr1.lines[0].receivedQuantity, '6');
   assert(gr1.lines[0].batchId, 'Batch record must be created for batch-tracked product');
+
+  // Idempotency replay: sending identical request returns same receipt without double stock posting
+  const gr1ReplayRes = await admin.request(admin.path(0, '/goods-receipts'), 'POST', gr1Payload);
+  assert.equal(gr1ReplayRes.status, 201);
+  const gr1Replay = (await gr1ReplayRes.json()) as any;
+  assert.equal(gr1Replay.id, gr1.id);
+  assert.equal(gr1Replay.receiptNumber, gr1.receiptNumber);
 
   // Verify PO transitioned to PARTIALLY_RECEIVED
   const checkPo1 = await admin.request(admin.path(0, `/purchase-orders/${po.id}`));

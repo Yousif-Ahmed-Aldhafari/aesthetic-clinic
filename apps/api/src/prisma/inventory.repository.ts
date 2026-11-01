@@ -3354,6 +3354,24 @@ export class InventoryRepository {
 
   async receiveGoods(proof: VerifiedPrincipal, clinicId: string, input: ReceiveGoodsDto) {
     return this.database.withClinicContext(proof, clinicId, ['inventory.goods-receipt.record'], async (tx, c) => {
+      if (input.idempotencyKey) {
+        const existing = await tx.inventoryGoodsReceipt.findFirst({
+          where: { clinicId: c.clinicId, idempotencyKey: input.idempotencyKey.trim() },
+          include: {
+            supplier: { select: { id: true, code: true, nameAr: true } },
+            destinationLocation: { select: { id: true, code: true, nameAr: true } },
+            lines: {
+              include: {
+                product: { select: { id: true, sku: true, nameAr: true, unit: true } },
+              },
+            },
+          },
+        });
+        if (existing) {
+          return clean(existing);
+        }
+      }
+
       if (!input.lines || input.lines.length === 0) {
         throw new BadRequestException('Goods receipt must contain at least one line item');
       }
@@ -3577,6 +3595,7 @@ export class InventoryRepository {
           destinationLocationId: destLocId,
           supplierDeliveryNote: input.deliveryNoteNumber?.trim() || null,
           notes: input.notes?.trim() || null,
+          idempotencyKey: input.idempotencyKey?.trim() || null,
           receiverMembershipId: c.membershipId,
         },
       });
