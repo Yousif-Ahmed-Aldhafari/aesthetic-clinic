@@ -218,11 +218,11 @@ if (!enabled) {
     assert(meta.ciphertextSha256);
     assert(meta.plaintextSize > 0);
     assert(meta.ciphertextSize > 0);
-    assert.equal(meta.latestMigration, '20261101000100_inventory_foundation');
-    assert(meta.migrationCount >= 22, 'Must record all applied migrations');
+    assert.equal(meta.latestMigration, '20261101000200_inventory_batch_tracking');
+    assert(meta.migrationCount >= 23, 'Must record all applied migrations');
 
     // Completeness verification: all public tables tracked
-    assert(meta.tableCount >= 46, 'Must track all 46+ public tables');
+    assert(meta.tableCount >= 49, 'Must track all 49+ public tables');
     assert.equal(typeof meta.tableCounts.Clinic, 'number');
     assert.equal(typeof meta.tableCounts.Patient, 'number');
     assert.equal(typeof meta.tableCounts.User, 'number');

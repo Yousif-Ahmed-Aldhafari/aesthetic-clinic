@@ -14,6 +14,16 @@ import type {
   AdjustStockDto,
   StockBalancesQuery,
   MovementsQuery,
+  CreateBatchDto,
+  UpdateBatchStatusDto,
+  ReceiveBatchStockDto,
+  IssueBatchStockDto,
+  TransferBatchStockDto,
+  RecordClinicalConsumptionDto,
+  VoidClinicalConsumptionDto,
+  BatchListQuery,
+  ExpiryReportQuery,
+  ClinicalConsumptionListQuery,
 } from './inventory-input.js';
 
 @Controller('clinics/:clinicId/inventory')
@@ -191,6 +201,188 @@ export class InventoryController {
     @Param('clinicId') clinicId: string,
   ) {
     return this.inventory.reconcileLedger(req.auth!.principal, clinicId);
+  }
+
+  // Batches
+  @Get('batches')
+  @ClinicPermissions('inventory.batches.read')
+  listBatches(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query() query: BatchListQuery,
+  ) {
+    return this.inventory.listBatches(req.auth!.principal, clinicId, query);
+  }
+
+  @Get('batches/expiry-report')
+  @ClinicPermissions('inventory.batches.read')
+  getExpiryReport(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query() query: ExpiryReportQuery,
+  ) {
+    return this.inventory.getExpiryReport(req.auth!.principal, clinicId, query);
+  }
+
+  @Get('batches/:batchId')
+  @ClinicPermissions('inventory.batches.read')
+  getBatch(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('batchId') batchId: string,
+  ) {
+    return this.inventory.getBatch(req.auth!.principal, clinicId, batchId);
+  }
+
+  @Post('batches')
+  @ClinicPermissions('inventory.batches.manage')
+  createBatch(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: CreateBatchDto,
+    @Headers('x-idempotency-key') headerIdempotency?: string,
+  ) {
+    const idempotencyKey = body.idempotencyKey || headerIdempotency;
+    return this.inventory.createBatch(req.auth!.principal, clinicId, { ...body, idempotencyKey });
+  }
+
+  @Patch('batches/:batchId/status')
+  @ClinicPermissions('inventory.batches.read')
+  updateBatchStatus(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('batchId') batchId: string,
+    @Body() body: UpdateBatchStatusDto,
+  ) {
+    return this.inventory.updateBatchStatus(req.auth!.principal, clinicId, batchId, body);
+  }
+
+  @Post('batches/:batchId/quarantine')
+  @ClinicPermissions('inventory.batches.quarantine')
+  quarantineBatch(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('batchId') batchId: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.inventory.updateBatchStatus(req.auth!.principal, clinicId, batchId, {
+      status: 'QUARANTINED',
+      reason: body.reason,
+    });
+  }
+
+  @Post('batches/:batchId/recall')
+  @ClinicPermissions('inventory.batches.recall')
+  recallBatch(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('batchId') batchId: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.inventory.updateBatchStatus(req.auth!.principal, clinicId, batchId, {
+      status: 'RECALLED',
+      reason: body.reason,
+    });
+  }
+
+  @Post('batches/:batchId/release')
+  @ClinicPermissions('inventory.batches.manage')
+  releaseBatch(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('batchId') batchId: string,
+  ) {
+    return this.inventory.updateBatchStatus(req.auth!.principal, clinicId, batchId, {
+      status: 'AVAILABLE',
+    });
+  }
+
+  @Post('batches/receive')
+  @ClinicPermissions('inventory.stock.receive')
+  receiveBatchStock(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: ReceiveBatchStockDto,
+    @Headers('x-idempotency-key') headerIdempotency?: string,
+  ) {
+    const idempotencyKey = body.idempotencyKey || headerIdempotency;
+    return this.inventory.receiveBatchStock(req.auth!.principal, clinicId, { ...body, idempotencyKey });
+  }
+
+  @Post('batches/issue')
+  @ClinicPermissions('inventory.stock.issue')
+  issueBatchStock(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: IssueBatchStockDto,
+    @Headers('x-idempotency-key') headerIdempotency?: string,
+  ) {
+    const idempotencyKey = body.idempotencyKey || headerIdempotency;
+    return this.inventory.issueBatchStock(req.auth!.principal, clinicId, { ...body, idempotencyKey });
+  }
+
+  @Post('batches/transfer')
+  @ClinicPermissions('inventory.stock.transfer')
+  transferBatchStock(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: TransferBatchStockDto,
+    @Headers('x-idempotency-key') headerIdempotency?: string,
+  ) {
+    const idempotencyKey = body.idempotencyKey || headerIdempotency;
+    return this.inventory.transferBatchStock(req.auth!.principal, clinicId, { ...body, idempotencyKey });
+  }
+
+  // Clinical Consumption
+  @Post('clinical-consumption')
+  @ClinicPermissions('inventory.clinical-consumption.record')
+  recordClinicalConsumption(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Body() body: RecordClinicalConsumptionDto,
+    @Headers('x-idempotency-key') headerIdempotency?: string,
+  ) {
+    const idempotencyKey = body.idempotencyKey || headerIdempotency;
+    return this.inventory.recordClinicalConsumption(req.auth!.principal, clinicId, {
+      ...body,
+      idempotencyKey,
+    });
+  }
+
+  @Post('clinical-consumption/:consumptionId/void')
+  @ClinicPermissions('inventory.clinical-consumption.record')
+  voidClinicalConsumption(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('consumptionId') consumptionId: string,
+    @Body() body: VoidClinicalConsumptionDto,
+    @Headers('x-idempotency-key') headerIdempotency?: string,
+  ) {
+    const idempotencyKey = body.idempotencyKey || headerIdempotency;
+    return this.inventory.voidClinicalConsumption(req.auth!.principal, clinicId, consumptionId, {
+      ...body,
+      idempotencyKey,
+    });
+  }
+
+  @Get('clinical-consumption')
+  @ClinicPermissions('inventory.clinical-consumption.read')
+  listClinicalConsumptions(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query() query: ClinicalConsumptionListQuery,
+  ) {
+    return this.inventory.listClinicalConsumptions(req.auth!.principal, clinicId, query);
+  }
+
+  @Get('clinical-consumption/procedure/:procedureExecutionId')
+  @ClinicPermissions('inventory.clinical-consumption.read')
+  getProcedureConsumptions(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('procedureExecutionId') procedureExecutionId: string,
+  ) {
+    return this.inventory.getProcedureConsumptions(req.auth!.principal, clinicId, procedureExecutionId);
   }
 }
 

@@ -118,15 +118,42 @@ before(async () => {
   await ownerDb.clinicMembership.create({
     data: { clinicId: clinics[1], userId: users[1], role: 'CLINIC_ADMIN', status: 'ACTIVE' },
   });
-  await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryStockMovement" ENABLE TRIGGER inventory_movement_immutability_guard');
+  await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryStockMovement" ENABLE TRIGGER inventory_movement_immutability_guard').catch(() => {});
+  await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryClinicalConsumption" ENABLE TRIGGER inventory_consumption_immutability_guard').catch(() => {});
+  await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryBatch" ENABLE TRIGGER inventory_batch_integrity_guard').catch(() => {});
+  await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryBatchBalance" ENABLE TRIGGER inventory_batch_balance_integrity_guard').catch(() => {});
 });
 
 after(async () => {
   if (ownerDb) {
     try {
-      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryStockMovement" DISABLE TRIGGER inventory_movement_immutability_guard');
-      await ownerDb.inventoryBalance.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryStockMovement" DISABLE TRIGGER inventory_movement_immutability_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryClinicalConsumption" DISABLE TRIGGER inventory_consumption_immutability_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryBatch" DISABLE TRIGGER inventory_batch_integrity_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryBatchBalance" DISABLE TRIGGER inventory_batch_balance_integrity_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."ProcedureExecution" DISABLE TRIGGER procedure_execution_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."PatientConsent" DISABLE TRIGGER patient_consent_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."ConsentSignatureEvidence" DISABLE TRIGGER consent_signature_evidence_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."ConsentTemplateVersion" DISABLE TRIGGER consent_template_version_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."TreatmentPlanRevision" DISABLE TRIGGER treatment_revision_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."TreatmentPlanItem" DISABLE TRIGGER treatment_item_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."TreatmentPlan" DISABLE TRIGGER treatment_plan_guard').catch(() => {});
+
+      await ownerDb.inventoryClinicalConsumption.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryBatchBalance.deleteMany({ where: { clinicId: { in: clinics } } });
       await ownerDb.inventoryStockMovement.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryBatch.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.inventoryBalance.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.consentSignatureEvidence.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.patientConsent.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.consentTemplateVersion.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.consentTemplate.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.procedureExecution.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.treatmentPlanItem.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.treatmentPlanRevision.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.treatmentPlan.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.aestheticProcedureCatalog.deleteMany({ where: { clinicId: { in: clinics } } });
+      await ownerDb.patient.deleteMany({ where: { clinicId: { in: clinics } } });
       await ownerDb.inventoryLocation.deleteMany({ where: { clinicId: { in: clinics } } });
       await ownerDb.inventoryProduct.deleteMany({ where: { clinicId: { in: clinics } } });
       await ownerDb.clinicMembership.deleteMany({ where: { clinicId: { in: clinics } } });
@@ -136,8 +163,19 @@ after(async () => {
       await ownerDb.clinicSlugReservation.deleteMany({
         where: { slug: { in: clinics.map((_, i) => `inv-clinic-${i}-${suffix}`) } },
       });
-      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryStockMovement" ENABLE TRIGGER inventory_movement_immutability_guard');
-    } catch {}
+    } catch {} finally {
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryStockMovement" ENABLE TRIGGER inventory_movement_immutability_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryClinicalConsumption" ENABLE TRIGGER inventory_consumption_immutability_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryBatch" ENABLE TRIGGER inventory_batch_integrity_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."InventoryBatchBalance" ENABLE TRIGGER inventory_batch_balance_integrity_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."ProcedureExecution" ENABLE TRIGGER procedure_execution_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."PatientConsent" ENABLE TRIGGER patient_consent_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."ConsentSignatureEvidence" ENABLE TRIGGER consent_signature_evidence_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."ConsentTemplateVersion" ENABLE TRIGGER consent_template_version_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."TreatmentPlanRevision" ENABLE TRIGGER treatment_revision_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."TreatmentPlanItem" ENABLE TRIGGER treatment_item_guard').catch(() => {});
+      await ownerDb.$executeRawUnsafe('ALTER TABLE public."TreatmentPlan" ENABLE TRIGGER treatment_plan_guard').catch(() => {});
+    }
     await ownerDb.$disconnect().catch(() => {});
   }
   if (pool) await pool.end().catch(() => {});
@@ -576,6 +614,104 @@ live('idempotency key prevents duplicate postings on network retry', async () =>
   const balRes = await admin.request(admin.path(0, `/stock/balances?productId=${product.id}&locationId=${location.id}`));
   const [balance] = (await balRes.json()) as any;
   assert.equal(balance.onHandQuantity, '10');
+
+  // Attempt to replay the same idempotencyKey with a conflicting payload (different quantity)
+  const conflictRes = await admin.request(admin.path(0, '/stock/receive'), 'POST', {
+    productId: product.id,
+    locationId: location.id,
+    quantity: '25.0000',
+    reasonCode: 'PURCHASE_RECEIPT',
+    idempotencyKey: idempKey,
+  });
+  assert.equal(conflictRes.status, 409);
+  const conflictErr = (await conflictRes.json()) as any;
+  assert.equal(conflictErr.error?.code, 'INVENTORY_IDEMPOTENCY_CONFLICT');
+});
+
+live('products requiring batch tracking cannot escape traceability via generic adjustment', async () => {
+  const admin = await new Browser().login(1, 0);
+
+  const pRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `BOTOX-ESC-${randomUUID().slice(0, 8)}`,
+    nameAr: 'بوتوكس اختبار الهروب من التتبع',
+    category: 'INJECTABLE',
+    unit: 'VIAL',
+    requiresBatchTracking: true,
+  });
+  assert.equal(pRes.status, 201);
+  const product = (await pRes.json()) as any;
+
+  const locRes = await admin.request(admin.path(0, '/locations'), 'POST', {
+    code: `ESC-LOC-${randomUUID().slice(0, 8)}`,
+    nameAr: 'مستودع تجربة التتبع',
+    type: 'MAIN_STORE',
+  });
+  const location = (await locRes.json()) as any;
+
+  // Generic adjustment without batch must be rejected
+  const adjustRes = await admin.request(admin.path(0, '/stock/adjust'), 'POST', {
+    productId: product.id,
+    locationId: location.id,
+    targetQuantity: '50.0000',
+    reasonCode: 'DISCREPANCY_CORRECTION',
+    reasonExplanation: 'محاولة تعديل رصيد صنف تشغيلات بدون تحديد الدفعة',
+  });
+  assert.equal(adjustRes.status, 400);
+  const err = (await adjustRes.json()) as any;
+  assert.equal(err.error?.code, 'INVENTORY_BATCH_REQUIRED_FOR_PRODUCT');
+});
+
+live('concurrent stock issues against the same balance execute without race conditions', async () => {
+  const admin = await new Browser().login(1, 0);
+
+  const pRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `RACE-PROD-${randomUUID().slice(0, 8)}`,
+    nameAr: 'منتج اختبار التزامن',
+    category: 'CONSUMABLE',
+    unit: 'PIECE',
+    requiresBatchTracking: false,
+  });
+  const product = (await pRes.json()) as any;
+
+  const locRes = await admin.request(admin.path(0, '/locations'), 'POST', {
+    code: `RACE-LOC-${randomUUID().slice(0, 8)}`,
+    nameAr: 'مستودع اختبار التزامن',
+    type: 'MAIN_STORE',
+  });
+  const location = (await locRes.json()) as any;
+
+  // Initial stock: 10 units
+  await admin.request(admin.path(0, '/stock/receive'), 'POST', {
+    productId: product.id,
+    locationId: location.id,
+    quantity: '10.0000',
+    reasonCode: 'PURCHASE_RECEIPT',
+  });
+
+  // Launch two concurrent issues of 6 units each (total 12 > 10)
+  const [res1, res2] = await Promise.all([
+    admin.request(admin.path(0, '/stock/issue'), 'POST', {
+      productId: product.id,
+      locationId: location.id,
+      quantity: '6.0000',
+      reasonCode: 'CLINICAL_USE',
+    }),
+    admin.request(admin.path(0, '/stock/issue'), 'POST', {
+      productId: product.id,
+      locationId: location.id,
+      quantity: '6.0000',
+      reasonCode: 'CLINICAL_USE',
+    }),
+  ]);
+
+  // Exactly one should succeed (201) and one should fail (409 conflict or insufficient stock)
+  const statuses = [res1.status, res2.status].sort();
+  assert.deepEqual(statuses, [201, 409]);
+
+  // Final balance must be exactly 4 (10 - 6), never negative
+  const balRes = await admin.request(admin.path(0, `/stock/balances?productId=${product.id}&locationId=${location.id}`));
+  const [balance] = (await balRes.json()) as any;
+  assert.equal(balance.onHandQuantity, '4');
 });
 
 live('database immutability trigger and privilege revocation prevent SQL UPDATE and DELETE on movements', async () => {
@@ -635,6 +771,545 @@ live('database immutability trigger and privilege revocation prevent SQL UPDATE 
         return true;
       },
     );
+  } finally {
+    await ownerClient.end().catch(() => {});
+  }
+});
+
+live('batch/lot registration, duplicate rejection, and cross-clinic tenant isolation', async () => {
+  const admin = await new Browser().login(1, 0);
+
+  // 1. Create a batch-tracked product
+  const prodRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `LOT-PROD-${suffix.slice(0, 8)}`,
+    nameAr: 'بوتوكس أليرجان 100 وحدة',
+    category: 'INJECTABLE',
+    unit: 'VIAL',
+    requiresBatchTracking: true,
+  });
+  assert.equal(prodRes.status, 201);
+  const prod = (await prodRes.json()) as any;
+
+  // 2. Register a batch
+  const batchRes1 = await admin.request(admin.path(0, '/batches'), 'POST', {
+    productId: prod.id,
+    batchNumber: `LOT-C88-${suffix.slice(0, 6)}`,
+    expirationDate: '2028-06-30',
+    initialQuantity: '50.0000',
+    manufacturerName: 'Allergan Aesthetics',
+  });
+  assert.equal(batchRes1.status, 201);
+  const batch1 = (await batchRes1.json()) as any;
+  assert.equal(batch1.batchNumber, `LOT-C88-${suffix.slice(0, 6)}`);
+  assert.equal(batch1.status, 'AVAILABLE');
+
+  // 3. Duplicate batch number for same product in same clinic must be rejected
+  const dupRes = await admin.request(admin.path(0, '/batches'), 'POST', {
+    productId: prod.id,
+    batchNumber: `LOT-C88-${suffix.slice(0, 6)}`,
+    expirationDate: '2028-06-30',
+    initialQuantity: '20.0000',
+  });
+  assert.equal(dupRes.status, 409);
+  const dupErr = (await dupRes.json()) as any;
+  assert.equal(dupErr.error?.code, 'INVENTORY_DUPLICATE_BATCH');
+
+  // 4. Cross-clinic tenant isolation: admin in clinic 1 cannot view or access clinic 0's batch
+  const adminClinic1 = await new Browser().login(1, 1);
+  const crossGet = await adminClinic1.request(adminClinic1.path(1, `/batches/${batch1.id}`));
+  assert.equal(crossGet.status, 404);
+});
+
+live('batch expiry validation respects clinic-local calendar dates', async () => {
+  const admin = await new Browser().login(1, 0);
+
+  const prodRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `EXP-PROD-${suffix.slice(0, 8)}`,
+    nameAr: 'فيلر جوفيديرم الترا',
+    category: 'INJECTABLE',
+    unit: 'SYRINGE',
+    requiresBatchTracking: true,
+  });
+  const prod = (await prodRes.json()) as any;
+
+  // 1. Past expiration date is rejected
+  const pastRes = await admin.request(admin.path(0, '/batches'), 'POST', {
+    productId: prod.id,
+    batchNumber: `LOT-PAST-${suffix.slice(0, 6)}`,
+    expirationDate: '2021-01-01',
+    initialQuantity: '10.0000',
+  });
+  assert.equal(pastRes.status, 400);
+  const pastErr = (await pastRes.json()) as any;
+  assert.equal(pastErr.error?.code, 'INVENTORY_BATCH_EXPIRED');
+
+  // 2. Invalid date format is rejected
+  const malformedRes = await admin.request(admin.path(0, '/batches'), 'POST', {
+    productId: prod.id,
+    batchNumber: `LOT-BAD-${suffix.slice(0, 6)}`,
+    expirationDate: 'not-a-date',
+    initialQuantity: '10.0000',
+  });
+  assert.equal(malformedRes.status, 400);
+
+  // 3. Impossible calendar date (Feb 30) is rejected
+  const feb30Res = await admin.request(admin.path(0, '/batches'), 'POST', {
+    productId: prod.id,
+    batchNumber: `LOT-FEB30-${suffix.slice(0, 6)}`,
+    expirationDate: '2028-02-30',
+    initialQuantity: '10.0000',
+  });
+  assert.equal(feb30Res.status, 400);
+});
+
+live('batch quarantine, recall, and issue blocking workflow', async () => {
+  const admin = await new Browser().login(1, 0);
+
+  const locRes = await admin.request(admin.path(0, '/locations'), 'POST', {
+    code: `LOC-QR-${suffix.slice(0, 6)}`,
+    nameAr: 'غرفة عيادة الحجر',
+  });
+  const loc = (await locRes.json()) as any;
+
+  const prodRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `QR-PROD-${suffix.slice(0, 8)}`,
+    nameAr: 'ديسبورت 300 وحدة',
+    category: 'INJECTABLE',
+    unit: 'VIAL',
+    requiresBatchTracking: true,
+  });
+  const prod = (await prodRes.json()) as any;
+
+  // Create batch with initial opening balance
+  const batchRes = await admin.request(admin.path(0, '/batches'), 'POST', {
+    productId: prod.id,
+    batchNumber: `LOT-QR-${suffix.slice(0, 6)}`,
+    expirationDate: '2028-12-31',
+    initialQuantity: '20.0000',
+    locationId: loc.id,
+  });
+  assert.equal(batchRes.status, 201);
+  const batch = (await batchRes.json()) as any;
+
+  // 1. Quarantine batch
+  const qRes = await admin.request(admin.path(0, `/batches/${batch.id}/quarantine`), 'POST', {
+    reason: 'اشتباه تغير في درجة حرارة الثلاجة أثناء التخزين',
+  });
+  assert.equal(qRes.status, 201);
+  const quarantined = (await qRes.json()) as any;
+  assert.equal(quarantined.status, 'QUARANTINED');
+
+  // Attempt to issue from quarantined batch -> BLOCKED
+  const issueQ = await admin.request(admin.path(0, '/batches/issue'), 'POST', {
+    productId: prod.id,
+    batchId: batch.id,
+    locationId: loc.id,
+    quantity: '2.0000',
+    reasonCode: 'DAMAGED',
+  });
+  assert.equal(issueQ.status, 400);
+  const qErr = (await issueQ.json()) as any;
+  assert.equal(qErr.error?.code, 'INVENTORY_BATCH_QUARANTINED');
+
+  // 2. Release batch back to AVAILABLE
+  const relRes = await admin.request(admin.path(0, `/batches/${batch.id}/release`), 'POST', {});
+  assert.equal(relRes.status, 201);
+  const released = (await relRes.json()) as any;
+  assert.equal(released.status, 'AVAILABLE');
+
+  // Issue now succeeds
+  const issueOk = await admin.request(admin.path(0, '/batches/issue'), 'POST', {
+    productId: prod.id,
+    batchId: batch.id,
+    locationId: loc.id,
+    quantity: '2.0000',
+    reasonCode: 'DAMAGED',
+  });
+  assert.equal(issueOk.status, 201);
+
+  // 3. Recall batch
+  const recRes = await admin.request(admin.path(0, `/batches/${batch.id}/recall`), 'POST', {
+    reason: 'سحب احترازي من الشركة المصنعة رقم تعميم 402',
+  });
+  assert.equal(recRes.status, 201);
+  const recalled = (await recRes.json()) as any;
+  assert.equal(recalled.status, 'RECALLED');
+
+  // Attempt to issue from recalled batch -> BLOCKED
+  const issueRec = await admin.request(admin.path(0, '/batches/issue'), 'POST', {
+    productId: prod.id,
+    batchId: batch.id,
+    locationId: loc.id,
+    quantity: '1.0000',
+    reasonCode: 'DAMAGED',
+  });
+  assert.equal(issueRec.status, 400);
+  const recErr = (await issueRec.json()) as any;
+  assert.equal(recErr.error?.code, 'INVENTORY_BATCH_RECALLED');
+
+  // Attempt to release a recalled batch -> BLOCKED by immutable status
+  const relRec = await admin.request(admin.path(0, `/batches/${batch.id}/release`), 'POST', {});
+  assert.equal(relRec.status, 400);
+  const relRecErr = (await relRec.json()) as any;
+  assert.equal(relRecErr.error?.code, 'INVENTORY_BATCH_IMMUTABLE_STATUS');
+});
+
+live('batch stock transfer preserves lot balance consistency across locations', async () => {
+  const admin = await new Browser().login(1, 0);
+
+  const [loc1Res, loc2Res] = await Promise.all([
+    admin.request(admin.path(0, '/locations'), 'POST', {
+      code: `MS-${suffix.slice(0, 6)}`,
+      nameAr: 'مستودع رئيسي تجريبي',
+      type: 'MAIN_STORE',
+    }),
+    admin.request(admin.path(0, '/locations'), 'POST', {
+      code: `TR-${suffix.slice(0, 6)}`,
+      nameAr: 'غرفة معالجة 1',
+      type: 'TREATMENT_ROOM',
+    }),
+  ]);
+  const loc1 = (await loc1Res.json()) as any;
+  const loc2 = (await loc2Res.json()) as any;
+
+  const prodRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `TRF-PROD-${suffix.slice(0, 8)}`,
+    nameAr: 'إبر فيلر رادييس 1.5 مل',
+    category: 'INJECTABLE',
+    unit: 'SYRINGE',
+    requiresBatchTracking: true,
+  });
+  const prod = (await prodRes.json()) as any;
+
+  // Create batch with 15 units at Location 1
+  const batchRes = await admin.request(admin.path(0, '/batches'), 'POST', {
+    productId: prod.id,
+    batchNumber: `LOT-TRF-${suffix.slice(0, 6)}`,
+    expirationDate: '2028-11-30',
+    initialQuantity: '15.0000',
+    locationId: loc1.id,
+  });
+  assert.equal(batchRes.status, 201);
+  const batch = (await batchRes.json()) as any;
+
+  // Transfer 5 units from Location 1 to Location 2
+  const trfRes = await admin.request(admin.path(0, '/batches/transfer'), 'POST', {
+    productId: prod.id,
+    batchId: batch.id,
+    sourceLocationId: loc1.id,
+    targetLocationId: loc2.id,
+    quantity: '5.0000',
+    reasonExplanation: 'تزويد غرفة العلاج',
+  });
+  assert.equal(trfRes.status, 201);
+
+  // Check Batch details: location 1 has 10, location 2 has 5
+  const batchDetailsRes = await admin.request(admin.path(0, `/batches/${batch.id}`));
+  assert.equal(batchDetailsRes.status, 200);
+  const batchDetails = (await batchDetailsRes.json()) as any;
+  assert.equal(batchDetails.totalOnHandQuantity, '15');
+  const balMap = new Map(batchDetails.batchBalances.map((bb: any) => [bb.locationId, bb.onHandQuantity]));
+  assert.equal(balMap.get(loc1.id), '10');
+  assert.equal(balMap.get(loc2.id), '5');
+
+  // Check general balances: loc1 = 10, loc2 = 5
+  const balRes = await admin.request(admin.path(0, `/stock/balances?productId=${prod.id}`));
+  const bList = (await balRes.json()) as any[];
+  const prodBalMap = new Map(bList.map((b: any) => [b.locationId, b.onHandQuantity]));
+  assert.equal(prodBalMap.get(loc1.id), '10');
+  assert.equal(prodBalMap.get(loc2.id), '5');
+});
+
+live('clinical consumption: atomic stock deduction, consent eligibility, doctor check, and voiding', async () => {
+  const admin = await new Browser().login(1, 0);
+  const doctor = await new Browser().login(2, 0);
+
+  // 1. Create patient and doctor resource
+  const patient = await ownerDb.patient.create({
+    data: {
+      clinicId: clinics[0],
+      fullName: 'مريضة سريرية لاختبار المخزون',
+      searchName: 'مريضة سريرية لاختبار المخزون',
+      patientNumber: `P-${String(Math.floor(100000 + Math.random() * 900000))}`,
+      gender: 'FEMALE',
+      dateOfBirth: new Date('1992-04-10'),
+    },
+  });
+
+  const doctorMembership = await ownerDb.clinicMembership.findFirstOrThrow({
+    where: { clinicId: clinics[0], userId: users[2] },
+  });
+
+  // Create procedure catalog item
+  const catalog = await ownerDb.aestheticProcedureCatalog.create({
+    data: {
+      clinicId: clinics[0],
+      nameAr: 'حقن بوتوكس للجبهة',
+      category: 'حقن تجميلي',
+      version: 1,
+    },
+  });
+
+  // Create treatment plan & approved revision
+  const plan = await ownerDb.treatmentPlan.create({
+    data: {
+      clinicId: clinics[0],
+      patientId: patient.id,
+      clinicianMembershipId: doctorMembership.id,
+    },
+  });
+
+  const revision = await ownerDb.treatmentPlanRevision.create({
+    data: {
+      clinicId: clinics[0],
+      treatmentPlanId: plan.id,
+      revisionNumber: 1,
+      authorMembershipId: doctorMembership.id,
+      title: 'خطة علاج البوتوكس',
+      clinicalPurpose: 'إزالة التجاعيد التعبيرية',
+      status: 'APPROVED',
+      approvedByMembershipId: doctorMembership.id,
+      approvedAt: new Date(),
+    },
+  });
+
+  const planItem = await ownerDb.treatmentPlanItem.create({
+    data: {
+      clinicId: clinics[0],
+      revisionId: revision.id,
+      procedureCatalogId: catalog.id,
+      sessionOrder: 1,
+      expectedDurationMinutes: 30,
+    },
+  });
+
+  // Create procedure execution assigned to this doctor
+  const execution = await ownerDb.procedureExecution.create({
+    data: {
+      clinicId: clinics[0],
+      patientId: patient.id,
+      clinicianMembershipId: doctorMembership.id,
+      treatmentPlanItemId: planItem.id,
+      procedureCatalogVersion: 1,
+      procedureNameArSnapshot: catalog.nameAr,
+      procedureCategorySnapshot: catalog.category,
+      status: 'READY',
+    },
+  });
+
+  // Create verified consent for this procedure
+  const template = await ownerDb.consentTemplate.create({
+    data: {
+      clinicId: clinics[0],
+      title: 'نموذج موافقة البوتوكس',
+      purpose: 'PROCEDURE',
+      procedureCatalogId: catalog.id,
+    },
+  });
+  const tVersion = await ownerDb.consentTemplateVersion.create({
+    data: {
+      clinicId: clinics[0],
+      templateId: template.id,
+      versionNumber: 1,
+      titleAr: 'الموافقة على حقن البوتوكس',
+      bodyAr: 'أقر أنا المريضة بالموافقة على إجراء حقن البوتوكس واطلعت على المحاذير والمضاعفات المحتملة.',
+      risksTextAr: 'كدمات خفيفة',
+      alternativesTextAr: 'لا يوجد',
+      contentDigestSha256: randomBytes(32).toString('hex'),
+      status: 'PUBLISHED',
+      publishedAt: new Date(),
+      publishedByMembershipId: doctorMembership.id,
+    },
+  });
+  const consent = await ownerDb.patientConsent.create({
+    data: {
+      clinicId: clinics[0],
+      patientId: patient.id,
+      templateVersionId: tVersion.id,
+      purpose: 'PROCEDURE',
+      procedureCatalogId: catalog.id,
+      treatmentPlanId: plan.id,
+      treatmentPlanItemId: planItem.id,
+      status: 'ACTIVE',
+      validFrom: new Date(Date.now() - 3600000),
+      expiresAt: new Date(Date.now() + 86400000 * 30),
+      verifiedAt: new Date(),
+      verifiedByMembershipId: doctorMembership.id,
+      preparedByMembershipId: doctorMembership.id,
+    },
+  });
+  await ownerDb.consentSignatureEvidence.create({
+    data: {
+      clinicId: clinics[0],
+      patientConsentId: consent.id,
+      signerCapacity: 'PATIENT',
+      signerName: patient.fullName,
+      signatureType: 'DRAWN_BASE64',
+      signatureData: 'data:image/png;base64,validsignatureevidence',
+      evidenceHashSha256: randomBytes(32).toString('hex'),
+      signedAt: new Date(),
+    },
+  });
+
+  // 2. Prepare inventory: product, location, batch with 10 units
+  const locRes = await admin.request(admin.path(0, '/locations'), 'POST', {
+    code: `CLIN-LOC-${suffix.slice(0, 6)}`,
+    nameAr: 'غرفة حقن العيادة',
+  });
+  const loc = (await locRes.json()) as any;
+
+  const prodRes = await admin.request(admin.path(0, '/products'), 'POST', {
+    sku: `BOTOX-${suffix.slice(0, 8)}`,
+    nameAr: 'بوتوكس طبي 100 وحدة',
+    category: 'INJECTABLE',
+    unit: 'VIAL',
+    requiresBatchTracking: true,
+  });
+  const prod = (await prodRes.json()) as any;
+
+  const batchRes = await admin.request(admin.path(0, '/batches'), 'POST', {
+    productId: prod.id,
+    batchNumber: `LOT-BTX-${suffix.slice(0, 6)}`,
+    expirationDate: '2028-10-31',
+    initialQuantity: '10.0000',
+    locationId: loc.id,
+  });
+  const batch = (await batchRes.json()) as any;
+
+  // 3. Doctor records clinical consumption (1.0000 used + 0.2000 waste = 1.2000 total deduction)
+  const consRes = await doctor.request(doctor.path(0, '/clinical-consumption'), 'POST', {
+    procedureExecutionId: execution.id,
+    productId: prod.id,
+    batchId: batch.id,
+    locationId: loc.id,
+    quantity: '1.0000',
+    wasteQuantity: '0.2000',
+    notes: 'حقن عضلات الجبهة ومحيط العين',
+    idempotencyKey: `idem-cons-${suffix}`,
+  });
+  assert.equal(consRes.status, 201);
+  const consumption = (await consRes.json()) as any;
+  assert.equal(consumption.quantity, '1');
+  assert.equal(consumption.wasteQuantity, '0.2');
+  assert.equal(consumption.status, 'RECORDED');
+
+  // Verify stock was decremented by 1.2: 10 - 1.2 = 8.8
+  const checkBal = await admin.request(admin.path(0, `/stock/balances?productId=${prod.id}&locationId=${loc.id}`));
+  const [balRow] = (await checkBal.json()) as any[];
+  assert.equal(balRow.onHandQuantity, '8.8');
+
+  // 4. Idempotency replay with same key returns same consumption record
+  const replayRes = await doctor.request(doctor.path(0, '/clinical-consumption'), 'POST', {
+    procedureExecutionId: execution.id,
+    productId: prod.id,
+    batchId: batch.id,
+    locationId: loc.id,
+    quantity: '1.0000',
+    wasteQuantity: '0.2000',
+    idempotencyKey: `idem-cons-${suffix}`,
+  });
+  assert.equal(replayRes.status, 201);
+  const replayed = (await replayRes.json()) as any;
+  assert.equal(replayed.id, consumption.id);
+
+  // 5. Conflicting payload with same idempotency key is rejected
+  const conflictRes = await doctor.request(doctor.path(0, '/clinical-consumption'), 'POST', {
+    procedureExecutionId: execution.id,
+    productId: prod.id,
+    batchId: batch.id,
+    locationId: loc.id,
+    quantity: '3.0000', // Different quantity!
+    idempotencyKey: `idem-cons-${suffix}`,
+  });
+  assert.equal(conflictRes.status, 409);
+  const conflictErr = (await conflictRes.json()) as any;
+  assert.equal(conflictErr.error?.code, 'INVENTORY_IDEMPOTENCY_CONFLICT');
+
+  // 6. Confidentiality check: admin reading consumption list gets operational info without clinical notes
+  const adminListCons = await admin.request(admin.path(0, `/clinical-consumption?procedureExecutionId=${execution.id}`));
+  assert.equal(adminListCons.status, 200);
+  const adminConsData = (await adminListCons.json()) as any;
+  assert(adminConsData.items.length >= 1);
+  // Confidentiality projection: notes property is omitted or undefined for inventory-only role
+  assert.equal(adminConsData.items[0].notes, undefined);
+
+  // 7. Doctor voids clinical consumption with valid reason
+  const voidRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consumption.id}/void`), 'POST', {
+    reason: 'تم إلغاء الجلسة بعد الفتح واسترجاع الفيال السليم',
+  });
+  assert.equal(voidRes.status, 201);
+  const voided = (await voidRes.json()) as any;
+  assert.equal(voided.status, 'VOIDED');
+  assert.equal(voided.voidReason, 'تم إلغاء الجلسة بعد الفتح واسترجاع الفيال السليم');
+
+  // Stock is restored by 1.2: 8.8 + 1.2 = 10
+  const restoredBal = await admin.request(admin.path(0, `/stock/balances?productId=${prod.id}&locationId=${loc.id}`));
+  const [restoredRow] = (await restoredBal.json()) as any[];
+  assert.equal(restoredRow.onHandQuantity, '10');
+
+  // Attempting to void again is rejected
+  const voidAgainRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consumption.id}/void`), 'POST', {
+    reason: 'محاولة إلغاء مكررة',
+  });
+  assert.equal(voidAgainRes.status, 409);
+  const voidAgainErr = (await voidAgainRes.json()) as any;
+  assert.equal(voidAgainErr.error?.code, 'INVENTORY_CONSUMPTION_ALREADY_VOIDED');
+});
+
+live('database immutability and integrity triggers on batches, batch balances, and consumptions', async () => {
+  const migrationUrl = process.env.TEST_MIGRATION_DATABASE_URL;
+  if (!migrationUrl) return;
+
+  const ownerClient = new pg.Client({ connectionString: migrationUrl });
+  await ownerClient.connect();
+  try {
+    // 1. Direct DELETE on InventoryBatch is blocked by trigger
+    const batchRow = await ownerClient.query(
+      `SELECT id FROM public."InventoryBatch" WHERE "clinicId" = $1 LIMIT 1`,
+      [clinics[0]],
+    );
+    if (batchRow.rows.length > 0) {
+      await assert.rejects(
+        ownerClient.query(`DELETE FROM public."InventoryBatch" WHERE id = $1`, [batchRow.rows[0].id]),
+        (err: any) => {
+          assert(err.message.includes('Inventory batches cannot be deleted'));
+          assert.equal(err.code, '42501');
+          return true;
+        },
+      );
+    }
+
+    // 2. Direct DELETE on InventoryBatchBalance is blocked by trigger
+    const bbRow = await ownerClient.query(
+      `SELECT id FROM public."InventoryBatchBalance" WHERE "clinicId" = $1 LIMIT 1`,
+      [clinics[0]],
+    );
+    if (bbRow.rows.length > 0) {
+      await assert.rejects(
+        ownerClient.query(`DELETE FROM public."InventoryBatchBalance" WHERE id = $1`, [bbRow.rows[0].id]),
+        (err: any) => {
+          assert(err.message.includes('Inventory batch balances cannot be deleted'));
+          assert.equal(err.code, '42501');
+          return true;
+        },
+      );
+    }
+
+    // 3. Direct DELETE on InventoryClinicalConsumption is blocked by trigger
+    const consRow = await ownerClient.query(
+      `SELECT id FROM public."InventoryClinicalConsumption" WHERE "clinicId" = $1 LIMIT 1`,
+      [clinics[0]],
+    );
+    if (consRow.rows.length > 0) {
+      await assert.rejects(
+        ownerClient.query(`DELETE FROM public."InventoryClinicalConsumption" WHERE id = $1`, [consRow.rows[0].id]),
+        (err: any) => {
+          assert(err.message.includes('Clinical consumptions cannot be deleted'));
+          assert.equal(err.code, '42501');
+          return true;
+        },
+      );
+    }
   } finally {
     await ownerClient.end().catch(() => {});
   }

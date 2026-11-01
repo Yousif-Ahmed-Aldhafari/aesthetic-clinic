@@ -41,10 +41,11 @@ Lamssa's inventory subsystem manages aesthetic clinic products, pharmaceuticals,
   - Comprehensive RBAC permissions and PostgreSQL `FORCE ROW LEVEL SECURITY`.
   - Arabic-first RTL web workspace for inventory operations.
 
-- **Explicitly Out of Scope for Step 4.1**:
-  - Specific batch/lot numbers and expiry date allocation (Step 4.2).
-  - First-Expired, First-Out (FEFO) automated allocation (Step 4.2).
-  - Automated stock deduction triggered directly from procedure executions (Step 4.2).
+- **Explicitly Out of Scope for Step 4.1 (Implemented in Step 4.2)**:
+  - Specific batch/lot numbers and expiry date allocation (see [Lot Traceability & Clinical Consumption](inventory-lot-traceability.md)).
+  - First-Expired, First-Out (FEFO) automated allocation.
+  - Automated stock deduction triggered directly from procedure executions.
+- **Future Steps**:
   - Supplier purchase orders, vendor catalogs, and supplier invoices (Step 4.3).
   - Point-of-Sale (POS) retail billing integration and package consumption (Steps 4.4–4.5).
 

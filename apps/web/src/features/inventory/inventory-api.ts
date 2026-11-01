@@ -20,6 +20,100 @@ export type InventoryReasonCode =
   | 'INTERNAL_TRANSFER'
   | 'RETURN';
 
+export type InventoryBatchStatus =
+  | 'AVAILABLE'
+  | 'QUARANTINED'
+  | 'RECALLED'
+  | 'EXPIRED'
+  | 'DEPLETED';
+
+export type ClinicalConsumptionStatus = 'RECORDED' | 'VOIDED';
+
+export interface InventoryBatchRecord {
+  id: string;
+  clinicId: string;
+  productId: string;
+  batchNumber: string;
+  expirationDate: string;
+  status: InventoryBatchStatus;
+  initialQuantity: string;
+  manufacturerName: string | null;
+  supplierName: string | null;
+  quarantinedAt: string | null;
+  quarantineReason: string | null;
+  recalledAt: string | null;
+  recallReason: string | null;
+  totalOnHandQuantity: string;
+  isExpired: boolean;
+  product?: {
+    id: string;
+    sku: string;
+    nameAr: string;
+    nameEn: string | null;
+    unit: InventoryUnit;
+    category: InventoryCategory;
+  };
+  batchBalances?: Array<{
+    locationId: string;
+    onHandQuantity: string;
+    location: { id: string; code: string; nameAr: string };
+  }>;
+}
+
+export interface ExpiryReportItem {
+  id: string;
+  batchNumber: string;
+  productId: string;
+  product: {
+    id: string;
+    sku: string;
+    nameAr: string;
+    nameEn: string | null;
+    unit: InventoryUnit;
+    category: InventoryCategory;
+  };
+  status: InventoryBatchStatus;
+  expirationDate: string;
+  isExpired: boolean;
+  daysRemaining: number;
+  riskLevel: 'EXPIRED' | 'CRITICAL' | 'WARNING' | 'NORMAL';
+  totalOnHandQuantity: string;
+  locationBalances: Array<{
+    locationId: string;
+    locationCode: string;
+    locationNameAr: string;
+    onHandQuantity: string;
+  }>;
+}
+
+export interface ExpiryReport {
+  clinicTimezone: string;
+  evaluatedAt: string;
+  daysThreshold: number;
+  totalBatches: number;
+  items: ExpiryReportItem[];
+}
+
+export interface InventoryClinicalConsumptionRecord {
+  id: string;
+  procedureExecutionId: string;
+  productId: string;
+  batchId: string;
+  locationId: string;
+  quantity: string;
+  wasteQuantity: string;
+  unit: InventoryUnit;
+  status: ClinicalConsumptionStatus;
+  notes: string | null;
+  voidedAt?: string | null;
+  voidReason?: string | null;
+  createdAt: string;
+  product?: { id: string; sku: string; nameAr: string; unit: string };
+  batch?: { id: string; batchNumber: string; expirationDate: string; status: InventoryBatchStatus };
+  location?: { id: string; code: string; nameAr: string };
+  actor?: { user: { name: string } };
+}
+
 export interface InventoryProductRecord {
   id: string;
   sku: string;
@@ -158,6 +252,19 @@ export const inventoryReasonLabels: Record<InventoryReasonCode, string> = {
   RETURN: 'مرتجع',
 };
 
+export const inventoryBatchStatusLabels: Record<InventoryBatchStatus, string> = {
+  AVAILABLE: 'متاح للاستخدام',
+  QUARANTINED: 'حجر صحي',
+  RECALLED: 'مسحوب',
+  EXPIRED: 'منتهي الصلاحية',
+  DEPLETED: 'مستنفد',
+};
+
+export const clinicalConsumptionStatusLabels: Record<ClinicalConsumptionStatus, string> = {
+  RECORDED: 'مسجل ومصروف',
+  VOIDED: 'ملغى ومسترجع',
+};
+
 export const inventoryApi = (clinicId: string) => {
   const root = `clinics/${clinicId}/inventory`;
   return {
@@ -220,5 +327,82 @@ export const inventoryApi = (clinicId: string) => {
 
     reconcileLedger: (csrf: string, signal?: AbortSignal) =>
       api<ReconciliationReport>(`${root}/stock/reconcile`, 'POST', {}, csrf, signal),
+
+    // Batches
+    listBatches: (query: URLSearchParams, signal?: AbortSignal) =>
+      api<{ items: InventoryBatchRecord[]; nextCursor: string | null }>(
+        `${root}/batches?${query}`,
+        'GET',
+        undefined,
+        undefined,
+        signal,
+      ),
+
+    getBatch: (batchId: string, signal?: AbortSignal) =>
+      api<InventoryBatchRecord>(`${root}/batches/${batchId}`, 'GET', undefined, undefined, signal),
+
+    createBatch: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryBatchRecord>(`${root}/batches`, 'POST', input, csrf, signal),
+
+    updateBatchStatus: (batchId: string, input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryBatchRecord>(`${root}/batches/${batchId}/status`, 'PATCH', input, csrf, signal),
+
+    quarantineBatch: (batchId: string, reason: string, csrf: string, signal?: AbortSignal) =>
+      api<InventoryBatchRecord>(`${root}/batches/${batchId}/quarantine`, 'POST', { reason }, csrf, signal),
+
+    recallBatch: (batchId: string, reason: string, csrf: string, signal?: AbortSignal) =>
+      api<InventoryBatchRecord>(`${root}/batches/${batchId}/recall`, 'POST', { reason }, csrf, signal),
+
+    releaseBatch: (batchId: string, csrf: string, signal?: AbortSignal) =>
+      api<InventoryBatchRecord>(`${root}/batches/${batchId}/release`, 'POST', {}, csrf, signal),
+
+    getExpiryReport: (query: URLSearchParams, signal?: AbortSignal) =>
+      api<ExpiryReport>(`${root}/batches/expiry-report?${query}`, 'GET', undefined, undefined, signal),
+
+    receiveBatchStock: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryMovementRecord>(`${root}/batches/receive`, 'POST', input, csrf, signal),
+
+    issueBatchStock: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryMovementRecord>(`${root}/batches/issue`, 'POST', input, csrf, signal),
+
+    transferBatchStock: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<{ transferOut: InventoryMovementRecord; transferIn: InventoryMovementRecord }>(
+        `${root}/batches/transfer`,
+        'POST',
+        input,
+        csrf,
+        signal,
+      ),
+
+    // Clinical Consumption
+    recordClinicalConsumption: (input: unknown, csrf: string, signal?: AbortSignal) =>
+      api<InventoryClinicalConsumptionRecord>(`${root}/clinical-consumption`, 'POST', input, csrf, signal),
+
+    voidClinicalConsumption: (consumptionId: string, reason: string, csrf: string, signal?: AbortSignal) =>
+      api<InventoryClinicalConsumptionRecord>(
+        `${root}/clinical-consumption/${consumptionId}/void`,
+        'POST',
+        { reason },
+        csrf,
+        signal,
+      ),
+
+    listClinicalConsumptions: (query: URLSearchParams, signal?: AbortSignal) =>
+      api<{ items: InventoryClinicalConsumptionRecord[]; nextCursor: string | null }>(
+        `${root}/clinical-consumption?${query}`,
+        'GET',
+        undefined,
+        undefined,
+        signal,
+      ),
+
+    getProcedureConsumptions: (procedureExecutionId: string, signal?: AbortSignal) =>
+      api<InventoryClinicalConsumptionRecord[]>(
+        `${root}/clinical-consumption/procedure/${procedureExecutionId}`,
+        'GET',
+        undefined,
+        undefined,
+        signal,
+      ),
   };
 };

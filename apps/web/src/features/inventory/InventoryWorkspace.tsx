@@ -13,6 +13,7 @@ import { StockLocationsPanel } from './StockLocationsPanel';
 import { StockOperationsModal } from './StockOperationsModal';
 import { StockMovementsHistory } from './StockMovementsHistory';
 import { LedgerReconciliationPanel } from './LedgerReconciliationPanel';
+import { BatchManagementPanel } from './BatchManagementPanel';
 import './inventory.css';
 
 interface Props {
@@ -21,7 +22,7 @@ interface Props {
   onAuthError: (error: unknown) => void;
 }
 
-type MainTab = 'OVERVIEW' | 'PRODUCTS' | 'LOCATIONS' | 'BALANCES' | 'MOVEMENTS' | 'RECONCILE';
+type MainTab = 'OVERVIEW' | 'PRODUCTS' | 'LOCATIONS' | 'BALANCES' | 'BATCHES' | 'MOVEMENTS' | 'RECONCILE';
 
 export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('OVERVIEW');
@@ -162,6 +163,12 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
             onClick={() => setActiveTab('BALANCES')}
           >
             <span>📊</span> الأرصدة الحالية
+          </button>
+          <button
+            className={`inventory-tab-btn ${activeTab === 'BATCHES' ? 'active' : ''}`}
+            onClick={() => setActiveTab('BATCHES')}
+          >
+            <span>🧪</span> التشغيلات والصلاحية (Lots)
           </button>
           <button
             className={`inventory-tab-btn ${activeTab === 'MOVEMENTS' ? 'active' : ''}`}
@@ -369,6 +376,18 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
                 </tbody>
               </table>
             </div>
+          )}
+
+          {activeTab === 'BATCHES' && (
+            <BatchManagementPanel
+              clinicId={clinic.clinicId}
+              csrfToken={csrfToken}
+              products={products}
+              locations={locations}
+              canManage={canManageProducts || permissions.includes('inventory.batches.manage')}
+              onRefresh={loadData}
+              onSuccess={handleSuccess}
+            />
           )}
 
           {activeTab === 'MOVEMENTS' && (

@@ -46,6 +46,14 @@
 - Ledger-to-balance reconciliation: Mathematical audit endpoint `/stock/reconcile` computes variance $\text{Balance.onHandQuantity} - \sum \text{Movements.quantity}$ across all clinic products and locations.
 - RBAC, FORCE RLS & restricted runtime grants: 11 granular permissions (`inventory.products.*`, `inventory.locations.*`, `inventory.stock.*`, `inventory.movements.read`, `inventory.reconcile`). Doctors have read-only access to products/locations/balances; receptionists and accountants have no inventory access. `FORCE ROW LEVEL SECURITY` is applied to all four tables, and `lamssa_runtime` is denied `UPDATE` and `DELETE` on stock movements. See [inventory-management.md](inventory-management.md).
 
+## Phase 4.2 batch/lot tracking, expiry management & clinical procedure consumption
+`InventoryBatch`, `InventoryBatchBalance`, and `InventoryClinicalConsumption` implement lot-level traceability, timezone-aware expiry management, and direct clinical procedure consumption:
+- Clinic-scoped batch/lot registry & multi-location balances: `InventoryBatch` tracks physical lots with unique `(clinicId, productId, batchNumber)`, pure calendar dates (`YYYY-MM-DD`), and status transitions (`AVAILABLE`, `QUARANTINED`, `RECALLED`, `EXPIRED`, `DEPLETED`). `InventoryBatchBalance` maintains on-hand quantities per batch, product, and location with optimistic locking.
+- Clinic-local calendar date expiration: Evaluated against `Clinic.timezone` without UTC midnight offset shifts. Real-time expiry report groups lots into `EXPIRED`, `CRITICAL` (<=30 days), `WARNING` (<=90 days), and `NORMAL`. Web UI provides First-Expired, First-Out (FEFO) allocation suggestions.
+- Safety gates on clinical consumption: Direct clinical use enforces: 1) Clinician assignment match (`execution.clinicianMembershipId === actorMembershipId`), 2) Active verified procedure consent via `ConsentEligibilityService.check()`, 3) Usable batch status (non-expired, available, non-quarantined, non-recalled), 4) Atomic stock deduction with partial dose and waste tracking.
+- Non-destructive voiding: Clinical consumptions cannot be deleted; voiding records mandatory reasons and logs an atomic compensating return movement to restore stock.
+- Confidentiality boundary & FORCE RLS: Inventory-only roles receive operational metadata with clinical consultation notes omitted. PostgreSQL `FORCE ROW LEVEL SECURITY` is enforced across all 3 tables with database triggers preventing deletion or reactivation of recalled/expired lots. See [inventory-lot-traceability.md](inventory-lot-traceability.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,

@@ -22,6 +22,8 @@ export const permissions = [
   'inventory.locations.read', 'inventory.locations.manage',
   'inventory.stock.read', 'inventory.stock.receive', 'inventory.stock.issue', 'inventory.stock.adjust', 'inventory.stock.transfer',
   'inventory.movements.read', 'inventory.reconcile',
+  'inventory.batches.read', 'inventory.batches.manage', 'inventory.batches.quarantine', 'inventory.batches.recall',
+  'inventory.clinical-consumption.record', 'inventory.clinical-consumption.read',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -33,6 +35,8 @@ const inventoryManagement: Permission[] = [
   'inventory.locations.read', 'inventory.locations.manage',
   'inventory.stock.read', 'inventory.stock.receive', 'inventory.stock.issue', 'inventory.stock.adjust', 'inventory.stock.transfer',
   'inventory.movements.read', 'inventory.reconcile',
+  'inventory.batches.read', 'inventory.batches.manage', 'inventory.batches.quarantine', 'inventory.batches.recall',
+  'inventory.clinical-consumption.record', 'inventory.clinical-consumption.read',
 ];
 const administration: Permission[] = [
   'clinic.settings.read', 'clinic.settings.update', 'clinic.branding.read', 'clinic.branding.update',
@@ -55,7 +59,8 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'clinical.follow-ups.read', 'clinical.follow-ups.schedule', 'clinical.follow-ups.update', 'clinical.follow-ups.sign', 'clinical.follow-ups.amend',
     'clinical.outcomes.read', 'clinical.outcomes.record',
     'clinical.adverse-events.read', 'clinical.adverse-events.record', 'clinical.adverse-events.manage',
-    'inventory.products.read', 'inventory.locations.read', 'inventory.stock.read'],
+    'inventory.products.read', 'inventory.locations.read', 'inventory.stock.read',
+    'inventory.batches.read', 'inventory.clinical-consumption.record', 'inventory.clinical-consumption.read'],
   RECEPTIONIST: ['clinic.branding.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record'],
   ACCOUNTANT: ['clinic.branding.read', 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read'],
 };

@@ -1,5 +1,14 @@
 # Development setup
 
+## Phase 4.2 batch/lot tracking, expiry management, and clinical procedure consumption
+
+Apply `20261101000200_inventory_batch_tracking` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All batch tracking and clinical consumption endpoints reside under `/api/v1/clinics/:clinicId/inventory`.
+- Migration: `apps/api/prisma/migrations/20261101000200_inventory_batch_tracking/migration.sql` creates `InventoryBatch`, `InventoryBatchBalance`, and `InventoryClinicalConsumption` with `FORCE ROW LEVEL SECURITY`, check constraints (`initialQuantity > 0`, `onHandQuantity >= 0`, `quantity > 0`, `wasteQuantity >= 0`), and trigger guards `inventory_batch_integrity_guard`, `inventory_batch_balance_integrity_guard`, and `inventory_consumption_immutability_guard`.
+- Unit and policy tests: `apps/api/test/inventory-policy.test.ts`.
+- Database integration tests: `apps/api/test/inventory.integration.test.ts` (covers batch creation, duplicate batch rejection, timezone-aware expiry calculation, quarantine/recall blocking, transfer balance preservation, clinical consumption with doctor assignment & consent check, atomic stock deduction & waste, voiding/restoration, and trigger immutability).
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies batch management lot tab and lots/expiry status panel).
+- Core invariants: Batch expiration respects clinic-local calendar dates (`Clinic.timezone`). Recalled and expired lots cannot be reactivated or made available. Clinical consumption requires matching assigned clinician and active verified procedure consent. Consumptions are immutable and non-destructively voidable with compensating return movement. Confidentiality boundary omits clinical consultation notes for inventory-only roles.
+
 ## Phase 4.1 inventory foundation, product catalog, stock locations & auditable movements
 
 Apply `20261101000100_inventory_foundation` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All inventory endpoints reside under `/api/v1/clinics/:clinicId/inventory`.
