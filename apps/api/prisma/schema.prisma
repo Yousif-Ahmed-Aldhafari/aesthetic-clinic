@@ -149,6 +149,13 @@ model Clinic {
   installmentAllocations InstallmentAllocation[]
   installmentPlanCounter InstallmentPlanCounter?
   refundRequests RefundRequest[]
+  commissionPlans PractitionerCommissionPlan[]
+  commissionAssignments PractitionerCommissionAssignment[]
+  commissionRules PractitionerCommissionRule[]
+  commissionSettlementCounter CommissionSettlementCounter?
+  commissionSettlements PractitionerCommissionSettlement[]
+  commissionAccruals PractitionerCommissionAccrual[]
+  commissionAdjustments PractitionerCommissionAdjustment[]
 
   @@index([status, createdAt])
 }
@@ -315,6 +322,13 @@ model ClinicMembership {
   refundRequestsApproved RefundRequest[] @relation("RefundApprover")
   refundRequestsRejected RefundRequest[] @relation("RefundRejecter")
   refundRequestsSettled RefundRequest[] @relation("RefundSettler")
+  commissionAssignments PractitionerCommissionAssignment[] @relation("PractitionerCommissionAssignee")
+  commissionSettlements PractitionerCommissionSettlement[] @relation("CommissionSettlementPractitioner")
+  confirmedCommissionSettlements PractitionerCommissionSettlement[] @relation("CommissionSettlementConfirmer")
+  commissionAccruals PractitionerCommissionAccrual[] @relation("CommissionAccrualPractitioner")
+  approvedCommissionAccruals PractitionerCommissionAccrual[] @relation("CommissionAccrualApprover")
+  requestedCommissionAdjustments PractitionerCommissionAdjustment[] @relation("CommissionAdjustmentRequester")
+  decidedCommissionAdjustments PractitionerCommissionAdjustment[] @relation("CommissionAdjustmentDecider")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -458,6 +472,7 @@ model Patient {
   packageRedemptions PackageRedemption[]
   installmentPlans InstallmentPlan[]
   refundRequests RefundRequest[]
+  commissionAccruals PractitionerCommissionAccrual[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -616,6 +631,7 @@ model AestheticProcedureCatalog {
   consents PatientConsent[]
   treatmentPackageItems TreatmentPackageItem[]
   patientPackageEntitlements PatientPackageEntitlement[]
+  commissionRules PractitionerCommissionRule[]
   @@unique([clinicId,id])
   @@index([clinicId,active,nameAr,id])
   @@index([clinicId,clinicServiceId])
@@ -735,6 +751,7 @@ model ProcedureExecution {
   adverseEvents AdverseEvent[]
   clinicalConsumptions InventoryClinicalConsumption[]
   packageRedemptions PackageRedemption[]
+  commissionAccruals PractitionerCommissionAccrual[]
   @@unique([clinicId,id])
   @@unique([clinicId,treatmentPlanItemId])
   @@index([clinicId,patientId,status,createdAt])
@@ -1029,6 +1046,7 @@ model Appointment {
   clinicalEncounters ClinicalEncounter[]
   followUps ClinicalFollowUp[]
   packageRedemptions PackageRedemption[]
+  commissionAccruals PractitionerCommissionAccrual[]
   @@unique([clinicId,id])
   @@unique([clinicId,bookingKey])
   @@index([clinicId,startAt,id])
@@ -1215,6 +1233,7 @@ model Invoice {
   patientPackages PatientPackage[]
   installmentPlans InstallmentPlan[]
   refundRequests RefundRequest[]
+  commissionAccruals PractitionerCommissionAccrual[]
   @@unique([clinicId,id])
   @@unique([clinicId,number])
   @@unique([clinicId,requestKey])
@@ -2685,4 +2704,240 @@ model RefundRequest {
   @@unique([clinicId, requestKey])
   @@index([clinicId, invoiceId, status])
   @@index([clinicId, patientId, status])
+}
+
+// =============================================================================
+// Step 4.5: Practitioner Commissions, Settlements & Adjustments
+// =============================================================================
+
+enum CommissionCalculationType {
+  PERCENTAGE
+  FLAT_AMOUNT
+}
+
+enum CommissionEarningEvent {
+  PROCEDURE_COMPLETED
+  INVOICE_PAID
+}
+
+enum CommissionPlanStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CommissionAccrualStatus {
+  PENDING
+  APPROVED
+  SETTLED
+  ADJUSTED
+  REVERSED
+}
+
+enum CommissionAdjustmentReason {
+  REFUND_REVERSAL
+  DISCOUNT_CORRECTION
+  DISPUTE_RESOLUTION
+  ADMINISTRATIVE_CORRECTION
+}
+
+enum CommissionAdjustmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CommissionSettlementStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+model PractitionerCommissionPlan {
+  id                   String                             @id @default(uuid()) @db.Uuid
+  clinicId             String                             @db.Uuid
+  code                 String                             @db.VarChar(50)
+  name                 String                             @db.VarChar(120)
+  description          String?                            @db.Text
+  status               CommissionPlanStatus               @default(ACTIVE)
+  currency             String                             @db.Char(3)
+  currencyScale        Int
+  version              Int                                @default(1)
+  createdAt            DateTime                           @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                           @updatedAt @db.Timestamptz(3)
+
+  clinic               Clinic                             @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  assignments          PractitionerCommissionAssignment[]
+  rules                PractitionerCommissionRule[]
+  accruals             PractitionerCommissionAccrual[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, code])
+  @@index([clinicId, status])
+}
+
+model PractitionerCommissionAssignment {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  clinicId                 String                     @db.Uuid
+  planId                   String                     @db.Uuid
+  practitionerMembershipId String                     @db.Uuid
+  effectiveFrom            DateTime                   @db.Timestamptz(3)
+  effectiveTo              DateTime?                  @db.Timestamptz(3)
+  notes                    String?                    @db.Text
+  createdAt                DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                   @updatedAt @db.Timestamptz(3)
+
+  clinic                   Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  plan                     PractitionerCommissionPlan @relation(fields: [clinicId, planId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  practitioner             ClinicMembership           @relation("PractitionerCommissionAssignee", fields: [clinicId, practitionerMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, practitionerMembershipId])
+  @@index([clinicId, planId])
+}
+
+model PractitionerCommissionRule {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  clinicId            String                    @db.Uuid
+  planId              String                    @db.Uuid
+  procedureId         String?                   @db.Uuid
+  calculationType     CommissionCalculationType
+  rateBasisPoints     Int?
+  flatAmountMinor     BigInt?
+  earningEvent        CommissionEarningEvent
+  ruleVersion         Int                       @default(1)
+  isPublished         Boolean                   @default(true)
+  description         String?                   @db.VarChar(255)
+  createdAt           DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic              Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  plan                PractitionerCommissionPlan @relation(fields: [clinicId, planId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  procedure           AestheticProcedureCatalog? @relation(fields: [clinicId, procedureId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  accruals            PractitionerCommissionAccrual[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, planId])
+  @@index([clinicId, procedureId])
+}
+
+model CommissionSettlementCounter {
+  clinicId            String                    @id @db.Uuid
+  lastNumber          Int                       @default(0)
+
+  clinic              Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model PractitionerCommissionSettlement {
+  id                       String                             @id @default(uuid()) @db.Uuid
+  clinicId                 String                             @db.Uuid
+  settlementNumber         String                             @db.VarChar(50)
+  practitionerMembershipId String                             @db.Uuid
+  periodStart              DateTime                           @db.Timestamptz(3)
+  periodEnd                DateTime                           @db.Timestamptz(3)
+  grossAmountMinor         BigInt
+  adjustmentsAmountMinor   BigInt                             @default(0)
+  netSettledMinor          BigInt
+  currency                 String                             @db.Char(3)
+  currencyScale            Int
+  status                   CommissionSettlementStatus         @default(DRAFT)
+  payoutReference          String?                            @db.VarChar(100)
+  confirmedByMembershipId  String?                            @db.Uuid
+  confirmedAt              DateTime?                          @db.Timestamptz(3)
+  notes                    String?                            @db.Text
+  version                  Int                                @default(1)
+  requestKey               String                             @db.Uuid
+  requestHash              String                             @db.Char(64)
+  createdAt                DateTime                           @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                           @updatedAt @db.Timestamptz(3)
+
+  clinic                   Clinic                             @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  practitioner             ClinicMembership                   @relation("CommissionSettlementPractitioner", fields: [clinicId, practitionerMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  confirmedBy              ClinicMembership?                  @relation("CommissionSettlementConfirmer", fields: [clinicId, confirmedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  accruals                 PractitionerCommissionAccrual[]
+  adjustments              PractitionerCommissionAdjustment[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, settlementNumber])
+  @@unique([clinicId, requestKey])
+  @@index([clinicId, practitionerMembershipId, status])
+}
+
+model PractitionerCommissionAccrual {
+  id                       String                            @id @default(uuid()) @db.Uuid
+  clinicId                 String                            @db.Uuid
+  planId                   String                            @db.Uuid
+  ruleId                   String                            @db.Uuid
+  ruleVersion              Int
+  practitionerMembershipId String                            @db.Uuid
+  patientId                String                            @db.Uuid
+  invoiceId                String                            @db.Uuid
+  procedureExecutionId     String?                           @db.Uuid
+  appointmentId            String?                           @db.Uuid
+  baseAmountMinor          BigInt
+  rateBasisPoints          Int?
+  flatAmountMinor          BigInt?
+  commissionAmountMinor    BigInt
+  currency                 String                            @db.Char(3)
+  currencyScale            Int
+  status                   CommissionAccrualStatus           @default(PENDING)
+  earningEvent             CommissionEarningEvent
+  earnedAt                 DateTime                          @default(now()) @db.Timestamptz(3)
+  settlementId             String?                           @db.Uuid
+  approvedByMembershipId   String?                           @db.Uuid
+  approvedAt               DateTime?                         @db.Timestamptz(3)
+  requestKey               String                            @db.Uuid
+  requestHash              String                            @db.Char(64)
+  notes                    String?                           @db.Text
+  version                  Int                               @default(1)
+  createdAt                DateTime                          @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                          @updatedAt @db.Timestamptz(3)
+
+  clinic                   Clinic                            @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  plan                     PractitionerCommissionPlan        @relation(fields: [clinicId, planId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  rule                     PractitionerCommissionRule        @relation(fields: [clinicId, ruleId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  practitioner             ClinicMembership                  @relation("CommissionAccrualPractitioner", fields: [clinicId, practitionerMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  patient                  Patient                           @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  invoice                  Invoice                           @relation(fields: [clinicId, invoiceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  procedureExecution       ProcedureExecution?               @relation(fields: [clinicId, procedureExecutionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  appointment              Appointment?                      @relation(fields: [clinicId, appointmentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  settlement               PractitionerCommissionSettlement? @relation(fields: [clinicId, settlementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy               ClinicMembership?                 @relation("CommissionAccrualApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  adjustments              PractitionerCommissionAdjustment[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, requestKey])
+  @@index([clinicId, practitionerMembershipId, status])
+  @@index([clinicId, invoiceId])
+  @@index([clinicId, procedureExecutionId])
+  @@index([clinicId, settlementId])
+}
+
+model PractitionerCommissionAdjustment {
+  id                       String                            @id @default(uuid()) @db.Uuid
+  clinicId                 String                            @db.Uuid
+  accrualId                String                            @db.Uuid
+  settlementId             String?                           @db.Uuid
+  adjustmentAmountMinor    BigInt
+  reason                   CommissionAdjustmentReason
+  reasonDetails            String                            @db.VarChar(500)
+  status                   CommissionAdjustmentStatus        @default(PENDING)
+  requestedByMembershipId  String                            @db.Uuid
+  decidedByMembershipId    String?                           @db.Uuid
+  decidedAt                DateTime?                         @db.Timestamptz(3)
+  version                  Int                               @default(1)
+  requestKey               String                            @db.Uuid
+  requestHash              String                            @db.Char(64)
+  createdAt                DateTime                          @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                          @updatedAt @db.Timestamptz(3)
+
+  clinic                   Clinic                            @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  accrual                  PractitionerCommissionAccrual     @relation(fields: [clinicId, accrualId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  settlement               PractitionerCommissionSettlement? @relation(fields: [clinicId, settlementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy              ClinicMembership                  @relation("CommissionAdjustmentRequester", fields: [clinicId, requestedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  decidedBy                ClinicMembership?                 @relation("CommissionAdjustmentDecider", fields: [clinicId, decidedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, requestKey])
+  @@index([clinicId, accrualId])
+  @@index([clinicId, settlementId])
 }

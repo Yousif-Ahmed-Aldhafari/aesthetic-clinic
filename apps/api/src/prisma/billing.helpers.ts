@@ -303,3 +303,183 @@ export async function refundRequestDetail(tx: TenantTransaction, clinicId: strin
   if (!row) throw new NotFoundException('REFUND_REQUEST_NOT_FOUND');
   return refundRequestResponse(row);
 }
+
+// -----------------------------------------------------------------------------
+// Step 4.5: Commission Serializers & Helpers
+// -----------------------------------------------------------------------------
+
+export function commissionRuleResponse(r: any) {
+  return {
+    id: r.id,
+    planId: r.planId,
+    procedureId: r.procedureId,
+    calculationType: r.calculationType,
+    rateBasisPoints: r.rateBasisPoints,
+    flatAmountMinor: r.flatAmountMinor ? r.flatAmountMinor.toString() : null,
+    earningEvent: r.earningEvent,
+    ruleVersion: r.ruleVersion,
+    isPublished: r.isPublished,
+    description: r.description,
+    createdAt: r.createdAt.toISOString(),
+    procedure: r.procedure ? { id: r.procedure.id, nameAr: r.procedure.nameAr } : null,
+  };
+}
+
+export function commissionPlanResponse(p: any) {
+  return {
+    id: p.id,
+    code: p.code,
+    name: p.name,
+    description: p.description,
+    status: p.status,
+    currency: p.currency,
+    currencyScale: p.currencyScale,
+    version: p.version,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+    rules: p.rules ? p.rules.map(commissionRuleResponse) : undefined,
+    assignments: p.assignments ? p.assignments.map((a: any) => ({
+      id: a.id,
+      practitionerMembershipId: a.practitionerMembershipId,
+      effectiveFrom: a.effectiveFrom.toISOString(),
+      effectiveTo: a.effectiveTo ? a.effectiveTo.toISOString() : null,
+      notes: a.notes,
+      practitioner: a.practitioner ? {
+        id: a.practitioner.id,
+        user: a.practitioner.user ? { fullName: a.practitioner.user.name } : null,
+        role: a.practitioner.role,
+      } : null,
+    })) : undefined,
+  };
+}
+
+export function commissionAccrualResponse(a: any) {
+  return {
+    id: a.id,
+    planId: a.planId,
+    ruleId: a.ruleId,
+    ruleVersion: a.ruleVersion,
+    practitionerMembershipId: a.practitionerMembershipId,
+    patientId: a.patientId,
+    invoiceId: a.invoiceId,
+    procedureExecutionId: a.procedureExecutionId,
+    appointmentId: a.appointmentId,
+    baseAmountMinor: a.baseAmountMinor.toString(),
+    rateBasisPoints: a.rateBasisPoints,
+    flatAmountMinor: a.flatAmountMinor ? a.flatAmountMinor.toString() : null,
+    commissionAmountMinor: a.commissionAmountMinor.toString(),
+    currency: a.currency,
+    currencyScale: a.currencyScale,
+    status: a.status,
+    earningEvent: a.earningEvent,
+    earnedAt: a.earnedAt.toISOString(),
+    settlementId: a.settlementId,
+    approvedByMembershipId: a.approvedByMembershipId,
+    approvedAt: a.approvedAt ? a.approvedAt.toISOString() : null,
+    notes: a.notes,
+    version: a.version,
+    createdAt: a.createdAt.toISOString(),
+    practitioner: a.practitioner ? {
+      id: a.practitioner.id,
+      user: a.practitioner.user ? { fullName: a.practitioner.user.name } : null,
+      role: a.practitioner.role,
+    } : undefined,
+    patient: a.patient ? { id: a.patient.id, fullName: a.patient.fullName, patientNumber: a.patient.patientNumber } : undefined,
+    invoice: a.invoice ? { id: a.invoice.id, number: a.invoice.number, totalMinor: a.invoice.totalMinor.toString() } : undefined,
+    plan: a.plan ? { id: a.plan.id, name: a.plan.name, code: a.plan.code } : undefined,
+    adjustments: a.adjustments ? a.adjustments.map(commissionAdjustmentResponse) : undefined,
+  };
+}
+
+export function commissionAdjustmentResponse(adj: any) {
+  return {
+    id: adj.id,
+    accrualId: adj.accrualId,
+    settlementId: adj.settlementId,
+    adjustmentAmountMinor: adj.adjustmentAmountMinor.toString(),
+    reason: adj.reason,
+    reasonDetails: adj.reasonDetails,
+    status: adj.status,
+    requestedByMembershipId: adj.requestedByMembershipId,
+    decidedByMembershipId: adj.decidedByMembershipId,
+    decidedAt: adj.decidedAt ? adj.decidedAt.toISOString() : null,
+    version: adj.version,
+    createdAt: adj.createdAt.toISOString(),
+  };
+}
+
+export function commissionSettlementResponse(s: any) {
+  return {
+    id: s.id,
+    settlementNumber: s.settlementNumber,
+    practitionerMembershipId: s.practitionerMembershipId,
+    periodStart: s.periodStart.toISOString(),
+    periodEnd: s.periodEnd.toISOString(),
+    grossAmountMinor: s.grossAmountMinor.toString(),
+    adjustmentsAmountMinor: s.adjustmentsAmountMinor.toString(),
+    netSettledMinor: s.netSettledMinor.toString(),
+    currency: s.currency,
+    currencyScale: s.currencyScale,
+    status: s.status,
+    payoutReference: s.payoutReference,
+    confirmedByMembershipId: s.confirmedByMembershipId,
+    confirmedAt: s.confirmedAt ? s.confirmedAt.toISOString() : null,
+    notes: s.notes,
+    version: s.version,
+    createdAt: s.createdAt.toISOString(),
+    practitioner: s.practitioner ? {
+      id: s.practitioner.id,
+      user: s.practitioner.user ? { fullName: s.practitioner.user.name } : null,
+      role: s.practitioner.role,
+    } : undefined,
+    accruals: s.accruals ? s.accruals.map(commissionAccrualResponse) : undefined,
+  };
+}
+
+export async function commissionPlanDetail(tx: TenantTransaction, clinicId: string, id: string) {
+  const row = await tx.practitionerCommissionPlan.findFirst({
+    where: { clinicId, id },
+    include: {
+      rules: { include: { procedure: { select: { id: true, nameAr: true } } }, orderBy: { createdAt: 'asc' } },
+      assignments: {
+        include: { practitioner: { include: { user: { select: { name: true } } } } },
+        orderBy: { effectiveFrom: 'desc' },
+      },
+    },
+  });
+  if (!row) throw new NotFoundException('COMMISSION_PLAN_NOT_FOUND');
+  return commissionPlanResponse(row);
+}
+
+export async function commissionAccrualDetail(tx: TenantTransaction, clinicId: string, id: string) {
+  const row = await tx.practitionerCommissionAccrual.findFirst({
+    where: { clinicId, id },
+    include: {
+      plan: { select: { id: true, name: true, code: true } },
+      practitioner: { include: { user: { select: { name: true } } } },
+      patient: { select: { id: true, fullName: true, patientNumber: true } },
+      invoice: { select: { id: true, number: true, totalMinor: true } },
+      adjustments: { orderBy: { createdAt: 'desc' } },
+    },
+  });
+  if (!row) throw new NotFoundException('COMMISSION_ACCRUAL_NOT_FOUND');
+  return commissionAccrualResponse(row);
+}
+
+export async function commissionSettlementDetail(tx: TenantTransaction, clinicId: string, id: string) {
+  const row = await tx.practitionerCommissionSettlement.findFirst({
+    where: { clinicId, id },
+    include: {
+      practitioner: { include: { user: { select: { name: true } } } },
+      accruals: {
+        include: {
+          patient: { select: { id: true, fullName: true, patientNumber: true } },
+          invoice: { select: { id: true, number: true, totalMinor: true } },
+        },
+      },
+      adjustments: true,
+    },
+  });
+  if (!row) throw new NotFoundException('COMMISSION_SETTLEMENT_NOT_FOUND');
+  return commissionSettlementResponse(row);
+}

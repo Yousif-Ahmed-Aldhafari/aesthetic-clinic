@@ -1,5 +1,14 @@
 # Development setup
 
+## Phase 4.5 practitioner commissions, financial reconciliation & operational reporting
+
+Apply `20261101000500_commissions_reconciliation_reporting` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All commission, reconciliation, and operational reporting endpoints reside under `/api/v1/clinics/:clinicId/billing`.
+- Migration: `apps/api/prisma/migrations/20261101000500_commissions_reconciliation_reporting/migration.sql` creates 7 models: `PractitionerCommissionPlan`, `PractitionerCommissionRule`, `PractitionerCommissionAssignment`, `CommissionSettlementCounter`, `PractitionerCommissionSettlement`, `PractitionerCommissionAccrual`, and `PractitionerCommissionAdjustment` with `FORCE ROW LEVEL SECURITY`, check constraints, and trigger guards `commission_rule_guard` and `commission_accrual_guard` with `SECURITY INVOKER` and locked `search_path`.
+- Unit and policy tests: `apps/api/test/identity-policy.test.ts`, `apps/api/test/billing-money.test.ts`.
+- Database integration tests: `apps/api/test/commissions-reconciliation.integration.test.ts` (covers plan and rule creation, assignment, accrual calculation with integer half-up rounding, adjustment lifecycle with segregation of duties blocking self-decision, batch settlement generation with monotonic sequential numbering `COMM-SETTLE-000001`, doctor own statement access, continuous cross-resource financial reconciliation engine across 6 domains, operational reports generation, and cross-tenant RLS isolation).
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies commissions workspace, reconciliation workspace, and operational reports workspace).
+- Core invariants: Monetary amounts use signed/unsigned integer minor units (`bigint`). Integer half-up rounding prevents fractional loss. Segregation of duties prevents practitioners from approving their own adjustments. Settlements require elevated permissions and MFA Step-Up. Reconciliation validates invoice, payment, installment, package, commission, and inventory ledger invariants.
+
 ## Phase 4.4 treatment packages, prepaid session redemptions, installment plans & refunds
 
 Apply `20261101000400_packages_installments_refunds` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All package, installment, and refund endpoints reside under `/api/v1/clinics/:clinicId/billing`.

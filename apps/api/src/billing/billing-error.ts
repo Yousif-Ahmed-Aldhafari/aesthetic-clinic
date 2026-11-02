@@ -27,6 +27,18 @@ export const billingErrors = {
   REFUND_ALREADY_DECIDED: [409, 'تم البت في طلب الاسترداد مسبقاً (معتمد، مرفوض أو مسوّى).'],
   REFUND_EXCEEDS_NET_PAID: [409, 'مبلغ الاسترداد المطلوب يتجاوز صافي المدفوع من الفاتورة.'],
   REFUND_SETTLEMENT_FAILED: [400, 'تعذر تسوية الاسترداد: تأكد من وجود دفعة مؤهلة للعكس أو الاسترداد.'],
+  REFUND_SELF_APPROVAL_FORBIDDEN: [403, 'لا يمكن للمستخدم الذي أنشأ طلب الاسترداد اعتماده بنفسه (فصل المهام المطابق للحوكمة المالية).'],
+  COMMISSION_PLAN_NOT_FOUND: [404, 'خطة عمولات الممارسين غير موجودة.'],
+  COMMISSION_PLAN_INACTIVE: [400, 'خطة العمولات غير مفعلة.'],
+  COMMISSION_RULE_NOT_FOUND: [404, 'قاعدة العمولات غير موجودة.'],
+  COMMISSION_ACCRUAL_NOT_FOUND: [404, 'استحقاق العمولة غير موجود.'],
+  COMMISSION_ACCRUAL_ALREADY_SETTLED: [409, 'تمت تسوية استحقاق العمولة مسبقاً ولا يمكن تعديله أو حذفه.'],
+  COMMISSION_ADJUSTMENT_NOT_FOUND: [404, 'تسوية العمولة التصحيحية غير موجودة.'],
+  COMMISSION_ADJUSTMENT_ALREADY_DECIDED: [409, 'تم البت في طلب تعديل العمولة مسبقاً.'],
+  COMMISSION_SELF_DECISION_FORBIDDEN: [403, 'لا يمكن للمستخدم الذي أنشأ طلب التعديل البت فيه بنفسه (فصل المهام).'],
+  COMMISSION_SETTLEMENT_NOT_FOUND: [404, 'دفعة تسوية العمولات غير موجودة.'],
+  COMMISSION_SETTLEMENT_ALREADY_CONFIRMED: [409, 'تم تأكيد دفعة التسوية مسبقاً.'],
+  COMMISSION_CALCULATION_INVALID: [400, 'بيانات حساب العمولة غير صالحة، تحقق من النسبة والمبلغ الثابت.'],
 } as const;
 export class BillingError extends HttpException {
   constructor(readonly code:keyof typeof billingErrors){super(code,billingErrors[code][0]);}

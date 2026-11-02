@@ -2,9 +2,15 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { Prisma } from '../generated/prisma/client.js';
 import type { VerifiedPrincipal } from './verified-sessions.js';
 import { TenantDatabaseService } from './tenant-database.service.js';
-import { audit, financialHash, financialWrite, invoice, invoiceDetail, invoiceResponse, invoiceSelect, paidStatus, paymentResponse, paymentSelect, packageResponse, patientPackageResponse, installmentPlanResponse, refundRequestResponse, packageDetail, patientPackageDetail, installmentPlanDetail, refundRequestDetail } from './billing.helpers.js';
+import {
+  audit, financialHash, financialWrite, invoice, invoiceDetail, invoiceResponse, invoiceSelect, paidStatus, paymentResponse, paymentSelect,
+  packageResponse, patientPackageResponse, installmentPlanResponse, refundRequestResponse,
+  packageDetail, patientPackageDetail, installmentPlanDetail, refundRequestDetail,
+  commissionPlanResponse, commissionAccrualResponse, commissionAdjustmentResponse, commissionSettlementResponse,
+  commissionPlanDetail, commissionAccrualDetail, commissionSettlementDetail,
+} from './billing.helpers.js';
 import { BillingError } from '../billing/billing-error.js';
-import { calculate, currencyScale, fixed } from '../billing/money.js';
+import { calculate, currencyScale, fixed, signedFixed } from '../billing/money.js';
 import { searchName } from '../patients/patient-input.js';
 import type {
   BillingPage, BillingPatientsQuery, BillingProfileInput, BillingVisitsQuery, CreateInvoice, EditInvoice, FinancialCommand, InvoiceQuery, RecordPayment, ReversePayment, VoidInvoice,
@@ -13,6 +19,15 @@ import type {
   CreateInstallmentPlanDto, AllocateInstallmentPaymentDto, CreateRefundRequestDto, DecideRefundRequestDto, SettleRefundRequestDto,
   PackageQuery, PatientPackageQuery, InstallmentPlanQuery, RefundRequestQuery,
 } from '../billing/billing-input.js';
+import type {
+  CreateCommissionPlanDto, AssignPractitionerPlanDto, CreateCommissionRuleDto, CreateCommissionAccrualDto,
+  RequestCommissionAdjustmentDto, DecideCommissionAdjustmentDto, CreateCommissionSettlementDto, ConfirmCommissionSettlementDto,
+  CommissionQuery, OperationalReportQueryDto,
+} from '../billing/commission-input.js';
+import type {
+  FinancialReconciliationReport, ReconciliationFinding, RevenueCollectionsSummary, InstallmentAgingReport,
+  PackageLiabilityReport, PractitionerPerformanceReport, InventoryValuationSummary, AppointmentUtilizationReport,
+} from '../billing/reconciliation.types.js';
 import { AuditRepository } from './audit.repository.js';
 const literal=(s:string)=>s.replace(/[\\%_]/g,'\\$&');
 const profileSelect={address:true,registrationNumber:true,taxIdentifier:true,version:true} as const;
@@ -1097,9 +1112,9 @@ export class BillingRepository {
       const requestedMinor = fixed(input.amount, inv.currencyScale);
       if (requestedMinor <= 0n) throw new BillingError('BILLING_AMOUNT');
 
-      // Check against invoice net paid minus existing approved/requested refunds
+      // Check against invoice net paid minus pending requested/approved refunds
       const existingRefunds = await tx.refundRequest.findMany({
-        where: { clinicId: c.clinicId, invoiceId: inv.id, status: { in: ['REQUESTED', 'APPROVED', 'SETTLED'] } },
+        where: { clinicId: c.clinicId, invoiceId: inv.id, status: { in: ['REQUESTED', 'APPROVED'] } },
       });
       const committedRefunds = existingRefunds.reduce((sum, r) => sum + r.requestedAmountMinor, 0n);
       if (requestedMinor > inv.netPaidMinor - committedRefunds) throw new BillingError('REFUND_EXCEEDS_NET_PAID');
@@ -1143,6 +1158,7 @@ export class BillingRepository {
       if (!r) throw new NotFoundException('REFUND_REQUEST_NOT_FOUND');
       if (r.version !== input.expectedVersion) throw new BillingError('BILLING_STALE');
       if (r.status !== 'REQUESTED') throw new BillingError('REFUND_ALREADY_DECIDED');
+      if (r.requestedByMembershipId === c.membershipId) throw new BillingError('REFUND_SELF_APPROVAL_FORBIDDEN');
 
       await tx.refundRequest.update({
         where: { clinicId_id: { clinicId: c.clinicId, id } },
@@ -1284,6 +1300,1137 @@ export class BillingRepository {
       }, tx);
 
       return refundRequestDetail(tx, c.clinicId, id);
+    });
+  }
+
+  // ===========================================================================
+  // Step 4.5: Practitioner Commissions, Settlements & Adjustments
+  // ===========================================================================
+
+  listCommissionPlans(proof: VerifiedPrincipal, clinicId: string) {
+    return this.database.withClinicContext(proof, clinicId, ['commissions.plans.read'], async (tx, c) => {
+      const plans = await tx.practitionerCommissionPlan.findMany({
+        where: { clinicId: c.clinicId },
+        include: {
+          rules: { include: { procedure: { select: { id: true, nameAr: true } } }, orderBy: { createdAt: 'asc' } },
+          assignments: {
+            include: { practitioner: { include: { user: { select: { name: true } } } } },
+            orderBy: { effectiveFrom: 'desc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      return plans.map(commissionPlanResponse);
+    });
+  }
+
+  getCommissionPlan(proof: VerifiedPrincipal, clinicId: string, id: string) {
+    return this.database.withClinicContext(proof, clinicId, ['commissions.plans.read'], (tx, c) => commissionPlanDetail(tx, c.clinicId, id));
+  }
+
+  createCommissionPlan(proof: VerifiedPrincipal, clinicId: string, input: CreateCommissionPlanDto) {
+    return financialWrite(this.database, proof, clinicId, ['commissions.plans.manage'], async (tx, c) => {
+      const clinic = await tx.clinic.findUnique({ where: { id: c.clinicId }, select: { currency: true } });
+      const scale = currencyScale(clinic?.currency ?? 'SAR');
+
+      const existing = await tx.practitionerCommissionPlan.findFirst({
+        where: { clinicId: c.clinicId, code: input.code.trim().toUpperCase() },
+      });
+      if (existing) throw new BillingError('PACKAGE_CODE_EXISTS');
+
+      const plan = await tx.practitionerCommissionPlan.create({
+        data: {
+          clinicId: c.clinicId,
+          code: input.code.trim().toUpperCase(),
+          name: input.name.trim(),
+          description: input.description?.trim() || null,
+          status: 'ACTIVE',
+          currency: clinic?.currency ?? 'SAR',
+          currencyScale: scale,
+        },
+      });
+
+      await this.auditRepo.record({
+        clinicId: c.clinicId,
+        actorId: c.userId,
+        action: 'commissions.plan.create',
+        category: 'FINANCE',
+        targetType: 'PractitionerCommissionPlan',
+        targetId: plan.id,
+        outcome: 'SUCCESS',
+        metadata: { code: plan.code, name: plan.name },
+      }, tx);
+
+      return commissionPlanDetail(tx, c.clinicId, plan.id);
+    });
+  }
+
+  createCommissionRule(proof: VerifiedPrincipal, clinicId: string, planId: string, input: CreateCommissionRuleDto) {
+    return financialWrite(this.database, proof, clinicId, ['commissions.plans.manage'], async (tx, c) => {
+      const plan = await tx.practitionerCommissionPlan.findFirst({ where: { clinicId: c.clinicId, id: planId } });
+      if (!plan) throw new NotFoundException('COMMISSION_PLAN_NOT_FOUND');
+      if (plan.status !== 'ACTIVE') throw new BillingError('COMMISSION_PLAN_INACTIVE');
+
+      let flatAmountMinor: bigint | null = null;
+      if (input.calculationType === 'FLAT_AMOUNT') {
+        if (!input.flatAmount) throw new BillingError('COMMISSION_CALCULATION_INVALID');
+        flatAmountMinor = fixed(input.flatAmount, plan.currencyScale);
+      }
+
+      if (input.procedureId) {
+        const proc = await tx.aestheticProcedureCatalog.findFirst({
+          where: { clinicId: c.clinicId, id: input.procedureId },
+        });
+        if (!proc) throw new NotFoundException('PROCEDURE_NOT_FOUND');
+      }
+
+      const rule = await tx.practitionerCommissionRule.create({
+        data: {
+          clinicId: c.clinicId,
+          planId,
+          procedureId: input.procedureId || null,
+          calculationType: input.calculationType,
+          rateBasisPoints: input.calculationType === 'PERCENTAGE' ? input.rateBasisPoints : null,
+          flatAmountMinor,
+          earningEvent: input.earningEvent,
+          description: input.description?.trim() || null,
+          isPublished: true,
+        },
+      });
+
+      await this.auditRepo.record({
+        clinicId: c.clinicId,
+        actorId: c.userId,
+        action: 'commissions.rule.create',
+        category: 'FINANCE',
+        targetType: 'PractitionerCommissionRule',
+        targetId: rule.id,
+        outcome: 'SUCCESS',
+        metadata: { planId, calculationType: input.calculationType, earningEvent: input.earningEvent },
+      }, tx);
+
+      return commissionPlanDetail(tx, c.clinicId, planId);
+    });
+  }
+
+  assignPractitionerToPlan(proof: VerifiedPrincipal, clinicId: string, planId: string, input: AssignPractitionerPlanDto) {
+    return financialWrite(this.database, proof, clinicId, ['commissions.plans.manage'], async (tx, c) => {
+      const plan = await tx.practitionerCommissionPlan.findFirst({ where: { clinicId: c.clinicId, id: planId } });
+      if (!plan) throw new NotFoundException('COMMISSION_PLAN_NOT_FOUND');
+
+      const membership = await tx.clinicMembership.findFirst({
+        where: { clinicId: c.clinicId, id: input.practitionerMembershipId, status: 'ACTIVE' },
+      });
+      if (!membership) throw new NotFoundException('Practitioner membership not found');
+
+      const assignment = await tx.practitionerCommissionAssignment.create({
+        data: {
+          clinicId: c.clinicId,
+          planId,
+          practitionerMembershipId: input.practitionerMembershipId,
+          effectiveFrom: new Date(input.effectiveFrom),
+          effectiveTo: input.effectiveTo ? new Date(input.effectiveTo) : null,
+          notes: input.notes?.trim() || null,
+        },
+      });
+
+      await this.auditRepo.record({
+        clinicId: c.clinicId,
+        actorId: c.userId,
+        action: 'commissions.assign',
+        category: 'FINANCE',
+        targetType: 'PractitionerCommissionAssignment',
+        targetId: assignment.id,
+        outcome: 'SUCCESS',
+        metadata: { planId, practitionerMembershipId: input.practitionerMembershipId },
+      }, tx);
+
+      return commissionPlanDetail(tx, c.clinicId, planId);
+    });
+  }
+
+  listCommissionAccruals(proof: VerifiedPrincipal, clinicId: string, q: CommissionQuery) {
+    return this.database.withClinicContext(proof, clinicId, ['commissions.accruals.read'], async (tx, c) => {
+      const where: Prisma.PractitionerCommissionAccrualWhereInput = {
+        clinicId: c.clinicId,
+        ...(q.practitionerMembershipId ? { practitionerMembershipId: q.practitionerMembershipId } : {}),
+        ...(q.status && q.status !== 'ALL' ? { status: q.status as any } : {}),
+        ...(q.startDate || q.endDate ? {
+          earnedAt: {
+            ...(q.startDate ? { gte: new Date(q.startDate) } : {}),
+            ...(q.endDate ? { lte: new Date(q.endDate) } : {}),
+          },
+        } : {}),
+      };
+
+      const rows = await tx.practitionerCommissionAccrual.findMany({
+        where,
+        include: {
+          plan: { select: { id: true, name: true, code: true } },
+          practitioner: { include: { user: { select: { name: true } } } },
+          patient: { select: { id: true, fullName: true, patientNumber: true } },
+          invoice: { select: { id: true, number: true, totalMinor: true } },
+          adjustments: { orderBy: { createdAt: 'desc' } },
+        },
+        orderBy: { earnedAt: 'desc' },
+        take: q.limit ?? 50,
+      });
+
+      return rows.map(commissionAccrualResponse);
+    });
+  }
+
+  getMyCommissionStatement(proof: VerifiedPrincipal, clinicId: string, q: CommissionQuery) {
+    return this.database.withClinicContext(proof, clinicId, ['commissions.accruals.read-own'], async (tx, c) => {
+      // Force practitioner filter strictly to the authenticated membership
+      const where: Prisma.PractitionerCommissionAccrualWhereInput = {
+        clinicId: c.clinicId,
+        practitionerMembershipId: c.membershipId,
+        ...(q.status && q.status !== 'ALL' ? { status: q.status as any } : {}),
+        ...(q.startDate || q.endDate ? {
+          earnedAt: {
+            ...(q.startDate ? { gte: new Date(q.startDate) } : {}),
+            ...(q.endDate ? { lte: new Date(q.endDate) } : {}),
+          },
+        } : {}),
+      };
+
+      const rows = await tx.practitionerCommissionAccrual.findMany({
+        where,
+        include: {
+          plan: { select: { id: true, name: true, code: true } },
+          practitioner: { include: { user: { select: { name: true } } } },
+          patient: { select: { id: true, fullName: true, patientNumber: true } },
+          invoice: { select: { id: true, number: true, totalMinor: true } },
+          adjustments: { orderBy: { createdAt: 'desc' } },
+        },
+        orderBy: { earnedAt: 'desc' },
+        take: q.limit ?? 50,
+      });
+
+      const totalAccruedMinor = rows.reduce((sum, r) => sum + r.commissionAmountMinor, 0n);
+      const settledMinor = rows.filter(r => r.status === 'SETTLED').reduce((sum, r) => sum + r.commissionAmountMinor, 0n);
+      const pendingMinor = rows.filter(r => ['PENDING', 'APPROVED'].includes(r.status)).reduce((sum, r) => sum + r.commissionAmountMinor, 0n);
+
+      return {
+        practitionerMembershipId: c.membershipId,
+        totalAccruedMinor: totalAccruedMinor.toString(),
+        settledMinor: settledMinor.toString(),
+        pendingMinor: pendingMinor.toString(),
+        items: rows.map(commissionAccrualResponse),
+      };
+    });
+  }
+
+  getCommissionAccrual(proof: VerifiedPrincipal, clinicId: string, id: string) {
+    return this.database.withClinicContext(proof, clinicId, ['commissions.accruals.read'], (tx, c) => commissionAccrualDetail(tx, c.clinicId, id));
+  }
+
+  createCommissionAccrual(proof: VerifiedPrincipal, clinicId: string, input: CreateCommissionAccrualDto) {
+    return financialWrite(this.database, proof, clinicId, ['commissions.accruals.manage'], async (tx, c) => {
+      const hash = financialHash(input);
+      const old = await tx.practitionerCommissionAccrual.findFirst({ where: { clinicId: c.clinicId, requestKey: input.requestKey } });
+      if (old) {
+        if (old.requestHash !== hash) throw new BillingError('BILLING_RETRY');
+        return commissionAccrualDetail(tx, c.clinicId, old.id);
+      }
+
+      const plan = await tx.practitionerCommissionPlan.findFirst({ where: { clinicId: c.clinicId, id: input.planId } });
+      if (!plan) throw new NotFoundException('COMMISSION_PLAN_NOT_FOUND');
+
+      const rule = await tx.practitionerCommissionRule.findFirst({ where: { clinicId: c.clinicId, id: input.ruleId, planId: input.planId } });
+      if (!rule) throw new NotFoundException('COMMISSION_RULE_NOT_FOUND');
+
+      const inv = await tx.invoice.findFirst({ where: { clinicId: c.clinicId, id: input.invoiceId } });
+      if (!inv) throw new NotFoundException('INVOICE_NOT_FOUND');
+
+      // Prevent unperformed / cancelled procedure execution commissions
+      if (input.procedureExecutionId) {
+        const proc = await tx.procedureExecution.findFirst({
+          where: { clinicId: c.clinicId, id: input.procedureExecutionId },
+        });
+        if (!proc) throw new NotFoundException('PROCEDURE_NOT_FOUND');
+        if (proc.status !== 'COMPLETED') {
+          throw new BadRequestException('Commission can only be accrued for completed procedure executions');
+        }
+      }
+
+      const baseAmountMinor = fixed(input.baseAmount, plan.currencyScale);
+      if (baseAmountMinor < 0n) throw new BillingError('BILLING_AMOUNT');
+
+      let commissionAmountMinor: bigint;
+      if (rule.calculationType === 'PERCENTAGE') {
+        const bps = BigInt(rule.rateBasisPoints ?? 0);
+        commissionAmountMinor = (baseAmountMinor * bps + 5000n) / 10000n;
+      } else {
+        commissionAmountMinor = rule.flatAmountMinor ?? 0n;
+      }
+
+      const created = await tx.practitionerCommissionAccrual.create({
+        data: {
+          clinicId: c.clinicId,
+          planId: plan.id,
+          ruleId: rule.id,
+          ruleVersion: rule.ruleVersion,
+          practitionerMembershipId: input.practitionerMembershipId,
+          patientId: input.patientId,
+          invoiceId: input.invoiceId,
+          procedureExecutionId: input.procedureExecutionId || null,
+          appointmentId: input.appointmentId || null,
+          baseAmountMinor,
+          rateBasisPoints: rule.rateBasisPoints,
+          flatAmountMinor: rule.flatAmountMinor,
+          commissionAmountMinor,
+          currency: plan.currency,
+          currencyScale: plan.currencyScale,
+          status: 'PENDING',
+          earningEvent: input.earningEvent,
+          notes: input.notes?.trim() || null,
+          requestKey: input.requestKey,
+          requestHash: hash,
+        },
+      });
+
+      await this.auditRepo.record({
+        clinicId: c.clinicId,
+        actorId: c.userId,
+        action: 'commissions.accrue',
+        category: 'FINANCE',
+        targetType: 'PractitionerCommissionAccrual',
+        targetId: created.id,
+        outcome: 'SUCCESS',
+        metadata: {
+          practitionerMembershipId: input.practitionerMembershipId,
+          commissionAmountMinor: commissionAmountMinor.toString(),
+          ruleId: rule.id,
+        },
+      }, tx);
+
+      return commissionAccrualDetail(tx, c.clinicId, created.id);
+    });
+  }
+
+  requestCommissionAdjustment(proof: VerifiedPrincipal, clinicId: string, accrualId: string, input: RequestCommissionAdjustmentDto) {
+    return financialWrite(this.database, proof, clinicId, ['commissions.adjustments.request'], async (tx, c) => {
+      const hash = financialHash(input);
+      const old = await tx.practitionerCommissionAdjustment.findFirst({ where: { clinicId: c.clinicId, requestKey: input.requestKey } });
+      if (old) {
+        if (old.requestHash !== hash) throw new BillingError('BILLING_RETRY');
+        return commissionAdjustmentResponse(old);
+      }
+
+      const accrual = await tx.practitionerCommissionAccrual.findFirst({ where: { clinicId: c.clinicId, id: accrualId } });
+      if (!accrual) throw new NotFoundException('COMMISSION_ACCRUAL_NOT_FOUND');
+
+      const adjAmountMinor = signedFixed(input.adjustmentAmount, accrual.currencyScale);
+      if (adjAmountMinor === 0n) throw new BillingError('BILLING_AMOUNT');
+
+      const created = await tx.practitionerCommissionAdjustment.create({
+        data: {
+          clinicId: c.clinicId,
+          accrualId,
+          adjustmentAmountMinor: adjAmountMinor,
+          reason: input.reason,
+          reasonDetails: input.reasonDetails.trim(),
+          status: 'PENDING',
+          requestedByMembershipId: c.membershipId,
+          requestKey: input.requestKey,
+          requestHash: hash,
+        },
+      });
+
+      await this.auditRepo.record({
+        clinicId: c.clinicId,
+        actorId: c.userId,
+        action: 'commissions.adjustment.request',
+        category: 'FINANCE',
+        targetType: 'PractitionerCommissionAdjustment',
+        targetId: created.id,
+        outcome: 'SUCCESS',
+        metadata: { accrualId, adjustmentAmountMinor: adjAmountMinor.toString(), reason: input.reason },
+      }, tx);
+
+      return commissionAdjustmentResponse(created);
+    });
+  }
+
+  decideCommissionAdjustment(proof: VerifiedPrincipal, clinicId: string, adjustmentId: string, input: DecideCommissionAdjustmentDto) {
+    return financialWrite(this.database, proof, clinicId, ['commissions.adjustments.decide'], async (tx, c) => {
+      const adj = await tx.practitionerCommissionAdjustment.findFirst({ where: { clinicId: c.clinicId, id: adjustmentId } });
+      if (!adj) throw new NotFoundException('COMMISSION_ADJUSTMENT_NOT_FOUND');
+      if (adj.status !== 'PENDING') throw new BillingError('COMMISSION_ADJUSTMENT_ALREADY_DECIDED');
+
+      // Segregation of duties: decider cannot be the same membership as requester
+      if (adj.requestedByMembershipId === c.membershipId) {
+        throw new BillingError('COMMISSION_SELF_DECISION_FORBIDDEN');
+      }
+
+      const newStatus = input.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+
+      const updated = await tx.practitionerCommissionAdjustment.update({
+        where: { clinicId_id: { clinicId: c.clinicId, id: adjustmentId } },
+        data: {
+          status: newStatus,
+          decidedByMembershipId: c.membershipId,
+          decidedAt: new Date(),
+          version: { increment: 1 },
+        },
+      });
+
+      if (newStatus === 'APPROVED') {
+        const accrual = await tx.practitionerCommissionAccrual.findFirstOrThrow({ where: { clinicId: c.clinicId, id: adj.accrualId } });
+        const newCommission = accrual.commissionAmountMinor + adj.adjustmentAmountMinor;
+        await tx.practitionerCommissionAccrual.update({
+          where: { clinicId_id: { clinicId: c.clinicId, id: adj.accrualId } },
+          data: {
+            commissionAmountMinor: newCommission >= 0n ? newCommission : 0n,
+            status: newCommission === 0n ? 'REVERSED' : 'ADJUSTED',
+            version: { increment: 1 },
+          },
+        });
+      }
+
+      await this.auditRepo.record({
+        clinicId: c.clinicId,
+        actorId: c.userId,
+        action: 'commissions.adjustment.decide',
+        category: 'FINANCE',
+        targetType: 'PractitionerCommissionAdjustment',
+        targetId: adjustmentId,
+        outcome: 'SUCCESS',
+        metadata: { decision: newStatus, accrualId: adj.accrualId },
+      }, tx);
+
+      return commissionAdjustmentResponse(updated);
+    });
+  }
+
+  listCommissionSettlements(proof: VerifiedPrincipal, clinicId: string, q: CommissionQuery) {
+    return this.database.withClinicContext(proof, clinicId, ['commissions.settlements.read'], async (tx, c) => {
+      const where: Prisma.PractitionerCommissionSettlementWhereInput = {
+        clinicId: c.clinicId,
+        ...(q.practitionerMembershipId ? { practitionerMembershipId: q.practitionerMembershipId } : {}),
+        ...(q.status && q.status !== 'ALL' ? { status: q.status as any } : {}),
+      };
+
+      const rows = await tx.practitionerCommissionSettlement.findMany({
+        where,
+        include: {
+          practitioner: { include: { user: { select: { name: true } } } },
+          accruals: {
+            include: {
+              patient: { select: { id: true, fullName: true, patientNumber: true } },
+              invoice: { select: { id: true, number: true, totalMinor: true } },
+            },
+          },
+          adjustments: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: q.limit ?? 50,
+      });
+
+      return rows.map(commissionSettlementResponse);
+    });
+  }
+
+  getCommissionSettlement(proof: VerifiedPrincipal, clinicId: string, id: string) {
+    return this.database.withClinicContext(proof, clinicId, ['commissions.settlements.read'], (tx, c) => commissionSettlementDetail(tx, c.clinicId, id));
+  }
+
+  createCommissionSettlement(proof: VerifiedPrincipal, clinicId: string, input: CreateCommissionSettlementDto) {
+    return financialWrite(this.database, proof, clinicId, ['commissions.settlements.manage'], async (tx, c) => {
+      const hash = financialHash(input);
+      const old = await tx.practitionerCommissionSettlement.findFirst({ where: { clinicId: c.clinicId, requestKey: input.requestKey } });
+      if (old) {
+        if (old.requestHash !== hash) throw new BillingError('BILLING_RETRY');
+        return commissionSettlementDetail(tx, c.clinicId, old.id);
+      }
+
+      const practitioner = await tx.clinicMembership.findFirst({
+        where: { clinicId: c.clinicId, id: input.practitionerMembershipId, status: 'ACTIVE' },
+      });
+      if (!practitioner) throw new NotFoundException('Practitioner membership not found');
+
+      // Load eligible accruals
+      const accruals = await tx.practitionerCommissionAccrual.findMany({
+        where: {
+          clinicId: c.clinicId,
+          id: { in: input.accrualIds },
+          practitionerMembershipId: input.practitionerMembershipId,
+          status: { in: ['PENDING', 'APPROVED', 'ADJUSTED'] },
+          settlementId: null,
+        },
+      });
+      if (accruals.length !== input.accrualIds.length) {
+        throw new BadRequestException('One or more accruals are invalid or already assigned to a settlement');
+      }
+
+      const grossAmountMinor = accruals.reduce((sum, a) => sum + a.commissionAmountMinor, 0n);
+
+      // Load approved adjustments if any
+      let adjustmentsAmountMinor = 0n;
+      if (input.adjustmentIds && input.adjustmentIds.length > 0) {
+        const adjustments = await tx.practitionerCommissionAdjustment.findMany({
+          where: {
+            clinicId: c.clinicId,
+            id: { in: input.adjustmentIds },
+            status: 'APPROVED',
+            settlementId: null,
+          },
+        });
+        if (adjustments.length !== input.adjustmentIds.length) {
+          throw new BadRequestException('One or more adjustments are invalid or unapproved');
+        }
+        adjustmentsAmountMinor = adjustments.reduce((sum, a) => sum + a.adjustmentAmountMinor, 0n);
+      }
+
+      const netSettledMinor = grossAmountMinor + adjustmentsAmountMinor;
+      if (netSettledMinor < 0n) throw new BadRequestException('Net settlement amount cannot be negative');
+
+      const clinic = await tx.clinic.findUnique({ where: { id: c.clinicId }, select: { currency: true } });
+      const scale = currencyScale(clinic?.currency ?? 'SAR');
+
+      const counter = await tx.commissionSettlementCounter.upsert({
+        where: { clinicId: c.clinicId },
+        create: { clinicId: c.clinicId, lastNumber: 1 },
+        update: { lastNumber: { increment: 1 } },
+      });
+      const settlementNumber = `COMM-SETTLE-${counter.lastNumber.toString().padStart(6, '0')}`;
+
+      const created = await tx.practitionerCommissionSettlement.create({
+        data: {
+          clinicId: c.clinicId,
+          settlementNumber,
+          practitionerMembershipId: input.practitionerMembershipId,
+          periodStart: new Date(input.periodStart),
+          periodEnd: new Date(input.periodEnd),
+          grossAmountMinor,
+          adjustmentsAmountMinor,
+          netSettledMinor,
+          currency: clinic?.currency ?? 'SAR',
+          currencyScale: scale,
+          status: 'DRAFT',
+          notes: input.notes?.trim() || null,
+          requestKey: input.requestKey,
+          requestHash: hash,
+        },
+      });
+
+      // Link accruals to this settlement
+      await tx.practitionerCommissionAccrual.updateMany({
+        where: { clinicId: c.clinicId, id: { in: input.accrualIds } },
+        data: { settlementId: created.id },
+      });
+
+      // Link adjustments if provided
+      if (input.adjustmentIds && input.adjustmentIds.length > 0) {
+        await tx.practitionerCommissionAdjustment.updateMany({
+          where: { clinicId: c.clinicId, id: { in: input.adjustmentIds } },
+          data: { settlementId: created.id },
+        });
+      }
+
+      await this.auditRepo.record({
+        clinicId: c.clinicId,
+        actorId: c.userId,
+        action: 'commissions.settlement.create',
+        category: 'FINANCE',
+        targetType: 'PractitionerCommissionSettlement',
+        targetId: created.id,
+        outcome: 'SUCCESS',
+        metadata: {
+          settlementNumber,
+          netSettledMinor: netSettledMinor.toString(),
+          accrualsCount: accruals.length,
+        },
+      }, tx);
+
+      return commissionSettlementDetail(tx, c.clinicId, created.id);
+    });
+  }
+
+  confirmCommissionSettlement(proof: VerifiedPrincipal, clinicId: string, id: string, input: ConfirmCommissionSettlementDto) {
+    return financialWrite(this.database, proof, clinicId, ['commissions.settlements.manage'], async (tx, c) => {
+      const s = await tx.practitionerCommissionSettlement.findFirst({ where: { clinicId: c.clinicId, id } });
+      if (!s) throw new NotFoundException('COMMISSION_SETTLEMENT_NOT_FOUND');
+      if (s.version !== input.expectedVersion) throw new BillingError('BILLING_STALE');
+      if (s.status === 'CONFIRMED') throw new BillingError('COMMISSION_SETTLEMENT_ALREADY_CONFIRMED');
+
+      await tx.practitionerCommissionSettlement.update({
+        where: { clinicId_id: { clinicId: c.clinicId, id } },
+        data: {
+          status: 'CONFIRMED',
+          payoutReference: input.payoutReference.trim(),
+          confirmedByMembershipId: c.membershipId,
+          confirmedAt: new Date(),
+          version: { increment: 1 },
+        },
+      });
+
+      // Mark attached accruals as SETTLED
+      await tx.practitionerCommissionAccrual.updateMany({
+        where: { clinicId: c.clinicId, settlementId: id },
+        data: { status: 'SETTLED' },
+      });
+
+      await this.auditRepo.record({
+        clinicId: c.clinicId,
+        actorId: c.userId,
+        action: 'commissions.settlement.confirm',
+        category: 'FINANCE',
+        targetType: 'PractitionerCommissionSettlement',
+        targetId: id,
+        outcome: 'SUCCESS',
+        metadata: { payoutReference: input.payoutReference, netSettledMinor: s.netSettledMinor.toString() },
+      }, tx);
+
+      return commissionSettlementDetail(tx, c.clinicId, id);
+    });
+  }
+
+  // ===========================================================================
+  // Step 4.5: Financial Reconciliation Engine
+  // ===========================================================================
+
+  runFinancialReconciliation(proof: VerifiedPrincipal, clinicId: string): Promise<FinancialReconciliationReport> {
+    return this.database.withClinicContext(proof, clinicId, ['finance.reconciliation.read'], async (tx, c) => {
+      const findings: ReconciliationFinding[] = [];
+
+      // 1. Invoices & Payments Reconciliation
+      const invoices = await tx.invoice.findMany({
+        where: { clinicId: c.clinicId },
+        include: { lines: true, payments: { include: { reversals: true } } },
+      });
+
+      for (const inv of invoices) {
+        if (inv.status === 'VOID') continue;
+
+        // Line item totals check
+        const linesTotal = inv.lines.reduce((sum, l) => sum + l.totalMinor, 0n);
+        if (linesTotal !== inv.totalMinor) {
+          findings.push({
+            resource: 'INVOICE',
+            entityId: inv.id,
+            code: 'INVOICE_LINE_SUM_MISMATCH',
+            severity: 'CRITICAL',
+            details: `Invoice ${inv.number ?? inv.id} line items total ${linesTotal} does not match recorded totalMinor ${inv.totalMinor}`,
+            metadata: { expected: inv.totalMinor.toString(), computed: linesTotal.toString() },
+          });
+        }
+
+        // Net paid check against payments and reversals
+        let computedNetPaid = 0n;
+        for (const p of inv.payments) {
+          const revTotal = p.reversals.reduce((sum, r) => sum + r.amountMinor, 0n);
+          if (revTotal > p.amountMinor) {
+            findings.push({
+              resource: 'PAYMENT',
+              entityId: p.id,
+              code: 'PAYMENT_EXCESS_REVERSAL',
+              severity: 'CRITICAL',
+              details: `Payment ${p.id} reversals (${revTotal}) exceed original payment amount (${p.amountMinor})`,
+              metadata: { paymentAmount: p.amountMinor.toString(), reversedAmount: revTotal.toString() },
+            });
+          }
+          computedNetPaid += (p.amountMinor - revTotal);
+        }
+
+        if (computedNetPaid !== inv.netPaidMinor) {
+          findings.push({
+            resource: 'INVOICE',
+            entityId: inv.id,
+            code: 'INVOICE_NET_PAID_MISMATCH',
+            severity: 'CRITICAL',
+            details: `Invoice ${inv.number ?? inv.id} netPaidMinor ${inv.netPaidMinor} does not match payments net total ${computedNetPaid}`,
+            metadata: { recordedNetPaid: inv.netPaidMinor.toString(), computedNetPaid: computedNetPaid.toString() },
+          });
+        }
+      }
+
+      // 2. Installment Plans Reconciliation
+      const installmentPlans = await tx.installmentPlan.findMany({
+        where: { clinicId: c.clinicId },
+        include: { schedules: { include: { allocations: true } } },
+      });
+
+      for (const plan of installmentPlans) {
+        const expectedTotal = plan.schedules.reduce((sum, s) => sum + s.expectedAmountMinor, 0n);
+        if (expectedTotal !== plan.totalAmountMinor) {
+          findings.push({
+            resource: 'INSTALLMENT',
+            entityId: plan.id,
+            code: 'INSTALLMENT_SCHEDULE_MISMATCH',
+            severity: 'CRITICAL',
+            details: `Installment plan ${plan.planNumber} total amount ${plan.totalAmountMinor} does not equal schedules sum ${expectedTotal}`,
+            metadata: { planTotal: plan.totalAmountMinor.toString(), schedulesTotal: expectedTotal.toString() },
+          });
+        }
+
+        let allAllocated = 0n;
+        for (const sched of plan.schedules) {
+          const schedAlloc = sched.allocations.reduce((sum, a) => sum + a.allocatedMinor, 0n);
+          if (schedAlloc !== sched.paidAmountMinor) {
+            findings.push({
+              resource: 'INSTALLMENT',
+              entityId: sched.id,
+              code: 'INSTALLMENT_SCHEDULE_PAID_MISMATCH',
+              severity: 'WARNING',
+              details: `Schedule ${sched.installmentNumber} of plan ${plan.planNumber} paidAmountMinor ${sched.paidAmountMinor} differs from allocations sum ${schedAlloc}`,
+              metadata: { schedulePaid: sched.paidAmountMinor.toString(), allocationsSum: schedAlloc.toString() },
+            });
+          }
+          allAllocated += schedAlloc;
+        }
+
+        if (allAllocated !== plan.paidAmountMinor) {
+          findings.push({
+            resource: 'INSTALLMENT',
+            entityId: plan.id,
+            code: 'INSTALLMENT_PLAN_PAID_MISMATCH',
+            severity: 'CRITICAL',
+            details: `Installment plan ${plan.planNumber} paidAmountMinor ${plan.paidAmountMinor} does not equal total allocations ${allAllocated}`,
+            metadata: { planPaid: plan.paidAmountMinor.toString(), totalAllocations: allAllocated.toString() },
+          });
+        }
+      }
+
+      // 3. Patient Packages & Entitlements Reconciliation
+      const packages = await tx.patientPackage.findMany({
+        where: { clinicId: c.clinicId },
+        include: { entitlements: true, redemptions: { include: { reversals: true } } },
+      });
+
+      for (const pp of packages) {
+        const entTotal = pp.entitlements.reduce((sum, e) => sum + e.totalSessions, 0);
+        if (entTotal !== pp.totalSessions) {
+          findings.push({
+            resource: 'PACKAGE',
+            entityId: pp.id,
+            code: 'PACKAGE_TOTAL_SESSIONS_DRIFT',
+            severity: 'WARNING',
+            details: `Patient package ${pp.id} totalSessions ${pp.totalSessions} does not match sum of entitlements ${entTotal}`,
+            metadata: { packageTotal: pp.totalSessions.toString(), entitlementsTotal: entTotal.toString() },
+          });
+        }
+
+        const entRemaining = pp.entitlements.reduce((sum, e) => sum + e.remainingSessions, 0);
+        if (entRemaining !== pp.remainingSessions) {
+          findings.push({
+            resource: 'PACKAGE',
+            entityId: pp.id,
+            code: 'PACKAGE_REMAINING_SESSIONS_DRIFT',
+            severity: 'CRITICAL',
+            details: `Patient package ${pp.id} remainingSessions ${pp.remainingSessions} does not match sum of entitlement remaining sessions ${entRemaining}`,
+            metadata: { packageRemaining: pp.remainingSessions.toString(), entitlementsRemaining: entRemaining.toString() },
+          });
+        }
+      }
+
+      // 4. Refund Requests & Payment Reversals Reconciliation
+      const refundRequests = await tx.refundRequest.findMany({
+        where: { clinicId: c.clinicId, status: 'SETTLED' },
+      });
+
+      for (const r of refundRequests) {
+        if (!r.paymentReversalId) {
+          findings.push({
+            resource: 'REFUND',
+            entityId: r.id,
+            code: 'REFUND_MISSING_REVERSAL_LINK',
+            severity: 'CRITICAL',
+            details: `Settled refund request ${r.id} is missing linked payment reversal record`,
+            metadata: { refundRequestId: r.id },
+          });
+        }
+      }
+
+      // 5. Commission Settlements Reconciliation
+      const settlements = await tx.practitionerCommissionSettlement.findMany({
+        where: { clinicId: c.clinicId, status: 'CONFIRMED' },
+        include: { accruals: true, adjustments: true },
+      });
+
+      for (const s of settlements) {
+        const accrualsSum = s.accruals.reduce((sum, a) => sum + a.commissionAmountMinor, 0n);
+        if (accrualsSum !== s.grossAmountMinor) {
+          findings.push({
+            resource: 'COMMISSION',
+            entityId: s.id,
+            code: 'COMMISSION_GROSS_AMOUNT_DRIFT',
+            severity: 'CRITICAL',
+            details: `Commission settlement ${s.settlementNumber} grossAmountMinor ${s.grossAmountMinor} does not match sum of accruals ${accrualsSum}`,
+            metadata: { recordedGross: s.grossAmountMinor.toString(), computedGross: accrualsSum.toString() },
+          });
+        }
+
+        const adjustmentsSum = s.adjustments.reduce((sum, a) => sum + a.adjustmentAmountMinor, 0n);
+        if (adjustmentsSum !== s.adjustmentsAmountMinor) {
+          findings.push({
+            resource: 'COMMISSION',
+            entityId: s.id,
+            code: 'COMMISSION_ADJUSTMENT_SUM_DRIFT',
+            severity: 'WARNING',
+            details: `Commission settlement ${s.settlementNumber} adjustmentsAmountMinor ${s.adjustmentsAmountMinor} does not match sum of adjustments ${adjustmentsSum}`,
+            metadata: { recordedAdjustments: s.adjustmentsAmountMinor.toString(), computedAdjustments: adjustmentsSum.toString() },
+          });
+        }
+
+        if (s.grossAmountMinor + s.adjustmentsAmountMinor !== s.netSettledMinor) {
+          findings.push({
+            resource: 'COMMISSION',
+            entityId: s.id,
+            code: 'COMMISSION_NET_SETTLED_MISMATCH',
+            severity: 'CRITICAL',
+            details: `Commission settlement ${s.settlementNumber} netSettledMinor ${s.netSettledMinor} does not equal gross plus adjustments`,
+            metadata: { netSettled: s.netSettledMinor.toString(), computedNet: (s.grossAmountMinor + s.adjustmentsAmountMinor).toString() },
+          });
+        }
+      }
+
+      const paymentsCount = await tx.payment.count({ where: { clinicId: c.clinicId } });
+
+      return {
+        clinicId: c.clinicId,
+        timestamp: new Date().toISOString(),
+        resourcesScanned: {
+          invoicesCount: invoices.length,
+          paymentsCount,
+          installmentPlansCount: installmentPlans.length,
+          patientPackagesCount: packages.length,
+          refundRequestsCount: refundRequests.length,
+          commissionSettlementsCount: settlements.length,
+        },
+        totalDiscrepancies: findings.length,
+        findings,
+        status: findings.length === 0 ? 'CLEAN' : 'DISCREPANCIES_DETECTED',
+      };
+    });
+  }
+
+  // ===========================================================================
+  // Step 4.5: Clinic Operational Reporting
+  // ===========================================================================
+
+  getRevenueCollectionsSummary(proof: VerifiedPrincipal, clinicId: string, q: OperationalReportQueryDto): Promise<RevenueCollectionsSummary> {
+    return this.database.withClinicContext(proof, clinicId, ['reports.operational.read'], async (tx, c) => {
+      const start = new Date(q.startDate);
+      const end = new Date(q.endDate);
+      if (end.getTime() - start.getTime() > 366 * 86400000) {
+        throw new BadRequestException('Reporting date range cannot exceed 366 days');
+      }
+
+      const clinic = await tx.clinic.findUnique({ where: { id: c.clinicId }, select: { currency: true } });
+      const scale = currencyScale(clinic?.currency ?? 'SAR');
+
+      const invoices = await tx.invoice.findMany({
+        where: {
+          clinicId: c.clinicId,
+          issuedAt: { gte: start, lte: end },
+          status: { not: 'VOID' },
+        },
+        select: { totalMinor: true, netPaidMinor: true, status: true },
+      });
+
+      const invoicedRevenueMinor = invoices.reduce((sum, inv) => sum + inv.totalMinor, 0n);
+      const outstandingReceivablesMinor = invoices
+        .filter(inv => ['ISSUED', 'PARTIALLY_PAID'].includes(inv.status))
+        .reduce((sum, inv) => sum + (inv.totalMinor - inv.netPaidMinor), 0n);
+
+      const payments = await tx.payment.findMany({
+        where: {
+          clinicId: c.clinicId,
+          createdAt: { gte: start, lte: end },
+        },
+        select: { amountMinor: true },
+      });
+      const grossPaymentsCollectedMinor = payments.reduce((sum, p) => sum + p.amountMinor, 0n);
+
+      const refunds = await tx.paymentReversal.findMany({
+        where: {
+          clinicId: c.clinicId,
+          createdAt: { gte: start, lte: end },
+          kind: 'REFUND',
+        },
+        select: { amountMinor: true },
+      });
+      const refundsSettledMinor = refunds.reduce((sum, r) => sum + r.amountMinor, 0n);
+
+      const netCashFlowMinor = grossPaymentsCollectedMinor - refundsSettledMinor;
+
+      return {
+        clinicId: c.clinicId,
+        periodStart: start.toISOString(),
+        periodEnd: end.toISOString(),
+        currency: clinic?.currency ?? 'SAR',
+        currencyScale: scale,
+        invoicedRevenueMinor: invoicedRevenueMinor.toString(),
+        invoicesIssuedCount: invoices.length,
+        grossPaymentsCollectedMinor: grossPaymentsCollectedMinor.toString(),
+        paymentsCount: payments.length,
+        refundsSettledMinor: refundsSettledMinor.toString(),
+        refundsCount: refunds.length,
+        netCashFlowMinor: netCashFlowMinor.toString(),
+        outstandingReceivablesMinor: outstandingReceivablesMinor.toString(),
+      };
+    });
+  }
+
+  getInstallmentAgingReport(proof: VerifiedPrincipal, clinicId: string): Promise<InstallmentAgingReport> {
+    return this.database.withClinicContext(proof, clinicId, ['reports.operational.read'], async (tx, c) => {
+      const now = new Date();
+      const clinic = await tx.clinic.findUnique({ where: { id: c.clinicId }, select: { currency: true } });
+      const scale = currencyScale(clinic?.currency ?? 'SAR');
+
+      const plans = await tx.installmentPlan.findMany({
+        where: { clinicId: c.clinicId, status: 'ACTIVE' },
+        include: {
+          schedules: {
+            where: { status: { in: ['PENDING', 'PARTIALLY_PAID'] } },
+          },
+        },
+      });
+
+      const buckets: Record<string, { count: number; expected: bigint; unpaid: bigint }> = {
+        CURRENT: { count: 0, expected: 0n, unpaid: 0n },
+        DAYS_1_30: { count: 0, expected: 0n, unpaid: 0n },
+        DAYS_31_60: { count: 0, expected: 0n, unpaid: 0n },
+        DAYS_61_90: { count: 0, expected: 0n, unpaid: 0n },
+        DAYS_90_PLUS: { count: 0, expected: 0n, unpaid: 0n },
+      };
+
+      let totalOutstandingMinor = 0n;
+
+      for (const p of plans) {
+        for (const s of p.schedules) {
+          const unpaid = s.expectedAmountMinor - s.paidAmountMinor;
+          totalOutstandingMinor += unpaid;
+
+          const diffDays = Math.floor((now.getTime() - s.dueDate.getTime()) / 86400000);
+          let key = 'CURRENT';
+          if (diffDays > 90) key = 'DAYS_90_PLUS';
+          else if (diffDays > 60) key = 'DAYS_61_90';
+          else if (diffDays > 30) key = 'DAYS_31_60';
+          else if (diffDays > 0) key = 'DAYS_1_30';
+
+          buckets[key].count++;
+          buckets[key].expected += s.expectedAmountMinor;
+          buckets[key].unpaid += unpaid;
+        }
+      }
+
+      const bucketLabels: Record<string, string> = {
+        CURRENT: 'غير متأخر (جاري)',
+        DAYS_1_30: 'متأخر 1-30 يوم',
+        DAYS_31_60: 'متأخر 31-60 يوم',
+        DAYS_61_90: 'متأخر 61-90 يوم',
+        DAYS_90_PLUS: 'متأخر أكثر من 90 يوم',
+      };
+
+      return {
+        clinicId: c.clinicId,
+        asOfDate: now.toISOString(),
+        currency: clinic?.currency ?? 'SAR',
+        currencyScale: scale,
+        totalActivePlansCount: plans.length,
+        totalOutstandingMinor: totalOutstandingMinor.toString(),
+        buckets: (['CURRENT', 'DAYS_1_30', 'DAYS_31_60', 'DAYS_61_90', 'DAYS_90_PLUS'] as const).map(k => ({
+          bucket: k,
+          labelAr: bucketLabels[k],
+          schedulesCount: buckets[k].count,
+          expectedAmountMinor: buckets[k].expected.toString(),
+          unpaidAmountMinor: buckets[k].unpaid.toString(),
+        })),
+      };
+    });
+  }
+
+  getPackageLiabilityReport(proof: VerifiedPrincipal, clinicId: string): Promise<PackageLiabilityReport> {
+    return this.database.withClinicContext(proof, clinicId, ['reports.operational.read'], async (tx, c) => {
+      const clinic = await tx.clinic.findUnique({ where: { id: c.clinicId }, select: { currency: true } });
+      const scale = currencyScale(clinic?.currency ?? 'SAR');
+
+      const packages = await tx.patientPackage.findMany({
+        where: { clinicId: c.clinicId, status: { in: ['ACTIVE', 'PENDING_PAYMENT'] } },
+        include: {
+          package: { select: { nameAr: true } },
+          patient: { select: { fullName: true } },
+          packageVersion: { select: { priceMinor: true } },
+        },
+      });
+
+      let totalSessionsPurchased = 0;
+      let totalSessionsRedeemed = 0;
+      let totalSessionsRemaining = 0;
+      let totalEstimatedUnearnedLiabilityMinor = 0n;
+
+      const items = packages.map(p => {
+        totalSessionsPurchased += p.totalSessions;
+        totalSessionsRedeemed += p.redeemedSessions;
+        totalSessionsRemaining += p.remainingSessions;
+
+        if (p.totalSessions > 0) {
+          const price = p.packageVersion.priceMinor;
+          const unearned = (price * BigInt(p.remainingSessions)) / BigInt(p.totalSessions);
+          totalEstimatedUnearnedLiabilityMinor += unearned;
+        }
+
+        return {
+          packageId: p.id,
+          packageName: p.package.nameAr,
+          patientName: p.patient.fullName,
+          totalSessions: p.totalSessions,
+          remainingSessions: p.remainingSessions,
+          status: p.status,
+          expiresAt: p.expiresAt ? p.expiresAt.toISOString() : null,
+        };
+      });
+
+      return {
+        clinicId: c.clinicId,
+        currency: clinic?.currency ?? 'SAR',
+        currencyScale: scale,
+        totalActivePackages: packages.length,
+        totalSessionsPurchased,
+        totalSessionsRedeemed,
+        totalSessionsRemaining,
+        totalEstimatedUnearnedLiabilityMinor: totalEstimatedUnearnedLiabilityMinor.toString(),
+        packages: items,
+      };
+    });
+  }
+
+  getPractitionerPerformanceReport(proof: VerifiedPrincipal, clinicId: string, q: OperationalReportQueryDto): Promise<PractitionerPerformanceReport> {
+    return this.database.withClinicContext(proof, clinicId, ['reports.operational.read'], async (tx, c) => {
+      const start = new Date(q.startDate);
+      const end = new Date(q.endDate);
+      const clinic = await tx.clinic.findUnique({ where: { id: c.clinicId }, select: { currency: true } });
+      const scale = currencyScale(clinic?.currency ?? 'SAR');
+
+      const practitioners = await tx.clinicMembership.findMany({
+        where: {
+          clinicId: c.clinicId,
+          role: 'DOCTOR',
+          ...(q.practitionerMembershipId ? { id: q.practitionerMembershipId } : {}),
+        },
+        include: { user: { select: { name: true } } },
+      });
+
+      const reportItems = [];
+
+      for (const p of practitioners) {
+        const completedProcedures = await tx.procedureExecution.count({
+          where: {
+            clinicId: c.clinicId,
+            clinicianMembershipId: p.id,
+            status: 'COMPLETED',
+            performedAt: { gte: start, lte: end },
+          },
+        });
+
+        const accruals = await tx.practitionerCommissionAccrual.findMany({
+          where: {
+            clinicId: c.clinicId,
+            practitionerMembershipId: p.id,
+            earnedAt: { gte: start, lte: end },
+          },
+        });
+
+        const grossBillableMinor = accruals.reduce((sum, a) => sum + a.baseAmountMinor, 0n);
+        const accruedCommissionMinor = accruals.reduce((sum, a) => sum + a.commissionAmountMinor, 0n);
+        const settledCommissionMinor = accruals.filter(a => a.status === 'SETTLED').reduce((sum, a) => sum + a.commissionAmountMinor, 0n);
+        const pendingCommissionMinor = accruals.filter(a => ['PENDING', 'APPROVED'].includes(a.status)).reduce((sum, a) => sum + a.commissionAmountMinor, 0n);
+
+        reportItems.push({
+          practitionerMembershipId: p.id,
+          practitionerName: p.user?.name ?? 'Unknown',
+          role: p.role,
+          completedProceduresCount: completedProcedures,
+          grossBillableMinor: grossBillableMinor.toString(),
+          accruedCommissionMinor: accruedCommissionMinor.toString(),
+          settledCommissionMinor: settledCommissionMinor.toString(),
+          pendingCommissionMinor: pendingCommissionMinor.toString(),
+        });
+      }
+
+      return {
+        clinicId: c.clinicId,
+        periodStart: start.toISOString(),
+        periodEnd: end.toISOString(),
+        currency: clinic?.currency ?? 'SAR',
+        currencyScale: scale,
+        practitioners: reportItems,
+      };
+    });
+  }
+
+  getInventoryValuationReport(proof: VerifiedPrincipal, clinicId: string): Promise<InventoryValuationSummary> {
+    return this.database.withClinicContext(proof, clinicId, ['reports.operational.read'], async (tx, c) => {
+      const clinic = await tx.clinic.findUnique({ where: { id: c.clinicId }, select: { currency: true } });
+      const scale = currencyScale(clinic?.currency ?? 'SAR');
+
+      const totalProductsCount = await tx.inventoryProduct.count({ where: { clinicId: c.clinicId } });
+      const totalLocationsCount = await tx.inventoryLocation.count({ where: { clinicId: c.clinicId } });
+
+      const balances = await tx.inventoryBalance.findMany({
+        where: { clinicId: c.clinicId },
+      });
+      const totalUnits = balances.reduce((sum, b) => sum + Number(b.onHandQuantity), 0);
+
+      const activeBatchesCount = await tx.inventoryBatch.count({ where: { clinicId: c.clinicId, status: 'AVAILABLE' } });
+      const expiredBatchesCount = await tx.inventoryBatch.count({ where: { clinicId: c.clinicId, status: 'EXPIRED' } });
+      const recalledBatchesCount = await tx.inventoryBatch.count({ where: { clinicId: c.clinicId, status: 'RECALLED' } });
+
+      return {
+        clinicId: c.clinicId,
+        currency: clinic?.currency ?? 'SAR',
+        currencyScale: scale,
+        totalProductsCount,
+        totalLocationsCount,
+        totalOnHandUnits: totalUnits.toFixed(4),
+        totalValuationMinor: '0', // Defensible model when PO lines / landed cost available
+        batchesSummary: {
+          activeBatchesCount,
+          expiredBatchesCount,
+          recalledBatchesCount,
+        },
+      };
+    });
+  }
+
+  getAppointmentUtilizationReport(proof: VerifiedPrincipal, clinicId: string, q: OperationalReportQueryDto): Promise<AppointmentUtilizationReport> {
+    return this.database.withClinicContext(proof, clinicId, ['reports.operational.read'], async (tx, c) => {
+      const start = new Date(q.startDate);
+      const end = new Date(q.endDate);
+
+      const appointments = await tx.appointment.findMany({
+        where: {
+          clinicId: c.clinicId,
+          startAt: { gte: start, lte: end },
+        },
+        select: { status: true },
+      });
+
+      const totalScheduled = appointments.length;
+      const totalCompleted = appointments.filter(a => a.status === 'COMPLETED').length;
+      const totalArrived = appointments.filter(a => a.status === 'ARRIVED').length;
+      const totalCancelled = appointments.filter(a => a.status === 'CANCELLED').length;
+      const totalNoShow = appointments.filter(a => a.status === 'NO_SHOW').length;
+
+      const completionRatePercent = totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0;
+      const cancellationRatePercent = totalScheduled > 0 ? Math.round((totalCancelled / totalScheduled) * 100) : 0;
+
+      return {
+        clinicId: c.clinicId,
+        periodStart: start.toISOString(),
+        periodEnd: end.toISOString(),
+        totalScheduled,
+        totalArrived,
+        totalCompleted,
+        totalCancelled,
+        totalNoShow,
+        completionRatePercent,
+        cancellationRatePercent,
+      };
     });
   }
 }

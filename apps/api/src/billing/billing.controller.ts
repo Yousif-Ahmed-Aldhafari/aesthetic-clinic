@@ -8,6 +8,11 @@ import {
   CreateInstallmentPlanDto, AllocateInstallmentPaymentDto, CreateRefundRequestDto, DecideRefundRequestDto, SettleRefundRequestDto,
   PackageQuery, PatientPackageQuery, InstallmentPlanQuery, RefundRequestQuery,
 } from './billing-input.js';
+import {
+  CreateCommissionPlanDto, AssignPractitionerPlanDto, CreateCommissionRuleDto, CreateCommissionAccrualDto,
+  RequestCommissionAdjustmentDto, DecideCommissionAdjustmentDto, CreateCommissionSettlementDto, ConfirmCommissionSettlementDto,
+  CommissionQuery, OperationalReportQueryDto,
+} from './commission-input.js';
 
 @Controller('clinics/:clinicId/billing')
 export class BillingController {
@@ -127,4 +132,78 @@ export class BillingController {
 
   @Post('refund-requests/:refundId/settle') @ClinicPermissions('refunds.settle') @RequireStepUp(15)
   settleRefundRequest(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('refundId') id:string,@Body() b:SettleRefundRequestDto){return this.billing.settleRefundRequest(r.auth!.principal,c,id,b);}
+
+  // ===========================================================================
+  // Step 4.5: Practitioner Commissions
+  // ===========================================================================
+
+  @Get('commission-plans') @ClinicPermissions('commissions.plans.read')
+  listCommissionPlans(@Req() r:AuthRequest,@Param('clinicId') c:string){return this.billing.listCommissionPlans(r.auth!.principal,c);}
+
+  @Get('commission-plans/:planId') @ClinicPermissions('commissions.plans.read')
+  getCommissionPlan(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('planId') id:string){return this.billing.getCommissionPlan(r.auth!.principal,c,id);}
+
+  @Post('commission-plans') @ClinicPermissions('commissions.plans.manage')
+  createCommissionPlan(@Req() r:AuthRequest,@Param('clinicId') c:string,@Body() b:CreateCommissionPlanDto){return this.billing.createCommissionPlan(r.auth!.principal,c,b);}
+
+  @Post('commission-plans/:planId/rules') @ClinicPermissions('commissions.plans.manage')
+  createCommissionRule(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('planId') id:string,@Body() b:CreateCommissionRuleDto){return this.billing.createCommissionRule(r.auth!.principal,c,id,b);}
+
+  @Post('commission-plans/:planId/assignments') @ClinicPermissions('commissions.plans.manage')
+  assignPractitionerToPlan(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('planId') id:string,@Body() b:AssignPractitionerPlanDto){return this.billing.assignPractitionerToPlan(r.auth!.principal,c,id,b);}
+
+  @Get('commission-accruals') @ClinicPermissions('commissions.accruals.read')
+  listCommissionAccruals(@Req() r:AuthRequest,@Param('clinicId') c:string,@Query() q:CommissionQuery){return this.billing.listCommissionAccruals(r.auth!.principal,c,q);}
+
+  @Get('commissions/my-statement') @ClinicPermissions('commissions.accruals.read-own')
+  getMyCommissionStatement(@Req() r:AuthRequest,@Param('clinicId') c:string,@Query() q:CommissionQuery){return this.billing.getMyCommissionStatement(r.auth!.principal,c,q);}
+
+  @Get('commission-accruals/:accrualId') @ClinicPermissions('commissions.accruals.read')
+  getCommissionAccrual(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('accrualId') id:string){return this.billing.getCommissionAccrual(r.auth!.principal,c,id);}
+
+  @Post('commission-accruals') @ClinicPermissions('commissions.accruals.manage')
+  createCommissionAccrual(@Req() r:AuthRequest,@Param('clinicId') c:string,@Body() b:CreateCommissionAccrualDto){return this.billing.createCommissionAccrual(r.auth!.principal,c,b);}
+
+  @Post('commission-accruals/:accrualId/adjustments') @ClinicPermissions('commissions.adjustments.request')
+  requestCommissionAdjustment(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('accrualId') id:string,@Body() b:RequestCommissionAdjustmentDto){return this.billing.requestCommissionAdjustment(r.auth!.principal,c,id,b);}
+
+  @Post('commission-adjustments/:adjustmentId/decide') @ClinicPermissions('commissions.adjustments.decide') @RequireStepUp(15)
+  decideCommissionAdjustment(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('adjustmentId') id:string,@Body() b:DecideCommissionAdjustmentDto){return this.billing.decideCommissionAdjustment(r.auth!.principal,c,id,b);}
+
+  @Get('commission-settlements') @ClinicPermissions('commissions.settlements.read')
+  listCommissionSettlements(@Req() r:AuthRequest,@Param('clinicId') c:string,@Query() q:CommissionQuery){return this.billing.listCommissionSettlements(r.auth!.principal,c,q);}
+
+  @Get('commission-settlements/:settlementId') @ClinicPermissions('commissions.settlements.read')
+  getCommissionSettlement(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('settlementId') id:string){return this.billing.getCommissionSettlement(r.auth!.principal,c,id);}
+
+  @Post('commission-settlements') @ClinicPermissions('commissions.settlements.manage') @RequireStepUp(15)
+  createCommissionSettlement(@Req() r:AuthRequest,@Param('clinicId') c:string,@Body() b:CreateCommissionSettlementDto){return this.billing.createCommissionSettlement(r.auth!.principal,c,b);}
+
+  @Post('commission-settlements/:settlementId/confirm') @ClinicPermissions('commissions.settlements.manage') @RequireStepUp(15)
+  confirmCommissionSettlement(@Req() r:AuthRequest,@Param('clinicId') c:string,@Param('settlementId') id:string,@Body() b:ConfirmCommissionSettlementDto){return this.billing.confirmCommissionSettlement(r.auth!.principal,c,id,b);}
+
+  // ===========================================================================
+  // Step 4.5: Financial Reconciliation & Operational Reporting
+  // ===========================================================================
+
+  @Get('reconciliation') @ClinicPermissions('finance.reconciliation.read')
+  runFinancialReconciliation(@Req() r:AuthRequest,@Param('clinicId') c:string){return this.billing.runFinancialReconciliation(r.auth!.principal,c);}
+
+  @Get('reports/revenue-collections') @ClinicPermissions('reports.operational.read')
+  getRevenueCollections(@Req() r:AuthRequest,@Param('clinicId') c:string,@Query() q:OperationalReportQueryDto){return this.billing.getRevenueCollectionsSummary(r.auth!.principal,c,q);}
+
+  @Get('reports/installment-aging') @ClinicPermissions('reports.operational.read')
+  getInstallmentAging(@Req() r:AuthRequest,@Param('clinicId') c:string){return this.billing.getInstallmentAgingReport(r.auth!.principal,c);}
+
+  @Get('reports/package-liability') @ClinicPermissions('reports.operational.read')
+  getPackageLiability(@Req() r:AuthRequest,@Param('clinicId') c:string){return this.billing.getPackageLiabilityReport(r.auth!.principal,c);}
+
+  @Get('reports/practitioner-performance') @ClinicPermissions('reports.operational.read')
+  getPractitionerPerformance(@Req() r:AuthRequest,@Param('clinicId') c:string,@Query() q:OperationalReportQueryDto){return this.billing.getPractitionerPerformanceReport(r.auth!.principal,c,q);}
+
+  @Get('reports/inventory-valuation') @ClinicPermissions('reports.operational.read')
+  getInventoryValuation(@Req() r:AuthRequest,@Param('clinicId') c:string){return this.billing.getInventoryValuationReport(r.auth!.principal,c);}
+
+  @Get('reports/appointment-utilization') @ClinicPermissions('reports.operational.read')
+  getAppointmentUtilization(@Req() r:AuthRequest,@Param('clinicId') c:string,@Query() q:OperationalReportQueryDto){return this.billing.getAppointmentUtilizationReport(r.auth!.principal,c,q);}
 }

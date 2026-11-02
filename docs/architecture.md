@@ -72,6 +72,15 @@
 - Refund Governance & Financial Integrity: Formal refund requests (`RefundRequest`) supporting reasons (`PATIENT_REFUND`, `ADMIN_ERROR`, `DUPLICATE`, `OTHER`), dual-custody review/decision (`APPROVED`, `REJECTED`), and settlement linked atomically to `PaymentReversal`.
 - FORCE RLS & Table Security: All 11 tables enforce PostgreSQL `FORCE ROW LEVEL SECURITY`. High-risk financial operations enforce `@RequireStepUp(15)`. See [packages-installments-refunds.md](packages-installments-refunds.md).
 
+## Phase 4.5 practitioner commissions, financial reconciliation & operational reporting
+`PractitionerCommissionPlan`, `PractitionerCommissionRule`, `PractitionerCommissionAssignment`, `CommissionSettlementCounter`, `PractitionerCommissionSettlement`, `PractitionerCommissionAccrual`, and `PractitionerCommissionAdjustment` implement automated commission calculations, practitioner statements, batch settlements, cross-resource financial reconciliation, and operational reporting:
+- Commission Plans & Rules: Clinic-scoped versioned plans with procedure and category-specific rules. Calculation modes: `PERCENTAGE_OF_SERVICE` (basis points with integer half-up rounding), `FLAT_AMOUNT_PER_SERVICE`, `PERCENTAGE_OF_PACKAGE_REDEMPTION`, and `TIERED_MONTHLY_REVENUE`. Basis: `GROSS_INVOICE_LINE` vs `NET_COLLECTED_REVENUE`. Trigger guard `commission_rule_guard` validates rule boundaries.
+- Segregation of Duties & Signed Adjustments: Adjustments enforce role segregation (`decidedByUserId !== requestedByUserId`) preventing self-decision. Signed minor amounts (`signedFixed`) support retroactive clawbacks and bonuses while preserving integer arithmetic. Status transitions guarded by `commission_accrual_guard`.
+- Batch Settlements: Monotonic sequential numbering (`COMM-SETTLE-000001`) via atomic counter increments (`CommissionSettlementCounter`). Batch confirmation locks accrual and adjustment records. High-risk actions require `@RequireStepUp(15)`.
+- Financial Reconciliation Engine: Continuous integrity engine scanning 6 resources (invoices, payments, installments, packages, commissions, inventory) verifying balance invariants and detecting discrepancies (`CLEAN` vs `DISCREPANCIES_FOUND`).
+- Executive Operational Reports: 6 specialized reporting domains covering revenue/collections, installment aging buckets, package liabilities (prepaid vs deferred), practitioner production, inventory asset valuation, and appointment utilization.
+- FORCE RLS & Table Security: All 7 tables enforce PostgreSQL `FORCE ROW LEVEL SECURITY`. See [commissions-financial-reconciliation.md](commissions-financial-reconciliation.md).
+
 Phase 2, Steps 2.1–2.5 — current implementation, 2026-10-29.
 
 **Current status:** authenticated administrative patients, clinic resources, services,

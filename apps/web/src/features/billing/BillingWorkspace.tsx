@@ -8,10 +8,13 @@ import { InvoicePrint } from './InvoicePrint';
 import { PackagesWorkspace } from './PackagesWorkspace';
 import { InstallmentsWorkspace } from './InstallmentsWorkspace';
 import { RefundsWorkspace } from './RefundsWorkspace';
+import { CommissionsWorkspace } from './CommissionsWorkspace';
+import { ReconciliationWorkspace } from './ReconciliationWorkspace';
+import { OperationalReportsWorkspace } from './OperationalReportsWorkspace';
 import { formatMoney, invoiceStatuses, methodNames, reasonNames } from './billing-money';
 import './billing.css';
 
-type BillingTab = 'INVOICES' | 'PACKAGES' | 'INSTALLMENTS' | 'REFUNDS';
+type BillingTab = 'INVOICES' | 'PACKAGES' | 'INSTALLMENTS' | 'REFUNDS' | 'COMMISSIONS' | 'RECONCILIATION' | 'REPORTS';
 
 const message=(e:unknown)=>e instanceof ApiError?e.message:'تعذّر الاتصال. راجع السجل قبل إعادة المحاولة؛ أعد إرسال الطلب نفسه عند الشك في نتيجته.';
 export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic:ClinicContext;csrfToken:string;onAuthError:(e:unknown)=>void;onLegacy:()=>void}){
@@ -19,6 +22,9 @@ export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic
   const client=useMemo(()=>billingApi(clinic.clinicId),[clinic.clinicId]);
   const gates=useMemo(()=>({list:new RequestScope(),detail:new RequestScope(),history:new RequestScope(),settings:new RequestScope(),write:new RequestScope()}),[clinic.clinicId]);
   const can=(p:string)=>clinic.permissions.includes(p),canRead=can('invoices.read'),canCreate=can('invoices.create'),canReport=can('reports.read');
+  const canCommissions = can('commissions.plans.read') || can('commissions.accruals.read') || can('commissions.accruals.read-own') || can('commissions.settlements.read');
+  const canReconcile = can('finance.reconciliation.read');
+  const canOperationalReports = can('reports.operational.read');
   const [q,setQ]=useState(''),[status,setStatus]=useState('ALL'),[cursors,setCursors]=useState<(string|null)[]>([null]),[reload,setReload]=useState(0);
   const [page,setPage]=useState<BillingPage<InvoiceRecord>|null>(null),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [profile,setProfile]=useState<BillingProfile|null>(null),[summary,setSummary]=useState<Summary|null>(null),[settingsError,setSettingsError]=useState('');
@@ -92,6 +98,30 @@ export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic
       >
         طلبات الاسترداد المالي
       </button>
+      {canCommissions && (
+        <button
+          className={`inventory-tab-btn ${activeTab === 'COMMISSIONS' ? 'active' : ''}`}
+          onClick={() => setActiveTab('COMMISSIONS')}
+        >
+          عمولات الأطباء
+        </button>
+      )}
+      {canReconcile && (
+        <button
+          className={`inventory-tab-btn ${activeTab === 'RECONCILIATION' ? 'active' : ''}`}
+          onClick={() => setActiveTab('RECONCILIATION')}
+        >
+          المطابقة المالية
+        </button>
+      )}
+      {canOperationalReports && (
+        <button
+          className={`inventory-tab-btn ${activeTab === 'REPORTS' ? 'active' : ''}`}
+          onClick={() => setActiveTab('REPORTS')}
+        >
+          التقارير التشغيلية
+        </button>
+      )}
     </div>
 
     {activeTab === 'PACKAGES' && (
@@ -102,6 +132,15 @@ export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic
     )}
     {activeTab === 'REFUNDS' && (
       <RefundsWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} />
+    )}
+    {activeTab === 'COMMISSIONS' && (
+      <CommissionsWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} />
+    )}
+    {activeTab === 'RECONCILIATION' && (
+      <ReconciliationWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} />
+    )}
+    {activeTab === 'REPORTS' && (
+      <OperationalReportsWorkspace clinic={clinic} onAuthError={onAuthError} />
     )}
 
     {activeTab === 'INVOICES' && (

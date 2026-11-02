@@ -35,6 +35,12 @@ export const permissions = [
   'packages.redemptions.read', 'packages.redemptions.record', 'packages.redemptions.reverse',
   'installments.read', 'installments.manage', 'installments.allocate',
   'refunds.request', 'refunds.approve', 'refunds.reject', 'refunds.settle',
+  'commissions.plans.read', 'commissions.plans.manage',
+  'commissions.accruals.read', 'commissions.accruals.read-own', 'commissions.accruals.manage',
+  'commissions.adjustments.request', 'commissions.adjustments.decide',
+  'commissions.settlements.read', 'commissions.settlements.manage',
+  'finance.reconciliation.read',
+  'reports.operational.read',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -61,12 +67,21 @@ const packageManagement: Permission[] = [
   'installments.read', 'installments.manage', 'installments.allocate',
   'refunds.request', 'refunds.approve', 'refunds.reject', 'refunds.settle',
 ];
+const commissionManagement: Permission[] = [
+  'commissions.plans.read', 'commissions.plans.manage',
+  'commissions.accruals.read', 'commissions.accruals.read-own', 'commissions.accruals.manage',
+  'commissions.adjustments.request', 'commissions.adjustments.decide',
+  'commissions.settlements.read', 'commissions.settlements.manage',
+  'finance.reconciliation.read',
+  'reports.operational.read',
+];
 const administration: Permission[] = [
   'clinic.settings.read', 'clinic.settings.update', 'clinic.branding.read', 'clinic.branding.update',
   'staff.read', 'staff.manage', ...operations, 'appointments.complete', 'queue.complete',
   'audit.read', 'privacy.requests.read', 'privacy.requests.manage',
   ...inventoryManagement,
   ...packageManagement,
+  ...commissionManagement,
 ];
 export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>> = {
   CLINIC_OWNER: [...administration, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read', 'privacy.export'],
@@ -86,13 +101,17 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'clinical.inventory-consumption.record',
     'inventory.products.read', 'inventory.locations.read', 'inventory.stock.read',
     'inventory.batches.read', 'inventory.clinical-consumption.read',
-    'packages.redemptions.read', 'packages.redemptions.record'],
+    'packages.redemptions.read', 'packages.redemptions.record',
+    'commissions.accruals.read-own'],
   RECEPTIONIST: ['clinic.branding.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record',
     'packages.catalog.read', 'packages.purchases.read', 'packages.purchases.create',
     'packages.redemptions.read', 'packages.redemptions.record', 'installments.read', 'refunds.request'],
   ACCOUNTANT: ['clinic.branding.read', 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read',
     'packages.catalog.read', 'packages.purchases.read', 'packages.purchases.create', 'packages.purchases.manage',
     'packages.redemptions.read', 'installments.read', 'installments.manage', 'installments.allocate',
-    'refunds.request', 'refunds.approve', 'refunds.reject', 'refunds.settle'],
+    'refunds.request', 'refunds.approve', 'refunds.reject', 'refunds.settle',
+    'commissions.plans.read', 'commissions.accruals.read', 'commissions.accruals.manage',
+    'commissions.adjustments.request', 'commissions.settlements.read', 'commissions.settlements.manage',
+    'finance.reconciliation.read', 'reports.operational.read'],
 };
 export const permissionsFor = (role: ClinicRole): readonly Permission[] => Object.hasOwn(rolePermissions, role) ? rolePermissions[role] : [];

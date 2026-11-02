@@ -17,6 +17,13 @@ export function fixed(value:string,scale:number):bigint {
   const result=BigInt(whole)*10n**BigInt(scale)+BigInt(fraction.padEnd(scale,'0')||'0');
   if(result>MAX_MINOR)throw new BillingError('BILLING_AMOUNT');return result;
 }
+export function signedFixed(value:string,scale:number):bigint {
+  if(typeof value!=='string')throw new BillingError('BILLING_AMOUNT');
+  const negative=value.startsWith('-');
+  const unsigned=negative?value.slice(1):value;
+  const unsignedBigInt=fixed(unsigned,scale);
+  return negative?-unsignedBigInt:unsignedBigInt;
+}
 export const roundHalfUp=(numerator:bigint,denominator:bigint)=>(numerator+denominator/2n)/denominator;
 export interface MoneyLine {serviceName:string;description?:string|null;quantity:string;unitPrice:string;discount:string;taxBasisPoints:number}
 export function calculate(lines:readonly MoneyLine[],scale:number){

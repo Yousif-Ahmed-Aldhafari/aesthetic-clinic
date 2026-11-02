@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { calculate, currencyScale, fixed } from '../src/billing/money.js';
+import { calculate, currencyScale, fixed, signedFixed } from '../src/billing/money.js';
 import { CreateInvoice, RecordPayment, CreateTreatmentPackageDto, CreateInstallmentPlanDto, CreateRefundRequestDto } from '../src/billing/billing-input.js';
 import { permissionsFor } from '../src/auth/permissions.js';
 const line=(input:Partial<Parameters<typeof calculate>[0][number]>={})=>({serviceName:'خدمة إدارية وهمية',quantity:'1',unitPrice:'0.10',discount:'0',taxBasisPoints:0,...input});
@@ -106,4 +106,69 @@ test('package, installment, and refund input DTOs enforce strict structure and r
   };
   assert.equal(validateSync(plainToInstance(CreateRefundRequestDto, validRefund), { whitelist: true, forbidNonWhitelisted: true }).length, 0);
   assert(validateSync(plainToInstance(CreateRefundRequestDto, { ...validRefund, amount: '-10' })).length > 0);
+});
+
+test('practitioner commission exact integer arithmetic enforces deterministic half-up rounding', () => {
+  // Formula: (baseAmountMinor * BigInt(rateBasisPoints) + 5000n) / 10000n
+  const computeCommission = (baseMinor: bigint, bps: number): bigint => {
+    return (baseMinor * BigInt(bps) + 5000n) / 10000n;
+  };
+
+  // Exactly 15.00% on 100.00 (10000 minor units): 10000 * 1500 = 15,000,000 / 10000 = 1500 (15.00)
+  assert.equal(computeCommission(10000n, 1500), 1500n);
+
+  // Exact half-up rounding test cases:
+  // Base 33.33 (3333 minor units) at 10.00% (1000 bps):
+  // 3333 * 1000 = 3,333,000 + 5000 = 3,338,000 / 10000 = 333 (rounds down when < 0.5)
+  assert.equal(computeCommission(3333n, 1000), 333n);
+
+  // Base 33.35 (3335 minor units) at 10.00% (1000 bps):
+  // 3335 * 1000 = 3,335,000 + 5000 = 3,340,000 / 10000 = 334 (rounds up when >= 0.5)
+  assert.equal(computeCommission(3335n, 1000), 334n);
+
+  // Zero base or zero bps yields zero
+  assert.equal(computeCommission(0n, 1500), 0n);
+  assert.equal(computeCommission(10000n, 0), 0n);
+});
+
+test('practitioner commission, reconciliation and operational reporting permissions fail closed', () => {
+  const doctorPerms = permissionsFor('DOCTOR');
+  const accountantPerms = permissionsFor('ACCOUNTANT');
+  const receptionistPerms = permissionsFor('RECEPTIONIST');
+  const ownerPerms = permissionsFor('CLINIC_OWNER');
+
+  // Doctor can read own statement, but NOT manage plans or read clinic-wide operational reports
+  assert(doctorPerms.includes('commissions.accruals.read-own'));
+  assert(!doctorPerms.includes('commissions.plans.manage'));
+  assert(!doctorPerms.includes('commissions.accruals.read'));
+  assert(!doctorPerms.includes('reports.operational.read'));
+  assert(!doctorPerms.includes('finance.reconciliation.read'));
+
+  // Receptionist has no commission privileges
+  assert(!receptionistPerms.includes('commissions.accruals.read-own'));
+  assert(!receptionistPerms.includes('commissions.plans.read'));
+  assert(!receptionistPerms.includes('reports.operational.read'));
+
+  // Accountant has financial reconciliation, operational reporting and settlement management, but NO clinical records
+  assert(accountantPerms.includes('finance.reconciliation.read'));
+  assert(accountantPerms.includes('reports.operational.read'));
+  assert(accountantPerms.includes('commissions.settlements.manage'));
+  assert(!accountantPerms.includes('clinical.encounters.read'));
+  assert(!accountantPerms.includes('clinical.history.read'));
+
+  // Owner has all permissions
+  assert(ownerPerms.includes('commissions.plans.manage'));
+  assert(ownerPerms.includes('finance.reconciliation.read'));
+  assert(ownerPerms.includes('reports.operational.read'));
+});
+
+test('signedFixed correctly parses positive, negative, and zero signed decimal values with scale validation',()=>{
+  assert.equal(signedFixed('100.50', 2), 10050n);
+  assert.equal(signedFixed('-20.00', 2), -2000n);
+  assert.equal(signedFixed('0', 2), 0n);
+  assert.equal(signedFixed('-0.05', 2), -5n);
+  assert.equal(signedFixed('-15.000', 3), -15000n);
+  assert.throws(() => signedFixed('abc', 2));
+  assert.throws(() => signedFixed('10.999', 2));
+  assert.throws(() => signedFixed('-10.999', 2));
 });

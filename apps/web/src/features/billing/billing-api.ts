@@ -143,6 +143,243 @@ export interface RefundRequestRecord {
   version: number;
 }
 
+// Step 4.5: Practitioner Commissions
+export interface CommissionRuleRecord {
+  id: string;
+  planId: string;
+  procedureId?: string | null;
+  procedureNameAr?: string | null;
+  procedureNameEn?: string | null;
+  calculationType: 'PERCENTAGE' | 'FLAT_AMOUNT';
+  rateBasisPoints?: number | null;
+  flatAmountMinor?: string | null;
+  earningEvent: 'PROCEDURE_COMPLETED' | 'INVOICE_PAID';
+  description?: string | null;
+  createdAt: string;
+}
+
+export interface CommissionAssignmentRecord {
+  id: string;
+  planId: string;
+  practitionerMembershipId: string;
+  practitionerName?: string | null;
+  practitionerEmail?: string | null;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface CommissionPlanRecord {
+  id: string;
+  clinicId: string;
+  name: string;
+  description?: string | null;
+  status: 'ACTIVE' | 'ARCHIVED';
+  currency: string;
+  currencyScale: number;
+  rules: CommissionRuleRecord[];
+  assignments: CommissionAssignmentRecord[];
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface CommissionAdjustmentRecord {
+  id: string;
+  accrualId: string;
+  adjustmentAmountMinor: string;
+  reason: 'REFUND_REVERSAL' | 'DISCOUNT_CORRECTION' | 'DISPUTE_RESOLUTION' | 'ADMINISTRATIVE_CORRECTION';
+  reasonDetails: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  requestedByMembershipId: string;
+  requesterName?: string | null;
+  decidedByMembershipId?: string | null;
+  deciderName?: string | null;
+  decidedAt?: string | null;
+  settlementId?: string | null;
+  createdAt: string;
+  version: number;
+}
+
+export interface CommissionAccrualRecord {
+  id: string;
+  clinicId: string;
+  planId: string;
+  ruleId: string;
+  practitionerMembershipId: string;
+  practitionerName?: string | null;
+  patientId: string;
+  patientName?: string | null;
+  patientNumber?: string | null;
+  invoiceId: string;
+  invoiceNumber?: string | null;
+  procedureExecutionId?: string | null;
+  appointmentId?: string | null;
+  baseAmountMinor: string;
+  commissionAmountMinor: string;
+  currency: string;
+  currencyScale: number;
+  earningEvent: 'PROCEDURE_COMPLETED' | 'INVOICE_PAID';
+  status: 'PENDING' | 'ADJUSTED' | 'SETTLED' | 'REVERSED';
+  settlementId?: string | null;
+  settlementNumber?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  adjustments?: CommissionAdjustmentRecord[];
+}
+
+export interface CommissionSettlementRecord {
+  id: string;
+  clinicId: string;
+  settlementNumber: string;
+  practitionerMembershipId: string;
+  practitionerName?: string | null;
+  periodStart: string;
+  periodEnd: string;
+  grossAmountMinor: string;
+  adjustmentsAmountMinor: string;
+  netSettledMinor: string;
+  currency: string;
+  currencyScale: number;
+  status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+  settledAt?: string | null;
+  payoutReference?: string | null;
+  notes?: string | null;
+  accrualsCount?: number;
+  adjustmentsCount?: number;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  accruals?: CommissionAccrualRecord[];
+  adjustments?: CommissionAdjustmentRecord[];
+}
+
+export interface DoctorStatementRecord {
+  practitionerMembershipId: string;
+  practitionerName: string;
+  currency: string;
+  currencyScale: number;
+  grossAccruedMinor: string;
+  adjustmentsMinor: string;
+  settledMinor: string;
+  pendingMinor: string;
+  accruals: CommissionAccrualRecord[];
+}
+
+// Step 4.5: Financial Reconciliation & Operational Reporting
+export interface ReconciliationFinding {
+  resource: 'INVOICE' | 'PAYMENT' | 'PACKAGE' | 'INSTALLMENT' | 'COMMISSION' | 'INVENTORY';
+  entityId: string;
+  code: string;
+  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+  details: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReconciliationReport {
+  clinicId: string;
+  reconciledAt: string;
+  status: 'CLEAN' | 'DISCREPANCIES_FOUND';
+  totalDiscrepancies: number;
+  findings: ReconciliationFinding[];
+  resourcesScanned: {
+    invoicesCount: number;
+    paymentsCount: number;
+    installmentPlansCount: number;
+    packagesCount: number;
+    commissionSettlementsCount: number;
+    inventoryLocationsCount: number;
+  };
+}
+
+export interface RevenueCollectionsReport {
+  periodStart: string;
+  periodEnd: string;
+  currency: string;
+  currencyScale: number;
+  invoicedRevenueMinor: string;
+  collectedPaymentsMinor: string;
+  refundedReversedMinor: string;
+  netCollectedMinor: string;
+  outstandingBalanceMinor: string;
+  invoicesCount: number;
+  paymentsCount: number;
+}
+
+export interface InstallmentAgingBucket {
+  bucket: 'CURRENT' | 'PAST_DUE_1_30' | 'PAST_DUE_31_60' | 'PAST_DUE_61_90' | 'PAST_DUE_90_PLUS';
+  labelAr: string;
+  count: number;
+  totalRemainingMinor: string;
+}
+
+export interface InstallmentAgingReport {
+  asOf: string;
+  currency: string;
+  currencyScale: number;
+  totalPlansCount: number;
+  totalRemainingMinor: string;
+  buckets: InstallmentAgingBucket[];
+}
+
+export interface PackageLiabilityReport {
+  asOf: string;
+  currency: string;
+  currencyScale: number;
+  totalPackagesActive: number;
+  totalPrepaidMinor: string;
+  totalRecognizedRevenueMinor: string;
+  totalDeferredRevenueMinor: string;
+  unredeemedSessionsCount: number;
+}
+
+export interface PractitionerPerformanceItem {
+  practitionerMembershipId: string;
+  practitionerName: string;
+  proceduresCompleted: number;
+  revenueGeneratedMinor: string;
+  commissionsAccruedMinor: string;
+  commissionsSettledMinor: string;
+}
+
+export interface PractitionerPerformanceReport {
+  periodStart: string;
+  periodEnd: string;
+  currency: string;
+  currencyScale: number;
+  practitioners: PractitionerPerformanceItem[];
+}
+
+export interface InventoryValuationLocation {
+  locationId: string;
+  locationName: string;
+  productsCount: number;
+  totalUnits: number;
+  valuationMinor: string;
+}
+
+export interface InventoryValuationReport {
+  asOf: string;
+  currency: string;
+  currencyScale: number;
+  totalValuationMinor: string;
+  locations: InventoryValuationLocation[];
+}
+
+export interface AppointmentUtilizationReport {
+  periodStart: string;
+  periodEnd: string;
+  totalAppointments: number;
+  completedAppointments: number;
+  cancelledAppointments: number;
+  noShowAppointments: number;
+  utilizationRatePercentage: number;
+  cancellationRatePercentage: number;
+}
+
 export const billingApi=(clinicId:string)=>{
   const root=`clinics/${clinicId}/billing`;
   return {
@@ -170,5 +407,23 @@ export const billingApi=(clinicId:string)=>{
     // Step 4.4: Refund Requests
     refundRequests:(query:URLSearchParams,signal:AbortSignal)=>api<BillingPage<RefundRequestRecord>>(`${root}/refund-requests?${query}`,'GET',undefined,undefined,signal),
     getRefundRequest:(id:string,signal:AbortSignal)=>api<RefundRequestRecord>(`${root}/refund-requests/${id}`,'GET',undefined,undefined,signal),
+
+    // Step 4.5: Commissions
+    commissionPlans:(query?:URLSearchParams,signal?:AbortSignal)=>api<CommissionPlanRecord[]>(`${root}/commission-plans?${query??''}`,'GET',undefined,undefined,signal),
+    getCommissionPlan:(id:string,signal?:AbortSignal)=>api<CommissionPlanRecord>(`${root}/commission-plans/${id}`,'GET',undefined,undefined,signal),
+    commissionAccruals:(query?:URLSearchParams,signal?:AbortSignal)=>api<CommissionAccrualRecord[]>(`${root}/commission-accruals?${query??''}`,'GET',undefined,undefined,signal),
+    getCommissionAccrual:(id:string,signal?:AbortSignal)=>api<CommissionAccrualRecord>(`${root}/commission-accruals/${id}`,'GET',undefined,undefined,signal),
+    commissionSettlements:(query?:URLSearchParams,signal?:AbortSignal)=>api<CommissionSettlementRecord[]>(`${root}/commission-settlements?${query??''}`,'GET',undefined,undefined,signal),
+    getCommissionSettlement:(id:string,signal?:AbortSignal)=>api<CommissionSettlementRecord>(`${root}/commission-settlements/${id}`,'GET',undefined,undefined,signal),
+    myStatement:(signal?:AbortSignal)=>api<DoctorStatementRecord>(`${root}/commissions/my-statement`,'GET',undefined,undefined,signal),
+
+    // Step 4.5: Financial Reconciliation & Operational Reports
+    reconciliation:(signal?:AbortSignal)=>api<ReconciliationReport>(`${root}/reconciliation`,'GET',undefined,undefined,signal),
+    revenueCollections:(startDate:string,endDate:string,signal?:AbortSignal)=>api<RevenueCollectionsReport>(`${root}/reports/revenue-collections?startDate=${startDate}&endDate=${endDate}`,'GET',undefined,undefined,signal),
+    installmentAging:(signal?:AbortSignal)=>api<InstallmentAgingReport>(`${root}/reports/installment-aging`,'GET',undefined,undefined,signal),
+    packageLiability:(signal?:AbortSignal)=>api<PackageLiabilityReport>(`${root}/reports/package-liability`,'GET',undefined,undefined,signal),
+    practitionerPerformance:(startDate:string,endDate:string,signal?:AbortSignal)=>api<PractitionerPerformanceReport>(`${root}/reports/practitioner-performance?startDate=${startDate}&endDate=${endDate}`,'GET',undefined,undefined,signal),
+    inventoryValuation:(signal?:AbortSignal)=>api<InventoryValuationReport>(`${root}/reports/inventory-valuation`,'GET',undefined,undefined,signal),
+    appointmentUtilization:(startDate:string,endDate:string,signal?:AbortSignal)=>api<AppointmentUtilizationReport>(`${root}/reports/appointment-utilization?startDate=${startDate}&endDate=${endDate}`,'GET',undefined,undefined,signal),
   };
 };
