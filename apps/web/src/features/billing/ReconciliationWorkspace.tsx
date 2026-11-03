@@ -106,12 +106,16 @@ export function ReconciliationWorkspace({ clinic, onAuthError }: Props) {
         <div>
           <b>محرك المطابقة والتدقيق المالي الشامل</b>
           <p>
-            فحص آلي متزامن لسلامة المعادلة المحاسبية عبر الفواتير، المدفوعات، الباقات المسبقة، خطط التقسيط، تسويات العمولات، وتقييم المخزون.
+            فحص آلي متزامن لسلامة المعادلة المحاسبية عبر الفواتير، المدفوعات، الباقات المسبقة، خطط التقسيط، تسويات العمولات، ومطابقة سجل وحركات المخزون.
           </p>
         </div>
         <button className="primary-btn" disabled={loading} onClick={handleRunReconciliation}>
           {loading ? 'جارٍ الفحص والمطابقة…' : '🔄 تشغيل المطابقة المالية الآن'}
         </button>
+      </div>
+
+      <div className="notice" style={{ background: '#FFFDF5', border: '1px solid #ECC94B', color: '#744210', marginBottom: '16px', padding: '10px 14px', borderRadius: '6px' }}>
+        <strong>تنبيه تدقيق محاسبي:</strong> نتائج المطابقة المحاسبية تعبر عن الاتساق الحسابي الداخلي لسجلات قاعدة بيانات العيادة فقط، ولا تعد بديلاً عن المطابقة البنكية لكشوف الحسابات الخارجية أو تقارير الامتثال القانوني والضريبي.
       </div>
 
       {notice && (
@@ -165,7 +169,7 @@ export function ReconciliationWorkspace({ clinic, onAuthError }: Props) {
               <div>
                 <small>تاريخ ووقت الفحص الأخير</small>
                 <strong style={{ fontSize: '13px' }}>
-                  {new Date(report.reconciledAt).toLocaleString('ar-SA')}
+                  {new Date(report.timestamp || report.reconciledAt || Date.now()).toLocaleString('ar-SA')}
                 </strong>
               </div>
             </div>
@@ -195,15 +199,15 @@ export function ReconciliationWorkspace({ clinic, onAuthError }: Props) {
             </div>
             <div className="panel" style={{ padding: '14px', textAlign: 'center' }}>
               <small style={{ color: '#718096' }}>باقات العلاج المسبقة</small>
-              <h3 style={{ margin: '4px 0 0' }}>{report.resourcesScanned.packagesCount}</h3>
+              <h3 style={{ margin: '4px 0 0' }}>{report.resourcesScanned.patientPackagesCount ?? report.resourcesScanned.packagesCount ?? 0}</h3>
             </div>
             <div className="panel" style={{ padding: '14px', textAlign: 'center' }}>
               <small style={{ color: '#718096' }}>دفعات تسوية العمولات</small>
               <h3 style={{ margin: '4px 0 0' }}>{report.resourcesScanned.commissionSettlementsCount}</h3>
             </div>
             <div className="panel" style={{ padding: '14px', textAlign: 'center' }}>
-              <small style={{ color: '#718096' }}>مستودعات المخزون</small>
-              <h3 style={{ margin: '4px 0 0' }}>{report.resourcesScanned.inventoryLocationsCount}</h3>
+              <small style={{ color: '#718096' }}>أرصدة وسجلات المخزون</small>
+              <h3 style={{ margin: '4px 0 0' }}>{report.resourcesScanned.inventoryBalancesCount ?? report.resourcesScanned.inventoryLocationsCount ?? 0}</h3>
             </div>
           </div>
 

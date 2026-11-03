@@ -646,4 +646,3 @@ export class InventoryController {
     return this.inventory.acknowledgeAlert(req.auth!.principal, clinicId, body);
   }
 }
-

@@ -45,4 +45,3 @@ export class InventoryError extends HttpException {
     super(code, inventoryErrors[code][0]);
   }
 }
-

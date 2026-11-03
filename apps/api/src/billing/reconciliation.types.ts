@@ -1,5 +1,5 @@
 export interface ReconciliationFinding {
-  resource: 'INVOICE' | 'PAYMENT' | 'INSTALLMENT' | 'PACKAGE' | 'REFUND' | 'COMMISSION';
+  resource: 'INVOICE' | 'PAYMENT' | 'INSTALLMENT' | 'PACKAGE' | 'REFUND' | 'COMMISSION' | 'INVENTORY';
   entityId: string;
   code: string;
   severity: 'WARNING' | 'CRITICAL';
@@ -17,6 +17,8 @@ export interface FinancialReconciliationReport {
     patientPackagesCount: number;
     refundRequestsCount: number;
     commissionSettlementsCount: number;
+    inventoryBalancesCount: number;
+    inventoryBatchesCount: number;
   };
   totalDiscrepancies: number;
   findings: ReconciliationFinding[];
@@ -97,14 +99,28 @@ export interface PractitionerPerformanceReport {
   practitioners: PractitionerPerformanceReportItem[];
 }
 
+export interface InventoryValuationLocationSummary {
+  locationId: string;
+  locationName: string;
+  productsCount: number;
+  totalUnits: string;
+  valuationMinor: string;
+}
+
 export interface InventoryValuationSummary {
   clinicId: string;
+  asOf: string;
   currency: string;
   currencyScale: number;
   totalProductsCount: number;
   totalLocationsCount: number;
   totalOnHandUnits: string;
   totalValuationMinor: string;
+  isAccountingVerified: boolean;
+  valuationMethod: 'ESTIMATED_UNIT_COST' | 'ACCOUNTING_VERIFIED_FIFO' | 'WEIGHTED_AVERAGE';
+  disclaimerAr: string;
+  disclaimerEn: string;
+  locations: InventoryValuationLocationSummary[];
   batchesSummary: {
     activeBatchesCount: number;
     expiredBatchesCount: number;
@@ -124,4 +140,3 @@ export interface AppointmentUtilizationReport {
   completionRatePercent: number;
   cancellationRatePercent: number;
 }
-

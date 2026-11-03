@@ -98,4 +98,3 @@ Critical destructive and financial write operations (`reversePackageRedemption`,
 | Active Package | نشطة ومتاحة |
 | Exhausted Package | مستنفدة بالكامل |
 | Overdue Installment | متأخر عن الاستحقاق |
-

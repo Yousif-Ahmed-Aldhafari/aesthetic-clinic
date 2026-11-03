@@ -385,4 +385,3 @@ export function InstallmentsWorkspace({ clinic, csrfToken, onAuthError }: Props)
     </div>
   );
 }
-

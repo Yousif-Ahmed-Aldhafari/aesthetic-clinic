@@ -7,4 +7,3 @@ import { PrismaModule } from '../prisma/prisma.module.js';
   controllers: [InventoryController],
 })
 export class InventoryModule {}
-

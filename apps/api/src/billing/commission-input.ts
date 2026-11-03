@@ -204,4 +204,3 @@ export class OperationalReportQueryDto {
   @IsUUID()
   practitionerMembershipId?: string;
 }
-

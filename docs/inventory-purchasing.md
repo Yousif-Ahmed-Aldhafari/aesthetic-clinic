@@ -1,7 +1,7 @@
 # Lamssa — Inventory Purchasing, Goods Receiving & Stock Operations
 
-**Status:** Implemented (Phase 4, Step 4.3)  
-**Security Classification:** Strict Tenant Isolation (PostgreSQL FORCE RLS), Financial Accuracy (`numeric(12, 4)` Decimal Math), Granular RBAC, Audit Logging.  
+**Status:** Implemented (Phase 4, Step 4.3)
+**Security Classification:** Strict Tenant Isolation (PostgreSQL FORCE RLS), Financial Accuracy (`numeric(12, 4)` Decimal Math), Granular RBAC, Audit Logging.
 **Language Policy:** Architecture documentation in English; user interface authentic Arabic-first (RTL).
 
 ---

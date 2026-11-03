@@ -438,3 +438,93 @@ live('8. cross-tenant RLS isolation on commission plans and settlements', async 
   const ownPlans = await json<any[]>(ownRes, 200);
   assert.equal(ownPlans.length, 0);
 });
+
+live('9. financial reconciliation engine detects deliberately injected synthetic discrepancies', async () => {
+  const accountant = await new Browser().login(1, 0);
+
+  // 1. Verify that database triggers block direct tampering of Invoice netPaidMinor
+  const invoice = await ownerDb.invoice.findFirst({
+    where: { clinicId: clinics[0], status: { not: 'VOID' } },
+  });
+  assert(invoice);
+
+  await assert.rejects(
+    async () => {
+      await ownerDb.invoice.update({
+        where: { id: invoice.id },
+        data: { netPaidMinor: invoice.netPaidMinor > 0n ? invoice.netPaidMinor - 1000n : 1000n, version: { increment: 1 } },
+      });
+    },
+    /Financial totals inconsistent/,
+  );
+
+  // 2. Find confirmed settlement and seed inventory balance to inject anomalies
+  const settlement = await ownerDb.practitionerCommissionSettlement.findFirst({
+    where: { clinicId: clinics[0], status: 'CONFIRMED' },
+  });
+  assert(settlement);
+
+  const location = await ownerDb.inventoryLocation.create({
+    data: {
+      clinicId: clinics[0],
+      code: `LOC-${suffix.slice(0, 6)}`,
+      nameAr: 'مستودع تجريبي للمطابقة',
+      type: 'MAIN_STORE',
+    },
+  });
+  const product = await ownerDb.inventoryProduct.create({
+    data: {
+      clinicId: clinics[0],
+      sku: `SKU-${suffix.slice(0, 6)}`,
+      nameAr: 'منتج تجريبي للمطابقة',
+      nameEn: 'Recon Test Product',
+      category: 'INJECTABLE',
+      unit: 'SYRINGE',
+    },
+  });
+  const balance = await ownerDb.inventoryBalance.create({
+    data: {
+      clinicId: clinics[0],
+      locationId: location.id,
+      productId: product.id,
+      onHandQuantity: '10.0000', // No stock movements recorded, ledger sum is 0.0000
+    },
+  });
+
+  const originalSettlementGross = settlement.grossAmountMinor;
+  await ownerDb.practitionerCommissionSettlement.update({
+    where: { id: settlement.id },
+    data: { grossAmountMinor: originalSettlementGross + 2500n, version: { increment: 1 } },
+  });
+
+  try {
+    // 3. Run reconciliation and assert discrepancy detection
+    const reconRes = await accountant.request(accountant.path('/reconciliation'));
+    const report = await json<any>(reconRes, 200);
+
+    assert.equal(report.status, 'DISCREPANCIES_DETECTED');
+    assert(report.totalDiscrepancies >= 2);
+
+    const codes = report.findings.map((f: any) => f.code);
+    assert(codes.includes('COMMISSION_GROSS_AMOUNT_DRIFT'));
+    assert(codes.includes('COMMISSION_NET_SETTLED_MISMATCH'));
+    assert(codes.includes('INVENTORY_LEDGER_BALANCE_MISMATCH'));
+  } finally {
+    // 4. Rollback synthetic discrepancies to restore clean baseline
+    await ownerDb.practitionerCommissionSettlement.update({
+      where: { id: settlement.id },
+      data: { grossAmountMinor: originalSettlementGross, version: { increment: 1 } },
+    });
+    // Inventory balances are immutable against deletion; update back to 0.0000 to match ledger sum
+    await ownerDb.inventoryBalance.update({
+      where: { id: balance.id },
+      data: { onHandQuantity: '0.0000', version: { increment: 1 } },
+    });
+  }
+
+  // 5. Confirm clean state restored
+  const cleanReconRes = await accountant.request(accountant.path('/reconciliation'));
+  const cleanReport = await json<any>(cleanReconRes, 200);
+  assert.equal(cleanReport.status, 'CLEAN');
+  assert.equal(cleanReport.totalDiscrepancies, 0);
+});

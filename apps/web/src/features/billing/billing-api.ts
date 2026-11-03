@@ -281,17 +281,22 @@ export interface ReconciliationFinding {
 
 export interface ReconciliationReport {
   clinicId: string;
-  reconciledAt: string;
-  status: 'CLEAN' | 'DISCREPANCIES_FOUND';
+  timestamp: string;
+  reconciledAt?: string;
+  status: 'CLEAN' | 'DISCREPANCIES_DETECTED' | 'DISCREPANCIES_FOUND';
   totalDiscrepancies: number;
   findings: ReconciliationFinding[];
   resourcesScanned: {
     invoicesCount: number;
     paymentsCount: number;
     installmentPlansCount: number;
-    packagesCount: number;
+    patientPackagesCount?: number;
+    packagesCount?: number;
+    refundRequestsCount?: number;
     commissionSettlementsCount: number;
-    inventoryLocationsCount: number;
+    inventoryBalancesCount?: number;
+    inventoryBatchesCount?: number;
+    inventoryLocationsCount?: number;
   };
 }
 
@@ -357,16 +362,29 @@ export interface InventoryValuationLocation {
   locationId: string;
   locationName: string;
   productsCount: number;
-  totalUnits: number;
+  totalUnits: string | number;
   valuationMinor: string;
 }
 
 export interface InventoryValuationReport {
+  clinicId?: string;
   asOf: string;
   currency: string;
   currencyScale: number;
+  totalProductsCount?: number;
+  totalLocationsCount?: number;
+  totalOnHandUnits?: string;
   totalValuationMinor: string;
+  isAccountingVerified?: boolean;
+  valuationMethod?: string;
+  disclaimerAr?: string;
+  disclaimerEn?: string;
   locations: InventoryValuationLocation[];
+  batchesSummary?: {
+    activeBatchesCount: number;
+    expiredBatchesCount: number;
+    recalledBatchesCount: number;
+  };
 }
 
 export interface AppointmentUtilizationReport {

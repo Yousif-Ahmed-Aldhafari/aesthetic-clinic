@@ -380,11 +380,15 @@ export function OperationalReportsWorkspace({ clinic, onAuthError }: Props) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h4>التقييم المالي الشامل للمخزون</h4>
             <div style={{ fontSize: '14px' }}>
-              إجمالي القيمة الدفترية للمخزون:{' '}
+              إجمالي القيمة الدفترية التقديرية:{' '}
               <strong style={{ color: '#087F8C', fontSize: '16px' }}>
                 {formatMoney(inventoryData.totalValuationMinor, inventoryData.currency, inventoryData.currencyScale)}
               </strong>
             </div>
+          </div>
+
+          <div className="notice" style={{ background: '#FFFDF5', border: '1px solid #ECC94B', color: '#744210', marginBottom: '16px', padding: '10px 14px', borderRadius: '6px' }}>
+            <strong>تنبيه تدقيق مالي:</strong> {inventoryData.disclaimerAr || 'تقييم المخزون المالي الحالي تقديري وغير معتمد محاسبيًا لعدم اكتمال ترصيد تكلفة الوصول (Landed Cost / FIFO).'}
           </div>
 
           <div className="table-wrap">
@@ -394,11 +398,11 @@ export function OperationalReportsWorkspace({ clinic, onAuthError }: Props) {
                   <th>مستودع المخزون</th>
                   <th>عدد المنتجات المسجلة</th>
                   <th>إجمالي الوحدات المتوفرة</th>
-                  <th>القيمة المالية للمخزون</th>
+                  <th>القيمة المالية التقديرية</th>
                 </tr>
               </thead>
               <tbody>
-                {inventoryData.locations.map((loc) => (
+                {(inventoryData.locations || []).map((loc) => (
                   <tr key={loc.locationId}>
                     <td><b>{loc.locationName}</b></td>
                     <td>{loc.productsCount}</td>
@@ -408,7 +412,7 @@ export function OperationalReportsWorkspace({ clinic, onAuthError }: Props) {
                     </td>
                   </tr>
                 ))}
-                {inventoryData.locations.length === 0 && (
+                {(!inventoryData.locations || inventoryData.locations.length === 0) && (
                   <tr>
                     <td colSpan={4} style={{ textAlign: 'center', padding: '24px' }}>
                       لا توجد مستودعات أو أرصدة مخزون مسجلة.

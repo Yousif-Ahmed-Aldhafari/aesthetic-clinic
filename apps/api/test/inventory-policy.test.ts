@@ -319,4 +319,3 @@ test('purchasing and stock operation permissions are strictly allocated to admin
     assert(!receptionistPerms.includes(perm as any));
   }
 });
-

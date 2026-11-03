@@ -2463,12 +2463,20 @@ export class InventoryRepository {
         let returnMovement: { id: string; quantity: Prisma.Decimal } | null = null;
 
         if (restockAction === 'RESTOCK_UNOPENED') {
+          // Safety invariant: Opened vials/packages with recorded waste cannot be returned to available inventory
+          if (consumption.wasteQuantity.greaterThan(new Prisma.Decimal('0.0000'))) {
+            throw new BadRequestException('Cannot restock clinical consumption with recorded waste; opened or partially used materials cannot be returned to stock');
+          }
+
           const clinic = await tx.clinic.findUnique({
             where: { id: c.clinicId },
             select: { timezone: true },
           });
           const tz = clinic?.timezone || 'Asia/Aden';
 
+          if (consumption.batch.status === 'QUARANTINED') {
+            throw new InventoryError('INVENTORY_BATCH_QUARANTINED');
+          }
           if (consumption.batch.status === 'RECALLED') {
             throw new InventoryError('INVENTORY_BATCH_RECALLED');
           }
@@ -4368,4 +4376,3 @@ export class InventoryRepository {
     });
   }
 }
-

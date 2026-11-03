@@ -248,7 +248,11 @@ export interface RecordClinicalConsumptionDto {
   idempotencyKey?: string;
 }
 
-export type ClinicalConsumptionRestockAction = 'NO_RESTOCK' | 'RESTOCK_UNOPENED';
+export type ClinicalConsumptionRestockAction =
+  | 'NO_RESTOCK'
+  | 'CORRECTION_NO_RESTOCK'
+  | 'DISPOSAL_NO_RESTOCK'
+  | 'RESTOCK_UNOPENED';
 
 export interface VoidClinicalConsumptionDto {
   reason: string;

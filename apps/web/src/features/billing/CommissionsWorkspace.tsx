@@ -32,7 +32,7 @@ const accrualStatuses: Record<string, string> = {
 
 const settlementStatuses: Record<string, string> = {
   DRAFT: 'مسودة تسوية',
-  CONFIRMED: 'مؤكدة ومصروفة',
+  CONFIRMED: 'معتمدة داخليًا',
   CANCELLED: 'ملغاة',
 };
 
@@ -1001,7 +1001,9 @@ export function CommissionsWorkspace({ clinic, csrfToken, onAuthError }: Props) 
                     </td>
                     <td>
                       <span className={`status bill-${s.status.toLowerCase()}`}>
-                        {settlementStatuses[s.status] ?? s.status}
+                        {s.status === 'CONFIRMED'
+                          ? (s.payoutReference ? `مصروفة بنكيًا (${s.payoutReference})` : 'معتمدة داخليًا (قيد الحساب)')
+                          : (settlementStatuses[s.status] ?? s.status)}
                       </span>
                     </td>
                     <td><bdi>{s.payoutReference ?? '—'}</bdi></td>

@@ -172,7 +172,7 @@ test('MfaCryptoService encrypts and decrypts TOTP secret at rest with AES-256-GC
   assert.throws(() => cryptoService.decryptSecret(tamperedCipher.toString('base64'), enc.iv, enc.tag));
 
   // Tampered tag fails closed
-  const tamperedTag = enc.tag.slice(0, -2) + '00';
+  const tamperedTag = enc.tag.slice(0, -1) + (enc.tag.slice(-1) === '0' ? '1' : '0');
   assert.throws(() => cryptoService.decryptSecret(enc.ciphertext, enc.iv, tamperedTag));
 });
 

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
 import type { VerifiedPrincipal } from './verified-sessions.js';
 import { TenantDatabaseService } from './tenant-database.service.js';
 import {
@@ -2087,7 +2087,69 @@ export class BillingRepository {
         }
       }
 
+      // 6. Inventory Stock Movement Ledgers vs Balances & Batch Balance Integrity
+      const inventoryBalances = await tx.inventoryBalance.findMany({
+        where: { clinicId: c.clinicId },
+        include: { product: true, location: true },
+      });
+
+      for (const bal of inventoryBalances) {
+        const movementsAgg = await tx.inventoryStockMovement.aggregate({
+          where: {
+            clinicId: c.clinicId,
+            productId: bal.productId,
+            locationId: bal.locationId,
+          },
+          _sum: { quantity: true },
+        });
+        const computedLedgerBalance = movementsAgg._sum.quantity || new Prisma.Decimal('0.0000');
+        if (!computedLedgerBalance.equals(bal.onHandQuantity)) {
+          findings.push({
+            resource: 'INVENTORY',
+            entityId: bal.id,
+            code: 'INVENTORY_LEDGER_BALANCE_MISMATCH',
+            severity: 'CRITICAL',
+            details: `Inventory balance for product ${bal.product.sku} at location ${bal.location.code} (${bal.onHandQuantity}) differs from sum of stock movements (${computedLedgerBalance})`,
+            metadata: {
+              recordedOnHand: bal.onHandQuantity.toString(),
+              computedLedgerBalance: computedLedgerBalance.toString(),
+              productId: bal.productId,
+              locationId: bal.locationId,
+            },
+          });
+        }
+
+        // Batch-level balances vs Product-level balances for items requiring batch tracking
+        if (bal.product.requiresBatchTracking) {
+          const batchBalancesAgg = await tx.inventoryBatchBalance.aggregate({
+            where: {
+              clinicId: c.clinicId,
+              productId: bal.productId,
+              locationId: bal.locationId,
+            },
+            _sum: { onHandQuantity: true },
+          });
+          const totalBatchUnits = batchBalancesAgg._sum.onHandQuantity || new Prisma.Decimal('0.0000');
+          if (!totalBatchUnits.equals(bal.onHandQuantity)) {
+            findings.push({
+              resource: 'INVENTORY',
+              entityId: bal.id,
+              code: 'INVENTORY_BATCH_PRODUCT_BALANCE_MISMATCH',
+              severity: 'CRITICAL',
+              details: `Batch balances sum for product ${bal.product.sku} at location ${bal.location.code} (${totalBatchUnits}) differs from product balance (${bal.onHandQuantity})`,
+              metadata: {
+                recordedOnHand: bal.onHandQuantity.toString(),
+                totalBatchUnits: totalBatchUnits.toString(),
+                productId: bal.productId,
+                locationId: bal.locationId,
+              },
+            });
+          }
+        }
+      }
+
       const paymentsCount = await tx.payment.count({ where: { clinicId: c.clinicId } });
+      const inventoryBatchesCount = await tx.inventoryBatch.count({ where: { clinicId: c.clinicId } });
 
       return {
         clinicId: c.clinicId,
@@ -2099,6 +2161,8 @@ export class BillingRepository {
           patientPackagesCount: packages.length,
           refundRequestsCount: refundRequests.length,
           commissionSettlementsCount: settlements.length,
+          inventoryBalancesCount: inventoryBalances.length,
+          inventoryBatchesCount,
         },
         totalDiscrepancies: findings.length,
         findings,
@@ -2371,10 +2435,35 @@ export class BillingRepository {
       const totalProductsCount = await tx.inventoryProduct.count({ where: { clinicId: c.clinicId } });
       const totalLocationsCount = await tx.inventoryLocation.count({ where: { clinicId: c.clinicId } });
 
-      const balances = await tx.inventoryBalance.findMany({
+      const locations = await tx.inventoryLocation.findMany({
         where: { clinicId: c.clinicId },
+        include: {
+          balances: true,
+        },
       });
-      const totalUnits = balances.reduce((sum, b) => sum + Number(b.onHandQuantity), 0);
+
+      let totalUnitsSum = new Prisma.Decimal('0.0000');
+      let totalValuationMinor = 0n;
+
+      const locationSummaries = locations.map((loc) => {
+        const locUnits = loc.balances.reduce(
+          (sum, b) => sum.plus(b.onHandQuantity),
+          new Prisma.Decimal('0.0000'),
+        );
+        totalUnitsSum = totalUnitsSum.plus(locUnits);
+
+        // Valuation is estimated as 0 pending formal landed cost / FIFO module
+        const locValuationMinor = 0n;
+        totalValuationMinor += locValuationMinor;
+
+        return {
+          locationId: loc.id,
+          locationName: loc.nameAr,
+          productsCount: loc.balances.length,
+          totalUnits: locUnits.toFixed(4),
+          valuationMinor: locValuationMinor.toString(),
+        };
+      });
 
       const activeBatchesCount = await tx.inventoryBatch.count({ where: { clinicId: c.clinicId, status: 'AVAILABLE' } });
       const expiredBatchesCount = await tx.inventoryBatch.count({ where: { clinicId: c.clinicId, status: 'EXPIRED' } });
@@ -2382,12 +2471,18 @@ export class BillingRepository {
 
       return {
         clinicId: c.clinicId,
+        asOf: new Date().toISOString(),
         currency: clinic?.currency ?? 'SAR',
         currencyScale: scale,
         totalProductsCount,
         totalLocationsCount,
-        totalOnHandUnits: totalUnits.toFixed(4),
-        totalValuationMinor: '0', // Defensible model when PO lines / landed cost available
+        totalOnHandUnits: totalUnitsSum.toFixed(4),
+        totalValuationMinor: totalValuationMinor.toString(),
+        isAccountingVerified: false,
+        valuationMethod: 'ESTIMATED_UNIT_COST',
+        disclaimerAr: 'تنبيه تدقيق: تقييم المخزون المالي الحالي تقديري وغير معتمد محاسبيًا لعدم اكتمال ترصيد تكلفة الوصول (Landed Cost / FIFO).',
+        disclaimerEn: 'Audit Notice: Inventory financial valuation is an estimate and not accounting-verified pending landed cost / FIFO implementation.',
+        locations: locationSummaries,
         batchesSummary: {
           activeBatchesCount,
           expiredBatchesCount,

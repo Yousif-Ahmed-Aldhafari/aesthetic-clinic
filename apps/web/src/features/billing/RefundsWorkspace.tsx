@@ -20,7 +20,7 @@ const refundStatuses: Record<string, string> = {
   REQUESTED: 'قيد المراجعة',
   APPROVED: 'معتمد للصرف',
   REJECTED: 'مرفوض',
-  SETTLED: 'تمت التسوية والاسترداد',
+  SETTLED: 'قيد عكسي محاسبي',
   CANCELLED: 'ملغي',
 };
 
@@ -234,7 +234,9 @@ export function RefundsWorkspace({ clinic, csrfToken, onAuthError }: Props) {
                     <td>{req.reasonDetails}</td>
                     <td>
                       <span className={`status bill-${req.status === 'SETTLED' ? 'paid' : req.status === 'APPROVED' ? 'issued' : req.status === 'REJECTED' ? 'void' : 'draft'}`}>
-                        {refundStatuses[req.status] ?? req.status}
+                        {req.status === 'SETTLED'
+                          ? (req.settlementReference ? `مصروف بنكيًا (${req.settlementReference})` : 'قيد عكسي محاسبي')
+                          : (refundStatuses[req.status] ?? req.status)}
                       </span>
                     </td>
                     <td>
@@ -455,4 +457,3 @@ export function RefundsWorkspace({ clinic, csrfToken, onAuthError }: Props) {
     </div>
   );
 }
-

@@ -584,11 +584,16 @@ export const inventoryApi = (clinicId: string) => {
     recordClinicalConsumption: (input: unknown, csrf: string, signal?: AbortSignal) =>
       api<InventoryClinicalConsumptionRecord>(`${root}/clinical-consumption`, 'POST', input, csrf, signal),
 
-    voidClinicalConsumption: (consumptionId: string, reason: string, csrf: string, signal?: AbortSignal) =>
+    voidClinicalConsumption: (
+      consumptionId: string,
+      input: string | { reason: string; restockAction?: 'NO_RESTOCK' | 'CORRECTION_NO_RESTOCK' | 'DISPOSAL_NO_RESTOCK' | 'RESTOCK_UNOPENED'; restockQuantity?: string },
+      csrf: string,
+      signal?: AbortSignal,
+    ) =>
       api<InventoryClinicalConsumptionRecord>(
         `${root}/clinical-consumption/${consumptionId}/void`,
         'POST',
-        { reason },
+        typeof input === 'string' ? { reason: input } : input,
         csrf,
         signal,
       ),

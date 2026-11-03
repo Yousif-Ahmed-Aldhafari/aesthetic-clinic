@@ -53,6 +53,7 @@ export function ClinicalConsumptionModal({
   // Voiding state
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [voidReason, setVoidReason] = useState('');
+  const [voidAction, setVoidAction] = useState<'CORRECTION_NO_RESTOCK' | 'DISPOSAL_NO_RESTOCK' | 'RESTOCK_UNOPENED'>('CORRECTION_NO_RESTOCK');
   const [voidBusy, setVoidBusy] = useState(false);
 
   const fetchConsumptions = useCallback(async () => {
@@ -138,16 +139,33 @@ export function ClinicalConsumptionModal({
     }
   }
 
-  async function handleVoid(consumptionId: string) {
+  async function handleVoid(consumption: InventoryClinicalConsumptionRecord) {
     if (!voidReason.trim() || voidReason.trim().length < 3) {
-      setError('يرجى ذكر سبب الإلغاء والاسترجاع (3 أحرف على الأقل)');
+      setError('يرجى ذكر سبب الإلغاء (3 أحرف على الأقل)');
+      return;
+    }
+    if (voidAction === 'RESTOCK_UNOPENED' && parseFloat(consumption.wasteQuantity) > 0) {
+      setError('لا يمكن استرجاع عبوة مفتوحة أو بها هدر للمخزون العام لأسباب السلامة السريرية');
       return;
     }
     setVoidBusy(true);
     setError('');
     try {
-      await inventoryApi(clinicId).voidClinicalConsumption(consumptionId, voidReason.trim(), csrfToken);
-      onSuccess('تم إلغاء الاستهلاك واسترجاع الرصيد للمخزون بنجاح');
+      await inventoryApi(clinicId).voidClinicalConsumption(
+        consumption.id,
+        {
+          reason: voidReason.trim(),
+          restockAction: voidAction,
+        },
+        csrfToken,
+      );
+      onSuccess(
+        voidAction === 'RESTOCK_UNOPENED'
+          ? 'تم إلغاء التوثيق واسترجاع العبوة السليمة غير المفتوحة للمخزون بنجاح'
+          : voidAction === 'DISPOSAL_NO_RESTOCK'
+          ? 'تم توثيق إتلاف/التخلص من المادة وإلغاء الاستهلاك السريري'
+          : 'تم تصحيح التوثيق وإلغاء القيد السريري بنجاح (دون استرجاع رصيد)',
+      );
       setVoidingId(null);
       setVoidReason('');
       fetchConsumptions();
@@ -333,29 +351,42 @@ export function ClinicalConsumptionModal({
                       <td>
                         {c.status === 'RECORDED' && (
                           voidingId === c.id ? (
-                            <div className="void-inline-form">
+                            <div className="void-inline-form" style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '220px' }}>
+                              <select
+                                className="form-control form-control-xs"
+                                value={voidAction}
+                                onChange={(e) => setVoidAction(e.target.value as any)}
+                              >
+                                <option value="CORRECTION_NO_RESTOCK">تصحيح توثيق (بدون استرجاع رصيد)</option>
+                                <option value="DISPOSAL_NO_RESTOCK">إتلاف/تخلص سريري (مادة تالفة أو ملوثة)</option>
+                                <option value="RESTOCK_UNOPENED" disabled={parseFloat(c.wasteQuantity) > 0}>
+                                  إرجاع عبوة سليمة وغير مفتوحة {parseFloat(c.wasteQuantity) > 0 ? '(غير متاح - مفتوحة وبها هدر)' : ''}
+                                </option>
+                              </select>
                               <input
                                 type="text"
                                 className="form-control form-control-xs"
-                                placeholder="سبب الإلغاء..."
+                                placeholder="سبب الإلغاء أو التصحيح..."
                                 value={voidReason}
                                 onChange={(e) => setVoidReason(e.target.value)}
                               />
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-danger"
-                                onClick={() => handleVoid(c.id)}
-                                disabled={voidBusy}
-                              >
-                                تأكيد
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-secondary"
-                                onClick={() => setVoidingId(null)}
-                              >
-                                إلغاء
-                              </button>
+                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-danger"
+                                  onClick={() => handleVoid(c)}
+                                  disabled={voidBusy}
+                                >
+                                  تأكيد
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-secondary"
+                                  onClick={() => setVoidingId(null)}
+                                >
+                                  تراجع
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <button
@@ -364,9 +395,10 @@ export function ClinicalConsumptionModal({
                               onClick={() => {
                                 setVoidingId(c.id);
                                 setVoidReason('');
+                                setVoidAction('CORRECTION_NO_RESTOCK');
                               }}
                             >
-                              إلغاء واسترجاع
+                              إلغاء / معالجة
                             </button>
                           )
                         )}

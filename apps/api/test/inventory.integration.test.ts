@@ -1245,20 +1245,55 @@ live('clinical consumption: atomic stock deduction, consent eligibility, doctor 
   // Confidentiality projection: notes property is omitted or undefined for inventory-only role
   assert.equal(adminConsData.items[0].notes, undefined);
 
-  // 7. Doctor voids clinical consumption with genuine unopened return
-  const voidRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consumption.id}/void`), 'POST', {
-    reason: 'تم إلغاء الجلسة واسترجاع الفيال السليم غير المفتوح',
+  // 7. Clinical consumption safety: Restocking opened/wasted materials is strictly blocked
+  const unsafeVoidRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consumption.id}/void`), 'POST', {
+    reason: 'محاولة غير آمنة لاسترجاع فيال مفتوح به هدر',
     restockAction: 'RESTOCK_UNOPENED',
+  });
+  assert.equal(unsafeVoidRes.status, 400);
+
+  // Doctor voids opened consumption safely via documentation correction / clinical disposal (NO_RESTOCK)
+  const voidRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consumption.id}/void`), 'POST', {
+    reason: 'تم إلغاء الجلسة وإتلاف المادة المستعملة جزئياً دون استرجاع للمخزون',
+    restockAction: 'DISPOSAL_NO_RESTOCK',
   });
   assert.equal(voidRes.status, 201);
   const voided = (await voidRes.json()) as any;
   assert.equal(voided.status, 'VOIDED');
-  assert.equal(voided.voidReason, 'تم إلغاء الجلسة واسترجاع الفيال السليم غير المفتوح');
+  assert.equal(voided.voidReason, 'تم إلغاء الجلسة وإتلاف المادة المستعملة جزئياً دون استرجاع للمخزون');
 
-  // Stock is restored ONLY by administered quantity (1.0000), waste (0.2000) is NEVER restocked: 8.8 + 1.0 = 9.8
+  // Stock remains deducted (no unsafe restoration of opened/wasted medication): remains 8.8
+  const checkBalAfterSafeVoid = await admin.request(admin.path(0, `/stock/balances?productId=${prod.id}&locationId=${loc.id}`));
+  const [safeBalRow] = (await checkBalAfterSafeVoid.json()) as any[];
+  assert.equal(safeBalRow.onHandQuantity, '8.8');
+
+  // 8. Legitimate unopened restock workflow: Consumption with zero waste can be restocked as unopened
+  const consUnopenedRes = await doctor.request(doctor.path(0, '/clinical-consumption'), 'POST', {
+    procedureExecutionId: execution.id,
+    productId: prod.id,
+    batchId: batch.id,
+    locationId: loc.id,
+    quantity: '1.0000',
+    wasteQuantity: '0.0000', // Unopened, zero waste
+    notes: 'عبوة مغلقة تم سحبها ولم تفتح',
+    idempotencyKey: `idem-cons-unopened-${suffix}`,
+  });
+  assert.equal(consUnopenedRes.status, 201);
+  const consUnopened = (await consUnopenedRes.json()) as any;
+  // Bal becomes 8.8 - 1.0 = 7.8
+  const checkBalUnopened = await admin.request(admin.path(0, `/stock/balances?productId=${prod.id}&locationId=${loc.id}`));
+  const [balRowUnopened] = (await checkBalUnopened.json()) as any[];
+  assert.equal(balRowUnopened.onHandQuantity, '7.8');
+
+  // Genuine unopened return restores balance: 7.8 + 1.0 = 8.8
+  const voidUnopenedRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consUnopened.id}/void`), 'POST', {
+    reason: 'إلغاء واسترجاع عبوة سليمة تماماً وغير مفتوحة',
+    restockAction: 'RESTOCK_UNOPENED',
+  });
+  assert.equal(voidUnopenedRes.status, 201);
   const restoredBal = await admin.request(admin.path(0, `/stock/balances?productId=${prod.id}&locationId=${loc.id}`));
   const [restoredRow] = (await restoredBal.json()) as any[];
-  assert.equal(restoredRow.onHandQuantity, '9.8');
+  assert.equal(restoredRow.onHandQuantity, '8.8');
 
   // Attempting to void again is rejected
   const voidAgainRes = await doctor.request(doctor.path(0, `/clinical-consumption/${consumption.id}/void`), 'POST', {
@@ -1871,4 +1906,3 @@ live('inventory: security hardening: direct SQL bypass triggers on balances, po 
     await ownerClient.end().catch(() => {});
   }
 });
-
