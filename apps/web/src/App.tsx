@@ -9,10 +9,11 @@ import { AppointmentForm } from './features/appointments/AppointmentForm';
 import { LiveQueue } from './features/queue/LiveQueue';
 import { BillingWorkspace } from './features/billing/BillingWorkspace';
 import { InvoiceForm } from './features/billing/InvoiceForm';
+import { InventoryWorkspace } from './features/inventory/InventoryWorkspace';
 
 import type { ClinicContext } from './features/auth/api';
 
-type Section = 'overview' | 'patients' | 'appointments' | 'queue' | 'invoices';
+type Section = 'overview' | 'patients' | 'appointments' | 'queue' | 'invoices' | 'inventory';
 
 const sections: { id: Section; label: string; symbol: string }[] = [
   { id: 'overview', label: 'لوحة التحكم', symbol: '▦' },
@@ -20,6 +21,7 @@ const sections: { id: Section; label: string; symbol: string }[] = [
   { id: 'appointments', label: 'المواعيد', symbol: '▣' },
   { id: 'queue', label: 'طابور الانتظار', symbol: '◷' },
   { id: 'invoices', label: 'الفواتير', symbol: '▤' },
+  { id: 'inventory', label: 'المخزون والمستودعات', symbol: '📦' },
 ];
 
 export default function App({ clinic, userName, busy, onSwitch, onLogout, csrfToken, onAuthError }: { csrfToken: string; onAuthError: (error: unknown) => void; clinic: ClinicContext; userName: string; busy: boolean; onSwitch: () => void; onLogout: () => void }) {
@@ -87,8 +89,8 @@ export default function App({ clinic, userName, busy, onSwitch, onLogout, csrfTo
     <main className="main">
       <header className="topbar"><div className="breadcrumb">العيادة <span>/</span> <b>{title}</b></div><div className="top-actions"><span className="date-pill">◷ {new Intl.DateTimeFormat('ar-YE', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</span><span className="user-name">{userName}</span><span className="avatar">{userName.slice(0,1)}</span><button className="logout-button" onClick={onLogout} disabled={busy}>تسجيل الخروج</button></div></header>
       <div className="content">
-        <div className="page-header"><div><div className="eyebrow">نظام إدارة عيادات التجميل</div><h1>{section === 'overview' ? 'صباح الخير، أهلاً بك 👋' : title}</h1><p>{section === 'overview' ? 'إليك ملخص ما يحدث في عيادتك اليوم.' : section === 'queue' ? 'متابعة دور المرضى داخل العيادة لحظة بلحظة.' : section === 'patients' ? 'ملفات المرضى وبيانات التواصل الأساسية.' : section === 'appointments' ? 'تنظيم الحجوزات وحضور المرضى.' : 'إدارة الفواتير والمدفوعات.'}</p></div><div className="header-buttons">{section === 'overview' && <button className="primary-btn" onClick={() => setModal('appointment')}>＋ حجز موعد تجريبي</button>}</div></div>
-        {section !== 'patients' && section !== 'appointments' && section !== 'queue' && section !== 'invoices' && <div className="demo-label"><b>عرض تجريبي محلي فقط</b> · هذه البيانات مشتركة بين اختيارات العيادات في هذا المتصفح، ومنفصلة عن سجل المرضى المحفوظ للعيادة. لا تستخدمها لسجلات حقيقية.<button className="table-btn" onClick={()=>setModal('legacy')}>مرضى العرض القديم</button></div>}
+        <div className="page-header"><div><div className="eyebrow">نظام إدارة عيادات التجميل</div><h1>{section === 'overview' ? 'صباح الخير، أهلاً بك 👋' : title}</h1><p>{section === 'overview' ? 'إليك ملخص ما يحدث في عيادتك اليوم.' : section === 'queue' ? 'متابعة دور المرضى داخل العيادة لحظة بلحظة.' : section === 'patients' ? 'ملفات المرضى وبيانات التواصل الأساسية.' : section === 'appointments' ? 'تنظيم الحجوزات وحضور المرضى.' : section === 'invoices' ? 'إدارة الفواتير والمدفوعات.' : 'دليل المنتجات، المستودعات، حركات المخزون والمطابقة.'}</p></div><div className="header-buttons">{section === 'overview' && <button className="primary-btn" onClick={() => setModal('appointment')}>＋ حجز موعد تجريبي</button>}</div></div>
+        {section !== 'patients' && section !== 'appointments' && section !== 'queue' && section !== 'invoices' && section !== 'inventory' && <div className="demo-label"><b>عرض تجريبي محلي فقط</b> · هذه البيانات مشتركة بين اختيارات العيادات في هذا المتصفح، ومنفصلة عن سجل المرضى المحفوظ للعيادة. لا تستخدمها لسجلات حقيقية.<button className="table-btn" onClick={()=>setModal('legacy')}>مرضى العرض القديم</button></div>}
         {notice && <div className="notice" role="status">✓ {notice}<button aria-label="إغلاق التنبيه" onClick={() => setNotice('')}>×</button></div>}
         {section === 'overview' && <>
           <div className="stats-grid"><Stat label="مواعيد اليوم" value={totals.today.toLocaleString('ar')} accent="purple" icon="▣" note="جميع مواعيد اليوم"/><Stat label="إجمالي المرضى" value={totals.patients.toLocaleString('ar')} accent="blue" icon="♙" note="في سجلات النسخة التجريبية"/><Stat label="في قاعة الانتظار" value={totals.waiting.toLocaleString('ar')} accent="orange" icon="◷" note="بانتظار الدخول للطبيب"/><Stat label="المبالغ المحصلة" value={rial(totals.revenue)} accent="green" icon="◈" note="من جميع الفواتير المسددة"/></div>
@@ -100,6 +102,7 @@ export default function App({ clinic, userName, busy, onSwitch, onLogout, csrfTo
         {section === 'appointments' && <AppointmentCalendar clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} onLegacy={()=>setModal('legacyAppointments')}/>}
         {section === 'queue' && <LiveQueue clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} onLegacy={()=>setModal('legacyQueue')}/>}
         {section === 'invoices' && <BillingWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} onLegacy={()=>setModal('legacyInvoices')}/>}
+        {section === 'inventory' && <InventoryWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} />}
       </div>
     </main>
     {modal && <Modal title={modal === 'legacyInvoices' ? 'الفواتير التجريبية القديمة · محلي فقط' : modal === 'legacyQueue' ? 'الطابور التجريبي القديم · محلي فقط' : modal === 'legacyAppointments' ? 'المواعيد التجريبية القديمة' : modal === 'legacy' ? 'مرضى العرض القديم · تجريبي محلي' : modal === 'patient' ? 'إضافة مريض تجريبي محلي' : modal === 'appointment' ? 'حجز موعد تجريبي محلي' : 'إنشاء فاتورة'} onClose={() => setModal(null)}>

@@ -1,5 +1,50 @@
 # Development setup
 
+## Phase 4.5 practitioner commissions, financial reconciliation & operational reporting
+
+Apply `20261101000500_commissions_reconciliation_reporting` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All commission, reconciliation, and operational reporting endpoints reside under `/api/v1/clinics/:clinicId/billing`.
+- Migration: `apps/api/prisma/migrations/20261101000500_commissions_reconciliation_reporting/migration.sql` creates 7 models: `PractitionerCommissionPlan`, `PractitionerCommissionRule`, `PractitionerCommissionAssignment`, `CommissionSettlementCounter`, `PractitionerCommissionSettlement`, `PractitionerCommissionAccrual`, and `PractitionerCommissionAdjustment` with `FORCE ROW LEVEL SECURITY`, check constraints, and trigger guards `commission_rule_guard` and `commission_accrual_guard` with `SECURITY INVOKER` and locked `search_path`.
+- Unit and policy tests: `apps/api/test/identity-policy.test.ts`, `apps/api/test/billing-money.test.ts`.
+- Database integration tests: `apps/api/test/commissions-reconciliation.integration.test.ts` (covers plan and rule creation, assignment, accrual calculation with integer half-up rounding, adjustment lifecycle with segregation of duties blocking self-decision, batch settlement generation with monotonic sequential numbering `COMM-SETTLE-000001`, doctor own statement access, continuous cross-resource financial reconciliation engine across 6 domains, operational reports generation, and cross-tenant RLS isolation).
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies commissions workspace, reconciliation workspace, and operational reports workspace).
+- Core invariants: Monetary amounts use signed/unsigned integer minor units (`bigint`). Integer half-up rounding prevents fractional loss. Segregation of duties prevents practitioners from approving their own adjustments. Settlements require elevated permissions and MFA Step-Up. Reconciliation validates invoice, payment, installment, package, commission, and inventory ledger invariants.
+
+## Phase 4.4 treatment packages, prepaid session redemptions, installment plans & refunds
+
+Apply `20261101000400_packages_installments_refunds` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All package, installment, and refund endpoints reside under `/api/v1/clinics/:clinicId/billing`.
+- Migration: `apps/api/prisma/migrations/20261101000400_packages_installments_refunds/migration.sql` creates 11 models: `TreatmentPackage`, `TreatmentPackageVersion`, `TreatmentPackageItem`, `PatientPackage`, `PatientPackageEntitlement`, `PackageRedemption`, `PackageRedemptionReversal`, `InstallmentPlan`, `InstallmentSchedule`, `InstallmentAllocation`, and `RefundRequest` with `FORCE ROW LEVEL SECURITY`, check constraints, and trigger guards `package_version_immutability_guard`, `package_item_delete_guard`, and `patient_package_entitlement_guard` with `SECURITY INVOKER` and locked `search_path`.
+- Unit and policy tests: `apps/api/test/billing-money.test.ts`.
+- Database integration tests: `apps/api/test/packages-installments.integration.test.ts` (covers package catalog versioning, patient package redemption against prepaid sessions, redemption reversal with session restoration, installment payment plan creation and schedule tracking, installment allocation, refund request approval/rejection lifecycle, settlement linked to PaymentReversal, and cross-tenant RLS isolation).
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies packages catalog, patient packages, installment plans, and refund requests workspaces).
+- Core invariants: Monetary amounts use integer minor units (`bigint`). Package versions and items are immutable once published. Entitlements enforce non-negative balances (`usedSessions <= totalSessions`). Redemptions are append-only; reversals restore session balance non-destructively. Installment schedules track paid amounts without over-allocation. Refunds require multi-step approval workflow and settle against explicit payment reversals with step-up verification.
+
+## Phase 4.3 suppliers, purchase orders, goods receiving, stock corrections & inventory alerts
+
+Apply `20261101000300_inventory_purchasing_operations` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All procurement, receiving, stocktaking and alert endpoints reside under `/api/v1/clinics/:clinicId/inventory`.
+- Migration: `apps/api/prisma/migrations/20261101000300_inventory_purchasing_operations/migration.sql` creates 11 models: `InventorySupplier`, `InventoryPurchaseOrder`, `InventoryPurchaseOrderLine`, `InventoryPurchaseOrderCounter`, `InventoryGoodsReceipt`, `InventoryGoodsReceiptLine`, `InventoryGoodsReceiptCounter`, `InventoryStockCount`, `InventoryStockCountItem`, `InventoryStockCountCounter`, and `InventoryAlertAcknowledgment` with `FORCE ROW LEVEL SECURITY` and trigger guards.
+- Unit and policy tests: `apps/api/test/inventory-policy.test.ts`.
+- Database integration tests: `apps/api/test/inventory.integration.test.ts` (covers supplier uniqueness, PO creation, multi-line financial math, approval workflow, goods receiving against POs, over-receipt prevention, stocktaking variance entry, compensating reconciliation adjustments, derived alerts, alert snoozing, and SQL bypass triggers).
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies inventory purchasing, suppliers, purchase orders, and stocktaking tabs).
+- Core invariants: All financial line items and physical quantities use exact `numeric(12, 4)` Decimal math. PO lines and goods receipts are immutable. Stocktaking reconciliation automatically posts compensating adjustment movements. Bedside recording permission `clinical.inventory-consumption.record` is strictly restricted to `DOCTOR`.
+
+## Phase 4.2 batch/lot tracking, expiry management, and clinical procedure consumption
+
+Apply `20261101000200_inventory_batch_tracking` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All batch tracking and clinical consumption endpoints reside under `/api/v1/clinics/:clinicId/inventory`.
+- Migration: `apps/api/prisma/migrations/20261101000200_inventory_batch_tracking/migration.sql` creates `InventoryBatch`, `InventoryBatchBalance`, and `InventoryClinicalConsumption` with `FORCE ROW LEVEL SECURITY`, check constraints (`initialQuantity > 0`, `onHandQuantity >= 0`, `quantity > 0`, `wasteQuantity >= 0`), and trigger guards `inventory_batch_integrity_guard`, `inventory_batch_balance_integrity_guard`, and `inventory_consumption_immutability_guard`.
+- Unit and policy tests: `apps/api/test/inventory-policy.test.ts`.
+- Database integration tests: `apps/api/test/inventory.integration.test.ts` (covers batch creation, duplicate batch rejection, timezone-aware expiry calculation, quarantine/recall blocking, transfer balance preservation, clinical consumption with doctor assignment & consent check, atomic stock deduction & waste, voiding/restoration, and trigger immutability).
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies batch management lot tab and lots/expiry status panel).
+- Core invariants: Batch expiration respects clinic-local calendar dates (`Clinic.timezone`). Recalled and expired lots cannot be reactivated or made available. Clinical consumption requires matching assigned clinician and active verified procedure consent. Consumptions are immutable and non-destructively voidable with compensating return movement. Confidentiality boundary omits clinical consultation notes for inventory-only roles.
+
+## Phase 4.1 inventory foundation, product catalog, stock locations & auditable movements
+
+Apply `20261101000100_inventory_foundation` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All inventory endpoints reside under `/api/v1/clinics/:clinicId/inventory`.
+- Migration: `apps/api/prisma/migrations/20261101000100_inventory_foundation/migration.sql` creates `InventoryProduct`, `InventoryLocation`, `InventoryStockMovement`, and `InventoryBalance` with `FORCE ROW LEVEL SECURITY` and trigger `inventory_movement_immutability_guard()`.
+- Unit and policy tests: `apps/api/test/inventory-policy.test.ts`.
+- Database integration tests: `apps/api/test/inventory.integration.test.ts`.
+- Browser smoke checks: `scripts/patients-browser-smoke.mjs` (verifies inventory workspace, catalog tab, locations tab, and ledger reconciliation).
+- Core invariants: Stock ledger movements are append-only (`42501` on update/delete). Balances enforce non-negative constraints. Generic clinical issue of batch-tracked products (`requiresBatchTracking === true`) is blocked with `"Batch and expiry tracking is required for clinical consumption of this product (Phase 4 Step 4.2)"`.
+
 ## Phase 3.1 clinical records
 
 Apply `20261029000100_clinical_records` and `20261029000200_clinical_integrity_hardening` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`; never reset or schema-push. Routes are under `/api/v1/clinics/:clinicId/clinical`. Use fictional records only. Runtime has no delete privilege and remains FORCE-RLS constrained.
