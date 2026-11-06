@@ -156,6 +156,10 @@ model Clinic {
   commissionSettlements PractitionerCommissionSettlement[]
   commissionAccruals PractitionerCommissionAccrual[]
   commissionAdjustments PractitionerCommissionAdjustment[]
+  patientAccounts PatientAccount[]
+  patientSessions PatientSession[]
+  patientVerificationTokens PatientVerificationToken[]
+  patientPortalAuditEvents PatientPortalAuditEvent[]
 
   @@index([status, createdAt])
 }
@@ -473,6 +477,7 @@ model Patient {
   installmentPlans InstallmentPlan[]
   refundRequests RefundRequest[]
   commissionAccruals PractitionerCommissionAccrual[]
+  patientAccount PatientAccount?
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -2940,4 +2945,110 @@ model PractitionerCommissionAdjustment {
   @@unique([clinicId, requestKey])
   @@index([clinicId, accrualId])
   @@index([clinicId, settlementId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 5.1: Patient Portal Foundation, Authentication & Self-Service
+// ---------------------------------------------------------------------------
+
+enum PatientAccountStatus {
+  PENDING_ACTIVATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum PatientVerificationTokenType {
+  ACTIVATION
+  PASSWORD_RESET
+  CONTACT_CHANGE
+}
+
+model PatientAccount {
+  id                  String                      @id @default(uuid()) @db.Uuid
+  clinicId            String                      @db.Uuid
+  patientId           String                      @db.Uuid
+  phone               String                      @db.VarChar(20)
+  email               String?                     @db.VarChar(254)
+  passwordHash        String                      @db.VarChar(255)
+  status              PatientAccountStatus        @default(PENDING_ACTIVATION)
+  phoneVerifiedAt     DateTime?                   @db.Timestamptz(3)
+  emailVerifiedAt     DateTime?                   @db.Timestamptz(3)
+  failedLoginAttempts Int                         @default(0)
+  lockedUntil         DateTime?                   @db.Timestamptz(3)
+  lastLoginAt         DateTime?                   @db.Timestamptz(3)
+  version             Int                         @default(1)
+  createdAt           DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                    @updatedAt @db.Timestamptz(3)
+
+  clinic              Clinic                      @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient             Patient                     @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  sessions            PatientSession[]
+  verificationTokens  PatientVerificationToken[]
+  auditEvents         PatientPortalAuditEvent[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, patientId])
+  @@unique([clinicId, phone])
+  @@index([clinicId, status])
+  @@index([clinicId, email])
+}
+
+model PatientSession {
+  id                 String         @id @default(uuid()) @db.Uuid
+  clinicId           String         @db.Uuid
+  patientAccountId   String         @db.Uuid
+  sessionTokenHash   String         @unique @db.VarChar(64)
+  csrfTokenHash      String         @db.VarChar(64)
+  ipAddress          String?        @db.VarChar(45)
+  userAgent          String?        @db.VarChar(512)
+  expiresAt          DateTime       @db.Timestamptz(3)
+  revokedAt          DateTime?      @db.Timestamptz(3)
+  lastSeenAt         DateTime       @default(now()) @db.Timestamptz(3)
+  createdAt          DateTime       @default(now()) @db.Timestamptz(3)
+
+  clinic             Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patientAccount     PatientAccount @relation(fields: [clinicId, patientAccountId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientAccountId, expiresAt])
+  @@index([clinicId, expiresAt])
+}
+
+model PatientVerificationToken {
+  id                 String                       @id @default(uuid()) @db.Uuid
+  clinicId           String                       @db.Uuid
+  patientAccountId   String                       @db.Uuid
+  tokenType          PatientVerificationTokenType
+  tokenHash          String                       @unique @db.VarChar(64)
+  expiresAt          DateTime                     @db.Timestamptz(3)
+  usedAt             DateTime?                    @db.Timestamptz(3)
+  createdAt          DateTime                     @default(now()) @db.Timestamptz(3)
+
+  clinic             Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patientAccount     PatientAccount               @relation(fields: [clinicId, patientAccountId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientAccountId, tokenType])
+  @@index([clinicId, expiresAt])
+}
+
+model PatientPortalAuditEvent {
+  id                 String          @id @default(uuid()) @db.Uuid
+  clinicId           String          @db.Uuid
+  patientAccountId   String?         @db.Uuid
+  patientId          String?         @db.Uuid
+  action             String          @db.VarChar(80)
+  targetType         String?         @db.VarChar(50)
+  targetId           String?         @db.VarChar(100)
+  outcome            String          @default("SUCCESS") @db.VarChar(20)
+  metadata           Json?
+  ipAddress          String?         @db.VarChar(45)
+  userAgent          String?         @db.VarChar(512)
+  createdAt          DateTime        @default(now()) @db.Timestamptz(3)
+
+  clinic             Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patientAccount     PatientAccount? @relation(fields: [clinicId, patientAccountId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([clinicId, createdAt])
+  @@index([clinicId, patientAccountId, createdAt])
 }

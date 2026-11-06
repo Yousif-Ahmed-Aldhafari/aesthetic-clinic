@@ -2,7 +2,7 @@ import { BadRequestException, CanActivate, ExecutionContext, ForbiddenException,
 import { Reflector } from '@nestjs/core';
 import { isUUID } from 'class-validator';
 import type { Response } from 'express';
-import { ACCESS, STEP_UP, type AccessPolicy, type StepUpPolicy, type AuthRequest } from './access.js';
+import { ACCESS, PORTAL_ACCESS, STEP_UP, type AccessPolicy, type StepUpPolicy, type AuthRequest } from './access.js';
 import { AuthService } from './auth.service.js';
 import { CsrfService } from './csrf.service.js';
 import { ClinicRepository } from '../prisma/clinic.repository.js';
@@ -19,6 +19,8 @@ export class AccessGuard implements CanActivate {
     @Optional() private readonly mfa?: MfaService,
   ) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPortal = this.reflector.getAllAndOverride<boolean | undefined>(PORTAL_ACCESS, [context.getHandler(), context.getClass()]);
+    if (isPortal) return true;
     const policy = this.reflector.getAllAndOverride<AccessPolicy | undefined>(ACCESS, [context.getHandler(), context.getClass()]);
     if (!policy) throw new ForbiddenException();
     const request = context.switchToHttp().getRequest<AuthRequest>();

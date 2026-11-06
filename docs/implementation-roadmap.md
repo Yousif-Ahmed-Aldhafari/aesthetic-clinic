@@ -1,5 +1,9 @@
 # Lamssa implementation roadmap
 
+## Phase 5 — Patient Experience, Multi-Location & Enterprise Capabilities
+
+1. **5.1 — Patient Portal Foundation, Secure Patient Authentication, Profile Access & Self-Service Booking (implemented):** Clinic-scoped patient authentication (`PatientAccount`, `PatientSession`, `PatientVerificationToken`, `PatientPortalAuditEvent`), argon2id hashing, secure activation and password recovery workflows, CSRF protection, brute-force / account lockout limits, dedicated `PatientAuthGuard` and `@PortalRoute()` access control, dual-session FORCE RLS under `lamssa_security.context_allows` with zero exposure of staff notes/billing internals, branded Arabic-first RTL patient web portal (`/portal` and `/portal/:slug`), self-service slot locking and appointment booking using existing Temporal scheduling engine, GiST exclusion conflict handling (`23P01`), idempotency replay (`bookingKey`), cancellation/rescheduling within clinic rules, and complete audit trail. See [docs/patient-portal.md](patient-portal.md).
+
 ## Phase 4 — Inventory Operations, Consumables & Point of Sale
 
 1. **4.1 — Inventory Foundation, Product Catalog, Stock Locations & Auditable Movements (implemented):** clinic-scoped product catalog, multi-location hierarchy, append-only immutable stock ledger (`InventoryStockMovement`) with database trigger enforcement, transactional balances (`InventoryBalance`) with row-level locking, opening balance, receipts, issues, transfers, discrepancy adjustments, regulatory clinical consumption gate for injectables, ledger-to-balance mathematical reconciliation (`/stock/reconcile`), 11 granular permissions, FORCE RLS, and authentic Arabic-first RTL inventory workspace.

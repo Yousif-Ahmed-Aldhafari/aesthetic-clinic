@@ -11,6 +11,7 @@ export class CsrfService {
   constructor(private readonly config: ConfigService<Environment, true>) {}
   get production() { return this.config.get('NODE_ENV', { infer: true }) === 'production'; }
   get sessionCookie() { return this.production ? '__Host-lamssa_session' : 'lamssa_session'; }
+  get patientSessionCookie() { return this.production ? '__Host-lamssa_patient_session' : 'lamssa_patient_session'; }
   get preauthCookie() { return this.production ? '__Host-lamssa_preauth' : 'lamssa_preauth'; }
   get key() { return this.config.get('AUTH_CSRF_SECRET', { infer: true }); }
   cookieOptions(): CookieOptions {
@@ -23,6 +24,7 @@ export class CsrfService {
     return token;
   }
   sessionToken(rawSession: string): string { return mac(this.key, `session-csrf:${rawSession}`); }
+  patientSessionToken(rawSession: string): string { return mac(this.key, `patient-session-csrf:${rawSession}`); }
   validate(request: AuthRequest, publicRequest: boolean): void {
     const origins = this.config.get('CORS_ORIGINS', { infer: true });
     if (!request.headers.origin || !origins.includes(request.headers.origin) || request.headers['sec-fetch-site'] === 'cross-site') throw new AuthError('CSRF_INVALID');
@@ -36,5 +38,13 @@ export class CsrfService {
           !equal(parts[2], mac(this.key, `preauth:${parts[0]}.${parts[1]}`))) throw new AuthError('CSRF_INVALID');
     } else if (!request.auth || !equal(digest(token), request.auth.session.csrfHash)) throw new AuthError('CSRF_INVALID');
   }
+  validatePatient(request: { headers: Record<string, string | string[] | undefined> }, csrfHash: string): void {
+    const origins = this.config.get('CORS_ORIGINS', { infer: true });
+    const origin = typeof request.headers.origin === 'string' ? request.headers.origin : undefined;
+    if (!origin || !origins.includes(origin) || request.headers['sec-fetch-site'] === 'cross-site') throw new AuthError('CSRF_INVALID');
+    const token = request.headers['x-csrf-token'];
+    if (typeof token !== 'string' || token.length > 256 || !equal(digest(token), csrfHash)) throw new AuthError('CSRF_INVALID');
+  }
   clearSession(response: Response): void { response.clearCookie(this.sessionCookie, this.cookieOptions()); }
+  clearPatientSession(response: Response): void { response.clearCookie(this.patientSessionCookie, this.cookieOptions()); }
 }
