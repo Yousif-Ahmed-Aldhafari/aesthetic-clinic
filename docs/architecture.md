@@ -1419,3 +1419,13 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Safe Drills**: `scripts/restore-database.mjs --drill` validates TOC and schema integrity in temporary schemas without overwriting live data.
 - **Safety Guards**: Active databases (`lamssa_dev`, `lamssa_test`) are blocked from accidental overwrite without `--force-destructive-overwrite` and `--confirm=<db>`.
 - **Systemd Automation**: Systemd unit and timer files in `deploy/systemd/` provide scheduled, sandboxed execution.
+
+## 9. Step 5.3: Multi-Branch Organization Hierarchy & Operational Management
+
+### Organization Hierarchy
+- **Isolated Tenant Boundary (`Clinic`)**: `Clinic` remains the authoritative tenant boundary for PostgreSQL RLS policies, audit logs, and cryptographic boundaries. Multi-branch operations exist within this boundary.
+- **Physical Operating Locations (`ClinicBranch`)**: Individual physical operating units with localized operating hours, timezones, phone/address contacts, and unique branch codes (`@@unique([clinicId, code])`).
+- **Staff Allocations (`BranchMembership`)**: Staff members are explicitly assigned to branches with primary branch designation (`isPrimary: true`). Organization owners and admins have clinic-wide scope; operational staff (doctors, receptionists, accountants) are scoped to their assigned branch(es).
+- **Session Branch Context (`selectedBranchId`)**: Active staff sessions hold `selectedBranchId`. The branch switching API (`POST /api/v1/auth/branch`) validates authorization before updating the session operating context.
+- **GiST Exclusion Cross-Branch Practitioner Scheduling**: Overlapping appointments for a practitioner across different branches are strictly blocked at the PostgreSQL engine level via GiST exclusion constraint (`clinic_practitioner_schedule_excl`).
+- **Two-Step Inter-Branch Inventory Movement (`InterBranchTransfer`)**: Custodial stock transfers (`DISPATCHED` ➔ `RECEIVED`) with automatic `TRANSFER_OUT` and `TRANSFER_IN` ledger movements, discrepancy tracking, and cancelation reversion.

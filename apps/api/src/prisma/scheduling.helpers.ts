@@ -33,11 +33,11 @@ export async function clinicTimezone(tx:TenantTransaction,clinicId:string){
   if(!clinic)throw new NotFoundException();return zone(clinic.timezone);
 }
 export const serviceSelect={id:true,name:true,durationMinutes:true,requiresRoom:true,active:true,version:true} as const;
-export const resourceSelect={id:true,label:true,kind:true,active:true,version:true,doctorMembershipId:true,
+export const resourceSelect={id:true,branchId:true,label:true,kind:true,active:true,version:true,doctorMembershipId:true,
   doctorMembership:{select:{role:true,status:true,user:{select:{status:true}}}}} as const;
-export function resourceResponse(r:{id:string;label:string;kind:string;active:boolean;version:number;doctorMembership:{role:string;status:string;user:{status:string}}|null}){
+export function resourceResponse(r:{id:string;branchId?:string|null;label:string;kind:string;active:boolean;version:number;doctorMembership:{role:string;status:string;user:{status:string}}|null}){
   const eligible=r.kind==='ROOM'||(r.doctorMembership?.role==='DOCTOR'&&r.doctorMembership.status==='ACTIVE'&&r.doctorMembership.user.status==='ACTIVE');
-  return {id:r.id,label:r.label,kind:r.kind,active:r.active,bookable:r.active&&eligible,version:r.version};
+  return {id:r.id,branchId:r.branchId??null,label:r.label,kind:r.kind,active:r.active,bookable:r.active&&eligible,version:r.version};
 }
 export async function resource(tx:TenantTransaction,clinicId:string,id:string){
   const r=await tx.bookableResource.findFirst({where:{id,clinicId},select:resourceSelect});if(!r)throw new NotFoundException();return r;
@@ -70,5 +70,5 @@ export async function validatedBooking(tx:TenantTransaction,clinicId:string,pati
   const timeZone=await clinicTimezone(tx,clinicId);
   const times=bookingTimes(input.startLocal,timeZone,input.durationMinutes??service.durationMinutes,input.disambiguation);
   if(!await inAvailability(tx,clinicId,[doctor.id,...(room?[room.id]:[])],times.startAt,times.endAt,timeZone))throw new SchedulingError('OUTSIDE_AVAILABILITY');
-  return {...times,timeZone};
+  return {...times,timeZone,branchId:(input as any).branchId??room?.branchId??doctor.branchId};
 }

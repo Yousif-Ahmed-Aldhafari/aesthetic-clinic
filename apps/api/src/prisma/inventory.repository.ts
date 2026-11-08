@@ -298,9 +298,14 @@ export class InventoryRepository {
       });
       if (existing) throw new InventoryError('INVENTORY_DUPLICATE_CODE');
 
+      const branchId = (input as any).branchId
+        ?? (await tx.clinicBranch.findFirst({ where: { clinicId: c.clinicId, code: 'MAIN' }, select: { id: true } }))?.id
+        ?? (await tx.clinicBranch.findFirstOrThrow({ where: { clinicId: c.clinicId }, select: { id: true } })).id;
+
       const row = await tx.inventoryLocation.create({
         data: {
           clinicId: c.clinicId,
+          branchId,
           code,
           nameAr,
           nameEn: input.nameEn?.trim() || null,

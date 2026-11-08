@@ -29,6 +29,7 @@ import { ClinicalPhotoModule } from './clinical-photos/clinical-photo.module.js'
 import { ClinicalFollowUpModule } from './clinical-followups/followup.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { PatientPortalModule } from './portal/patient-portal.module.js';
+import { BranchModule } from './branches/branch.module.js';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { PatientPortalModule } from './portal/patient-portal.module.js';
     ClinicalFollowUpModule,
     InventoryModule,
     PatientPortalModule,
+    BranchModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],

@@ -63,6 +63,7 @@ export class AuthService {
     if (!request.auth) throw new UnauthorizedException();
     const { user, session } = request.auth;
     return { user: { id: user.id, name: user.name, email: user.email }, selectedClinicId: session.selectedClinicId,
+      selectedBranchId: session.selectedBranchId,
       csrfToken: this.csrf.sessionToken(this.rawToken(request)!), expiresAt: session.expiresAt.toISOString() };
   }
   async login(request: AuthRequest, response: Response, email: string, password: string) {
@@ -233,7 +234,7 @@ export class AuthService {
 
     return { ok: true };
   }
-  async rotate(request: AuthRequest, response: Response, clinicId = request.auth!.session.selectedClinicId) {
+  async rotate(request: AuthRequest, response: Response, clinicId = request.auth!.session.selectedClinicId, branchId = request.auth!.session.selectedBranchId) {
     const { session, user } = request.auth!;
     const token = secret(), csrfToken = this.csrf.sessionToken(token), now = new Date();
     const userAgent = typeof request.headers?.['user-agent'] === 'string' ? request.headers['user-agent'] : session.userAgent;
@@ -247,6 +248,7 @@ export class AuthService {
         csrfHash: digest(csrfToken),
         authorizationHash: session.authorizationHash,
         selectedClinicId: clinicId,
+        selectedBranchId: branchId,
         expiresAt: session.expiresAt,
         mfaVerifiedAt: session.mfaVerifiedAt,
         userAgent,

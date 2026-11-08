@@ -960,6 +960,7 @@ export class PatientPortalRepository {
         const appointment = await tx.appointment.create({
           data: {
             clinicId: principal.clinicId,
+            branchId: (times as any).branchId,
             patientId: principal.patientId,
             serviceId: input.serviceId,
             doctorResourceId: input.doctorResourceId,
@@ -1462,6 +1463,11 @@ export class PatientPortalRepository {
 
       let isEscalated = false;
       let escalationReason: string | null = null;
+      // Clinical Governance Note:
+      // The recovery escalation thresholds below (painScore >= 8, severe symptoms)
+      // are provisional non-diagnostic alert heuristics awaiting formal sign-off
+      // by accredited clinical directorate reviewers. They highlight check-ins
+      // for practitioner review prioritization and do NOT replace emergency care.
       if (input.painScore >= 8) {
         isEscalated = true;
         escalationReason = 'PATIENT_REPORTED_SEVERE_PAIN';

@@ -1372,6 +1372,22 @@ export function PatientPortalApp({ initialSlug }: { initialSlug?: string }) {
                     </div>
                   )}
 
+                  <div
+                    className="portal-disclaimer-banner"
+                    style={{
+                      background: '#FFFBEB',
+                      border: '1px solid #FCD34D',
+                      color: '#92400E',
+                      padding: '1rem',
+                      borderRadius: '8px',
+                      marginBottom: '1.25rem',
+                      fontSize: '0.9rem',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    <strong>تنبيه طبي:</strong> هذا النموذج مخصص للمتابعة الذاتية الروتينية ولا يخضع للمراقبة الطبية الفورية على مدار الساعة. في حال حدوث أي طارئ حاد أو مضاعفات مهددة، يرجى عدم الانتظار والتوجه فوراً إلى أقرب قسم طوارئ أو الاتصال بالإسعاف.
+                  </div>
+
                   <div className="portal-card">
                     <h3 style={{ borderBottom: '1px solid #F1F5F9', paddingBottom: '0.75rem', margin: '0 0 1.25rem' }}>
                       تسجيل تقرير المتابعة الذاتية والتعافي
