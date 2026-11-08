@@ -189,4 +189,161 @@ export async function cancelPatientAppointment(
   return api<PortalAppointment>(`portal/appointments/${appointmentId}/cancel`, 'POST', data, csrfToken);
 }
 
+// ---------------------------------------------------------------------------
+// Step 5.2: Consent Self-Service Interfaces & Client
+// ---------------------------------------------------------------------------
+export interface PortalConsent {
+  id: string;
+  purpose: 'PROCEDURE' | 'CLINICAL_PHOTOGRAPHY' | 'MARKETING_PHOTOGRAPHY';
+  status: 'DRAFT' | 'PENDING_VERIFICATION' | 'ACTIVE' | 'WITHDRAWN' | 'EXPIRED' | 'REFUSED';
+  validFrom?: string | null;
+  expiresAt?: string | null;
+  verifiedAt?: string | null;
+  refusalReason?: string | null;
+  version: number;
+  createdAt: string;
+  templateVersion: {
+    id: string;
+    versionNumber: number;
+    titleAr: string;
+    titleEn?: string | null;
+    bodyAr: string;
+    risksTextAr: string;
+    alternativesTextAr: string;
+    contentDigestSha256: string;
+  };
+  procedureCatalog?: { id: string; nameAr: string; nameEn?: string | null } | null;
+  signatureEvidence?: {
+    id: string;
+    signerCapacity: string;
+    signerName: string;
+    signatureType: string;
+    evidenceHashSha256: string;
+    signedAt: string;
+  } | null;
+  withdrawal?: {
+    id: string;
+    withdrawnAt: string;
+    reason: string;
+  } | null;
+}
+
+export async function fetchPatientConsents(signal?: AbortSignal): Promise<PortalConsent[]> {
+  return api<PortalConsent[]>('portal/consents', 'GET', undefined, undefined, signal);
+}
+
+export async function fetchPatientConsent(id: string, signal?: AbortSignal): Promise<PortalConsent> {
+  return api<PortalConsent>(`portal/consents/${id}`, 'GET', undefined, undefined, signal);
+}
+
+export async function signPatientConsent(
+  id: string,
+  data: {
+    expectedVersion: number;
+    signerCapacity: 'PATIENT';
+    signatureType: 'DRAWN_BASE64' | 'TYPED_CONFIRMATION';
+    signatureData: string;
+  },
+  csrfToken: string,
+): Promise<PortalConsent> {
+  return api<PortalConsent>(`portal/consents/${id}/sign`, 'POST', data, csrfToken);
+}
+
+export async function refusePatientConsent(
+  id: string,
+  data: { expectedVersion: number; reason: string },
+  csrfToken: string,
+): Promise<PortalConsent> {
+  return api<PortalConsent>(`portal/consents/${id}/refuse`, 'POST', data, csrfToken);
+}
+
+export async function withdrawPatientConsent(
+  id: string,
+  data: { expectedVersion: number; reason: string },
+  csrfToken: string,
+): Promise<PortalConsent> {
+  return api<PortalConsent>(`portal/consents/${id}/withdraw`, 'POST', data, csrfToken);
+}
+
+// ---------------------------------------------------------------------------
+// Step 5.2: Follow-ups, Recovery Check-ins & Outcomes Interfaces & Client
+// ---------------------------------------------------------------------------
+export interface PortalFollowUp {
+  id: string;
+  status: string;
+  reason: string;
+  scheduledDate: string;
+  recoveryInstructions?: string | null;
+  procedureExecution?: {
+    id: string;
+    treatmentPlanItem?: { procedureCatalog: { nameAr: string; nameEn?: string | null } } | null;
+  } | null;
+  treatingDoctor?: { user: { name: string } } | null;
+  createdAt: string;
+}
+
+export interface PortalRecoveryCheckIn {
+  id: string;
+  painScore: number;
+  symptoms: Record<string, unknown> | string[];
+  recoveryNotes?: string | null;
+  status: 'PENDING_REVIEW' | 'REVIEWED' | 'ESCALATED';
+  isEscalated: boolean;
+  escalationReason?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: { user: { name: string } } | null;
+  clinicianNotes?: string | null;
+  checkInDate: string;
+  version: number;
+  followUp?: { id: string; reason: string; scheduledDate: string; recoveryInstructions?: string | null } | null;
+}
+
+export interface PortalReportedOutcome {
+  id: string;
+  measurementScale: string;
+  score: string | number;
+  notes?: string | null;
+  submittedAt: string;
+}
+
+export async function fetchPatientFollowUps(signal?: AbortSignal): Promise<PortalFollowUp[]> {
+  return api<PortalFollowUp[]>('portal/follow-ups', 'GET', undefined, undefined, signal);
+}
+
+export async function fetchPatientCheckIns(signal?: AbortSignal): Promise<PortalRecoveryCheckIn[]> {
+  return api<PortalRecoveryCheckIn[]>('portal/check-ins', 'GET', undefined, undefined, signal);
+}
+
+export async function createPatientCheckIn(
+  data: {
+    followUpId?: string;
+    procedureExecutionId?: string;
+    painScore: number;
+    symptoms: Record<string, boolean> | string[];
+    recoveryNotes?: string;
+  },
+  csrfToken: string,
+): Promise<{ checkIn: PortalRecoveryCheckIn; emergencyNotice: string | null }> {
+  return api<{ checkIn: PortalRecoveryCheckIn; emergencyNotice: string | null }>('portal/check-ins', 'POST', data, csrfToken);
+}
+
+export async function fetchPatientOutcomes(signal?: AbortSignal): Promise<PortalReportedOutcome[]> {
+  return api<PortalReportedOutcome[]>('portal/outcomes', 'GET', undefined, undefined, signal);
+}
+
+export async function submitPatientOutcome(
+  data: {
+    checkInId?: string;
+    followUpId?: string;
+    procedureExecutionId?: string;
+    treatmentOutcomeId?: string;
+    measurementScale: string;
+    score: number;
+    notes?: string;
+  },
+  csrfToken: string,
+): Promise<PortalReportedOutcome> {
+  return api<PortalReportedOutcome>('portal/outcomes', 'POST', data, csrfToken);
+}
+
 export { ApiError };

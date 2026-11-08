@@ -160,6 +160,8 @@ model Clinic {
   patientSessions PatientSession[]
   patientVerificationTokens PatientVerificationToken[]
   patientPortalAuditEvents PatientPortalAuditEvent[]
+  recoveryCheckIns PatientRecoveryCheckIn[]
+  patientReportedOutcomes PatientReportedOutcome[]
 
   @@index([status, createdAt])
 }
@@ -333,6 +335,7 @@ model ClinicMembership {
   approvedCommissionAccruals PractitionerCommissionAccrual[] @relation("CommissionAccrualApprover")
   requestedCommissionAdjustments PractitionerCommissionAdjustment[] @relation("CommissionAdjustmentRequester")
   decidedCommissionAdjustments PractitionerCommissionAdjustment[] @relation("CommissionAdjustmentDecider")
+  reviewedCheckIns PatientRecoveryCheckIn[] @relation("CheckInReviewer")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -478,6 +481,8 @@ model Patient {
   refundRequests RefundRequest[]
   commissionAccruals PractitionerCommissionAccrual[]
   patientAccount PatientAccount?
+  recoveryCheckIns PatientRecoveryCheckIn[]
+  patientReportedOutcomes PatientReportedOutcome[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -757,6 +762,8 @@ model ProcedureExecution {
   clinicalConsumptions InventoryClinicalConsumption[]
   packageRedemptions PackageRedemption[]
   commissionAccruals PractitionerCommissionAccrual[]
+  recoveryCheckIns PatientRecoveryCheckIn[]
+  patientReportedOutcomes PatientReportedOutcome[]
   @@unique([clinicId,id])
   @@unique([clinicId,treatmentPlanItemId])
   @@index([clinicId,patientId,status,createdAt])
@@ -1679,6 +1686,8 @@ model ClinicalFollowUp {
   assessment                 FollowUpAssessment?
   outcomes                   TreatmentOutcome[]
   adverseEvents              AdverseEvent[]
+  recoveryCheckIns           PatientRecoveryCheckIn[]
+  patientReportedOutcomes    PatientReportedOutcome[]
 
   @@unique([clinicId, id])
   @@index([clinicId, patientId, scheduledDate, id])
@@ -1755,6 +1764,7 @@ model TreatmentOutcome {
   treatmentPlan          TreatmentPlan?          @relation(fields: [clinicId, treatmentPlanId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   photoComparisonGroup   PhotoComparisonGroup?   @relation(fields: [clinicId, photoComparisonGroupId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   recordedBy             ClinicMembership        @relation("OutcomeRecorder", fields: [clinicId, recordedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  patientReportedOutcomes PatientReportedOutcome[]
 
   @@unique([clinicId, id])
   @@index([clinicId, patientId, recordedAt, id])
@@ -2985,6 +2995,8 @@ model PatientAccount {
   sessions            PatientSession[]
   verificationTokens  PatientVerificationToken[]
   auditEvents         PatientPortalAuditEvent[]
+  recoveryCheckIns    PatientRecoveryCheckIn[]
+  patientReportedOutcomes PatientReportedOutcome[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, patientId])
@@ -3051,4 +3063,76 @@ model PatientPortalAuditEvent {
 
   @@index([clinicId, createdAt])
   @@index([clinicId, patientAccountId, createdAt])
+}
+
+enum CheckInStatus {
+  PENDING_REVIEW
+  REVIEWED
+  ESCALATED
+}
+
+model PatientRecoveryCheckIn {
+  id                     String              @id @default(uuid()) @db.Uuid
+  clinicId               String              @db.Uuid
+  patientId              String              @db.Uuid
+  patientAccountId       String              @db.Uuid
+  followUpId             String?             @db.Uuid
+  procedureExecutionId   String?             @db.Uuid
+  painScore              Int
+  symptoms               Json
+  recoveryNotes          String?             @db.VarChar(1000)
+  status                 CheckInStatus       @default(PENDING_REVIEW)
+  isEscalated            Boolean             @default(false)
+  escalationReason       String?             @db.VarChar(500)
+  reviewedAt             DateTime?           @db.Timestamptz(3)
+  reviewedByMembershipId String?             @db.Uuid
+  clinicianNotes         String?             @db.VarChar(1000)
+  checkInDate            DateTime            @default(now()) @db.Timestamptz(3)
+  version                Int                 @default(1)
+  createdAt              DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                Patient             @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  patientAccount         PatientAccount      @relation(fields: [clinicId, patientAccountId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  followUp               ClinicalFollowUp?   @relation(fields: [clinicId, followUpId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  procedureExecution     ProcedureExecution? @relation(fields: [clinicId, procedureExecutionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  reviewedBy             ClinicMembership?   @relation("CheckInReviewer", fields: [clinicId, reviewedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  outcomes               PatientReportedOutcome[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, checkInDate])
+  @@index([clinicId, status, checkInDate])
+  @@index([clinicId, isEscalated, checkInDate])
+}
+
+model PatientReportedOutcome {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  clinicId             String                  @db.Uuid
+  patientId            String                  @db.Uuid
+  patientAccountId     String                  @db.Uuid
+  checkInId            String?                 @db.Uuid
+  followUpId           String?                 @db.Uuid
+  procedureExecutionId String?                 @db.Uuid
+  treatmentOutcomeId   String?                 @db.Uuid
+  measurementScale     OutcomeMeasurementScale
+  score                Decimal                 @db.Decimal(5, 2)
+  notes                String?                 @db.VarChar(1000)
+  submittedAt          DateTime                @default(now()) @db.Timestamptz(3)
+  version              Int                     @default(1)
+  createdAt            DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                @updatedAt @db.Timestamptz(3)
+
+  clinic               Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient              Patient                 @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  patientAccount       PatientAccount          @relation(fields: [clinicId, patientAccountId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  checkIn              PatientRecoveryCheckIn? @relation(fields: [clinicId, checkInId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  followUp             ClinicalFollowUp?       @relation(fields: [clinicId, followUpId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  procedureExecution   ProcedureExecution?     @relation(fields: [clinicId, procedureExecutionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  treatmentOutcome     TreatmentOutcome?       @relation(fields: [clinicId, treatmentOutcomeId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, submittedAt])
+  @@index([clinicId, checkInId])
 }

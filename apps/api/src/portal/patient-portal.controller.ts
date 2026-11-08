@@ -21,11 +21,16 @@ import {
   ActivatePatientAccountDto,
   CancelPatientBookingDto,
   CreatePatientBookingDto,
+  CreateRecoveryCheckInDto,
   PatientLoginDto,
   PortalAvailabilityQuery,
+  RefusePortalConsentDto,
   RequestPasswordResetDto,
   ReschedulePatientBookingDto,
   ResetPasswordDto,
+  SignPortalConsentDto,
+  SubmitPatientOutcomeDto,
+  WithdrawPortalConsentDto,
 } from './patient-portal.dto.js';
 
 @PortalRoute()
@@ -171,5 +176,110 @@ export class PatientPortalController {
     @Body() body: CancelPatientBookingDto,
   ) {
     return this.portalRepo.cancelAppointment(principal, appointmentId, body);
+  }
+
+  // -------------------------------------------------------------
+  // Consent Self-Service Endpoints
+  // -------------------------------------------------------------
+  @Get('consents')
+  @UseGuards(PatientAuthGuard)
+  listConsents(@CurrentPatient() principal: PatientPrincipal) {
+    return this.portalRepo.listConsents(principal);
+  }
+
+  @Get('consents/:consentId')
+  @UseGuards(PatientAuthGuard)
+  getConsent(
+    @CurrentPatient() principal: PatientPrincipal,
+    @Param('consentId') consentId: string,
+  ) {
+    return this.portalRepo.getConsent(principal, consentId);
+  }
+
+  @Post('consents/:consentId/sign')
+  @UseGuards(PatientAuthGuard)
+  @HttpCode(200)
+  signConsent(
+    @CurrentPatient() principal: PatientPrincipal,
+    @Param('consentId') consentId: string,
+    @Body() body: SignPortalConsentDto,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ) {
+    const userAgent = req.headers['user-agent'];
+    return this.portalRepo.signConsent(principal, consentId, body, { ipAddress: ip, userAgent });
+  }
+
+  @Post('consents/:consentId/refuse')
+  @UseGuards(PatientAuthGuard)
+  @HttpCode(200)
+  refuseConsent(
+    @CurrentPatient() principal: PatientPrincipal,
+    @Param('consentId') consentId: string,
+    @Body() body: RefusePortalConsentDto,
+  ) {
+    return this.portalRepo.refuseConsent(principal, consentId, body);
+  }
+
+  @Post('consents/:consentId/withdraw')
+  @UseGuards(PatientAuthGuard)
+  @HttpCode(200)
+  withdrawConsent(
+    @CurrentPatient() principal: PatientPrincipal,
+    @Param('consentId') consentId: string,
+    @Body() body: WithdrawPortalConsentDto,
+  ) {
+    return this.portalRepo.withdrawConsent(principal, consentId, body);
+  }
+
+  // -------------------------------------------------------------
+  // Follow-ups & Recovery Check-ins
+  // -------------------------------------------------------------
+  @Get('follow-ups')
+  @UseGuards(PatientAuthGuard)
+  listFollowUps(@CurrentPatient() principal: PatientPrincipal) {
+    return this.portalRepo.listFollowUps(principal);
+  }
+
+  @Get('check-ins')
+  @UseGuards(PatientAuthGuard)
+  listCheckIns(@CurrentPatient() principal: PatientPrincipal) {
+    return this.portalRepo.listRecoveryCheckIns(principal);
+  }
+
+  @Post('check-ins')
+  @UseGuards(PatientAuthGuard)
+  createCheckIn(
+    @CurrentPatient() principal: PatientPrincipal,
+    @Body() body: CreateRecoveryCheckInDto,
+  ) {
+    return this.portalRepo.createRecoveryCheckIn(principal, body);
+  }
+
+  @Get('check-ins/:checkInId')
+  @UseGuards(PatientAuthGuard)
+  getCheckIn(
+    @CurrentPatient() principal: PatientPrincipal,
+    @Param('checkInId') checkInId: string,
+  ) {
+    return this.portalRepo.getRecoveryCheckIn(principal, checkInId);
+  }
+
+  // -------------------------------------------------------------
+  // Patient-Reported Outcomes (PROMs)
+  // -------------------------------------------------------------
+  @Post('outcomes')
+  @UseGuards(PatientAuthGuard)
+  submitOutcome(
+    @CurrentPatient() principal: PatientPrincipal,
+    @Body() body: SubmitPatientOutcomeDto,
+  ) {
+    return this.portalRepo.submitPatientOutcome(principal, body);
+  }
+
+  @Get('outcomes')
+  @UseGuards(PatientAuthGuard)
+  listOutcomes(@CurrentPatient() principal: PatientPrincipal) {
+    return this.portalRepo.listPatientOutcomes(principal);
   }
 }

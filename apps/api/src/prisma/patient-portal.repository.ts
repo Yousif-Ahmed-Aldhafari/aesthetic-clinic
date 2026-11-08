@@ -8,7 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
 import type { Environment } from '../config/environment.js';
 import { PrismaService } from './prisma.service.js';
 import { IdentityDatabase } from './identity.database.js';
@@ -34,16 +34,22 @@ import {
 import { SchedulingError } from '../appointments/scheduling-error.js';
 import { normalizePhone } from '../patients/patient-input.js';
 import type { PatientPrincipal } from '../portal/patient-principal.js';
+import { digestEvidence } from './consent.repository.js';
 import type {
   ActivatePatientAccountDto,
   CancelPatientBookingDto,
   CreatePatientBookingDto,
   CreatePortalInvitationDto,
+  CreateRecoveryCheckInDto,
   PatientLoginDto,
   PortalAvailabilityQuery,
+  RefusePortalConsentDto,
   RequestPasswordResetDto,
   ReschedulePatientBookingDto,
   ResetPasswordDto,
+  SignPortalConsentDto,
+  SubmitPatientOutcomeDto,
+  WithdrawPortalConsentDto,
 } from '../portal/patient-portal.dto.js';
 
 const portalAppointmentProjection = {
@@ -108,6 +114,28 @@ export class PatientPortalRepository {
 
   private patientCsrfToken(rawSession: string): string {
     return mac(this.config.get('AUTH_CSRF_SECRET', { infer: true }), `patient-session-csrf:${rawSession}`);
+  }
+
+  private async checkPortalRateLimit(actionKey: string, ipAddress?: string) {
+    const now = Date.now();
+    const window = Math.floor(now / 900000);
+    const ipLimit = Number(this.config.get('AUTH_LOGIN_IP_LIMIT', { infer: true }) ?? 50);
+    const accountLimit = Number(this.config.get('AUTH_LOGIN_ACCOUNT_LIMIT', { infer: true }) ?? 100);
+
+    for (const [kind, value, limit] of [
+      ['ip', ipAddress || 'unknown', ipLimit],
+      ['portal-action', actionKey, accountLimit],
+    ] as const) {
+      const key = digest(`${kind}:${value}:${window}`);
+      const bucket = await this.identity.loginBucket.upsert({
+        where: { key },
+        create: { key, expiresAt: new Date((window + 1) * 900000) },
+        update: { attempts: { increment: 1 } },
+      });
+      if (bucket.attempts > limit) {
+        throw new HttpException('RATE_LIMITED', 429);
+      }
+    }
   }
 
   async getClinicBySlug(slug: string) {
@@ -222,6 +250,9 @@ export class PatientPortalRepository {
   async activateAccount(input: ActivatePatientAccountDto, ipAddress?: string, userAgent?: string) {
     const clinic = await this.getClinicBySlug(input.clinicSlug);
     if (!clinic) throw new NotFoundException('CLINIC_NOT_FOUND');
+
+    const normalizedPhone = normalizePhone(input.phone);
+    await this.checkPortalRateLimit(`activate:${clinic.id}:${normalizedPhone}`, ipAddress);
 
     const tokenHash = digest(input.token);
     const [token] = await this.prisma.$queryRaw<
@@ -560,11 +591,13 @@ export class PatientPortalRepository {
   // -------------------------------------------------------------------------
   // Password Reset Flow
   // -------------------------------------------------------------------------
-  async requestPasswordReset(input: RequestPasswordResetDto) {
+  async requestPasswordReset(input: RequestPasswordResetDto, ipAddress?: string) {
     const clinic = await this.getClinicBySlug(input.clinicSlug);
     if (!clinic) return { success: true };
 
     const normalizedPhone = normalizePhone(input.phone);
+    await this.checkPortalRateLimit(`reset-req:${clinic.id}:${normalizedPhone}`, ipAddress);
+
     const [account] = await this.prisma.$queryRaw<
       {
         accountId: string;
@@ -608,9 +641,11 @@ export class PatientPortalRepository {
     return { success: true, ...(isDev ? { testToken: rawToken } : {}) };
   }
 
-  async resetPassword(input: ResetPasswordDto) {
+  async resetPassword(input: ResetPasswordDto, ipAddress?: string) {
     const clinic = await this.getClinicBySlug(input.clinicSlug);
     if (!clinic) throw new BadRequestException('INVALID_TOKEN');
+
+    await this.checkPortalRateLimit(`reset-confirm:${clinic.id}`, ipAddress);
 
     const tokenHash = digest(input.token);
     const token = await this.prisma.patientVerificationToken.findUnique({
@@ -1118,5 +1153,474 @@ export class PatientPortalRepository {
     } catch (error) {
       return schedulingDatabaseError(error);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Consent Self-Service
+  // -------------------------------------------------------------------------
+  async listConsents(principal: PatientPrincipal) {
+    return this.withPatientContext(principal, async (tx) => {
+      return tx.patientConsent.findMany({
+        where: { clinicId: principal.clinicId, patientId: principal.patientId },
+        select: {
+          id: true,
+          purpose: true,
+          status: true,
+          validFrom: true,
+          expiresAt: true,
+          verifiedAt: true,
+          refusalReason: true,
+          notes: true,
+          version: true,
+          createdAt: true,
+          templateVersion: {
+            select: {
+              id: true,
+              versionNumber: true,
+              titleAr: true,
+              titleEn: true,
+              bodyAr: true,
+              risksTextAr: true,
+              alternativesTextAr: true,
+              contentDigestSha256: true,
+            },
+          },
+          procedureCatalog: {
+            select: { id: true, nameAr: true, nameEn: true, category: true },
+          },
+          signatureEvidence: {
+            select: {
+              id: true,
+              signerCapacity: true,
+              signerName: true,
+              signatureType: true,
+              evidenceHashSha256: true,
+              signedAt: true,
+            },
+          },
+          withdrawal: {
+            select: { id: true, withdrawnAt: true, reason: true },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 100,
+      });
+    });
+  }
+
+  async getConsent(principal: PatientPrincipal, consentId: string) {
+    return this.withPatientContext(principal, async (tx) => {
+      const consent = await tx.patientConsent.findFirst({
+        where: { id: consentId, clinicId: principal.clinicId, patientId: principal.patientId },
+        include: {
+          templateVersion: true,
+          procedureCatalog: true,
+          signatureEvidence: true,
+          withdrawal: true,
+          treatmentPlan: { select: { id: true, status: true, currentRevisionNumber: true } },
+        },
+      });
+      if (!consent) throw new NotFoundException('CONSENT_NOT_FOUND');
+      return consent;
+    });
+  }
+
+  async signConsent(
+    principal: PatientPrincipal,
+    consentId: string,
+    input: SignPortalConsentDto,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
+    if (input.signerCapacity !== 'PATIENT') {
+      throw new BadRequestException('REPRESENTATIVE_SIGNING_REQUIRES_IN_PERSON_VERIFICATION');
+    }
+
+    return this.withPatientContext(principal, async (tx) => {
+      const consent = await tx.patientConsent.findFirst({
+        where: { id: consentId, clinicId: principal.clinicId, patientId: principal.patientId },
+        include: { templateVersion: true },
+      });
+      if (!consent) throw new NotFoundException('CONSENT_NOT_FOUND');
+      if (consent.version !== input.expectedVersion) throw new ConflictException('STALE_VERSION');
+      if (consent.status !== 'DRAFT') throw new BadRequestException('ONLY_DRAFT_CONSENTS_CAN_BE_SIGNED');
+
+      const patient = await tx.patient.findFirst({
+        where: { id: principal.patientId, clinicId: principal.clinicId },
+        select: { fullName: true },
+      });
+      if (!patient) throw new NotFoundException('PATIENT_NOT_FOUND');
+
+      const signedAt = new Date();
+      const signedAtIso = signedAt.toISOString();
+
+      const evidenceHashSha256 = digestEvidence(
+        principal.clinicId,
+        principal.patientId,
+        consent.templateVersionId,
+        consent.templateVersion.contentDigestSha256,
+        'PATIENT',
+        patient.fullName,
+        input.signatureType,
+        input.signatureData,
+        signedAtIso,
+      );
+
+      await tx.consentSignatureEvidence.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientConsentId: consentId,
+          signerCapacity: 'PATIENT',
+          signerName: patient.fullName,
+          signatureType: input.signatureType,
+          signatureData: input.signatureData,
+          evidenceHashSha256,
+          signedAt,
+          ipAddress: meta?.ipAddress ?? null,
+          userAgent: meta?.userAgent ?? null,
+        },
+      });
+
+      const updated = await tx.patientConsent.update({
+        where: {
+          clinicId_id: { clinicId: principal.clinicId, id: consentId },
+          version: input.expectedVersion,
+        },
+        data: {
+          status: 'PENDING_VERIFICATION',
+          version: { increment: 1 },
+        },
+        include: {
+          templateVersion: true,
+          procedureCatalog: true,
+          signatureEvidence: true,
+        },
+      });
+
+      await tx.patientPortalAuditEvent.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientAccountId: principal.patientAccountId,
+          patientId: principal.patientId,
+          action: 'portal.consent_signed',
+          targetType: 'PatientConsent',
+          targetId: consentId,
+          outcome: 'SUCCESS',
+          metadata: { evidenceHashSha256, purpose: consent.purpose },
+          ipAddress: meta?.ipAddress ?? null,
+          userAgent: meta?.userAgent ?? null,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async refuseConsent(principal: PatientPrincipal, consentId: string, input: RefusePortalConsentDto) {
+    return this.withPatientContext(principal, async (tx) => {
+      const consent = await tx.patientConsent.findFirst({
+        where: { id: consentId, clinicId: principal.clinicId, patientId: principal.patientId },
+      });
+      if (!consent) throw new NotFoundException('CONSENT_NOT_FOUND');
+      if (consent.version !== input.expectedVersion) throw new ConflictException('STALE_VERSION');
+      if (consent.status !== 'DRAFT') throw new BadRequestException('ONLY_DRAFT_CONSENTS_CAN_BE_REFUSED');
+
+      const updated = await tx.patientConsent.update({
+        where: {
+          clinicId_id: { clinicId: principal.clinicId, id: consentId },
+          version: input.expectedVersion,
+        },
+        data: {
+          status: 'REFUSED',
+          refusalReason: input.reason.trim(),
+          version: { increment: 1 },
+        },
+        include: { templateVersion: true, procedureCatalog: true },
+      });
+
+      await tx.patientPortalAuditEvent.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientAccountId: principal.patientAccountId,
+          patientId: principal.patientId,
+          action: 'portal.consent_refused',
+          targetType: 'PatientConsent',
+          targetId: consentId,
+          outcome: 'SUCCESS',
+          metadata: { reason: input.reason.trim() },
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async withdrawConsent(principal: PatientPrincipal, consentId: string, input: WithdrawPortalConsentDto) {
+    return this.withPatientContext(principal, async (tx) => {
+      const consent = await tx.patientConsent.findFirst({
+        where: { id: consentId, clinicId: principal.clinicId, patientId: principal.patientId },
+      });
+      if (!consent) throw new NotFoundException('CONSENT_NOT_FOUND');
+      if (consent.version !== input.expectedVersion) throw new ConflictException('STALE_VERSION');
+      if (!['ACTIVE', 'PENDING_VERIFICATION'].includes(consent.status)) {
+        throw new BadRequestException('ONLY_ACTIVE_OR_PENDING_CONSENTS_CAN_BE_WITHDRAWN');
+      }
+
+      await tx.consentWithdrawal.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientConsentId: consentId,
+          withdrawnAt: new Date(),
+          withdrawnByMembershipId: null,
+          reason: input.reason.trim(),
+        },
+      });
+
+      const updated = await tx.patientConsent.update({
+        where: {
+          clinicId_id: { clinicId: principal.clinicId, id: consentId },
+          version: input.expectedVersion,
+        },
+        data: {
+          status: 'WITHDRAWN',
+          version: { increment: 1 },
+        },
+        include: { templateVersion: true, procedureCatalog: true, withdrawal: true },
+      });
+
+      await tx.patientPortalAuditEvent.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientAccountId: principal.patientAccountId,
+          patientId: principal.patientId,
+          action: 'portal.consent_withdrawn',
+          targetType: 'PatientConsent',
+          targetId: consentId,
+          outcome: 'SUCCESS',
+          metadata: { reason: input.reason.trim() },
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Follow-ups & Recovery Check-ins
+  // -------------------------------------------------------------------------
+  async listFollowUps(principal: PatientPrincipal) {
+    return this.withPatientContext(principal, async (tx) => {
+      return tx.clinicalFollowUp.findMany({
+        where: { clinicId: principal.clinicId, patientId: principal.patientId },
+        select: {
+          id: true,
+          status: true,
+          reason: true,
+          scheduledDate: true,
+          recoveryInstructions: true,
+          procedureExecution: {
+            select: {
+              id: true,
+              treatmentPlanItem: {
+                select: { id: true, procedureCatalog: { select: { nameAr: true, nameEn: true } } },
+              },
+            },
+          },
+          treatingDoctor: {
+            select: {
+              user: { select: { name: true } },
+            },
+          },
+          createdAt: true,
+        },
+        orderBy: [{ scheduledDate: 'desc' }, { id: 'desc' }],
+        take: 50,
+      });
+    });
+  }
+
+  async createRecoveryCheckIn(principal: PatientPrincipal, input: CreateRecoveryCheckInDto) {
+    if (input.painScore < 0 || input.painScore > 10) {
+      throw new BadRequestException('PAIN_SCORE_OUT_OF_BOUNDS_0_10');
+    }
+
+    return this.withPatientContext(principal, async (tx) => {
+      if (input.followUpId) {
+        const fu = await tx.clinicalFollowUp.findFirst({
+          where: { id: input.followUpId, clinicId: principal.clinicId, patientId: principal.patientId },
+          select: { id: true },
+        });
+        if (!fu) throw new NotFoundException('FOLLOW_UP_NOT_FOUND');
+      }
+
+      if (input.procedureExecutionId) {
+        const pe = await tx.procedureExecution.findFirst({
+          where: { id: input.procedureExecutionId, clinicId: principal.clinicId, patientId: principal.patientId },
+          select: { id: true },
+        });
+        if (!pe) throw new NotFoundException('PROCEDURE_EXECUTION_NOT_FOUND');
+      }
+
+      let isEscalated = false;
+      let escalationReason: string | null = null;
+      if (input.painScore >= 8) {
+        isEscalated = true;
+        escalationReason = 'PATIENT_REPORTED_SEVERE_PAIN';
+      }
+
+      const symptomsObj = typeof input.symptoms === 'object' && input.symptoms !== null ? input.symptoms : {};
+      const redFlags = ['fever', 'severe_bleeding', 'vision_loss', 'shortness_of_breath', 'chest_pain'];
+      for (const flag of redFlags) {
+        if ((symptomsObj as Record<string, unknown>)[flag] || (Array.isArray(input.symptoms) && input.symptoms.includes(flag))) {
+          isEscalated = true;
+          escalationReason = escalationReason ? `${escalationReason}_AND_RED_FLAG_SYMPTOMS` : 'PATIENT_REPORTED_RED_FLAG_SYMPTOMS';
+          break;
+        }
+      }
+
+      const checkIn = await tx.patientRecoveryCheckIn.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientId: principal.patientId,
+          patientAccountId: principal.patientAccountId,
+          followUpId: input.followUpId ?? null,
+          procedureExecutionId: input.procedureExecutionId ?? null,
+          painScore: input.painScore,
+          symptoms: input.symptoms as Prisma.InputJsonValue,
+          recoveryNotes: input.recoveryNotes?.trim() ?? null,
+          status: isEscalated ? 'ESCALATED' : 'PENDING_REVIEW',
+          isEscalated,
+          escalationReason,
+        },
+      });
+
+      await tx.patientPortalAuditEvent.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientAccountId: principal.patientAccountId,
+          patientId: principal.patientId,
+          action: 'portal.recovery_checkin_submitted',
+          targetType: 'PatientRecoveryCheckIn',
+          targetId: checkIn.id,
+          outcome: 'SUCCESS',
+          metadata: { painScore: input.painScore, isEscalated },
+        },
+      });
+
+      return {
+        checkIn,
+        emergencyNotice: isEscalated
+          ? 'تنبيه: تم تسجيل مؤشرات تتطلب عناية طبية عاجلة. إذا كنت تعاني من أعراض خطيرة، يرجى التوجه فوراً لأقرب قسم طوارئ أو الاتصال بالإسعاف.'
+          : null,
+      };
+    });
+  }
+
+  async listRecoveryCheckIns(principal: PatientPrincipal) {
+    return this.withPatientContext(principal, async (tx) => {
+      return tx.patientRecoveryCheckIn.findMany({
+        where: { clinicId: principal.clinicId, patientId: principal.patientId },
+        include: {
+          reviewedBy: {
+            select: { user: { select: { name: true } } },
+          },
+          followUp: {
+            select: { id: true, reason: true, scheduledDate: true },
+          },
+        },
+        orderBy: [{ checkInDate: 'desc' }, { id: 'desc' }],
+        take: 50,
+      });
+    });
+  }
+
+  async getRecoveryCheckIn(principal: PatientPrincipal, checkInId: string) {
+    return this.withPatientContext(principal, async (tx) => {
+      const checkIn = await tx.patientRecoveryCheckIn.findFirst({
+        where: { id: checkInId, clinicId: principal.clinicId, patientId: principal.patientId },
+        include: {
+          reviewedBy: {
+            select: { user: { select: { name: true } } },
+          },
+          followUp: {
+            select: { id: true, reason: true, scheduledDate: true, recoveryInstructions: true },
+          },
+        },
+      });
+      if (!checkIn) throw new NotFoundException('CHECK_IN_NOT_FOUND');
+      return checkIn;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Patient-Reported Outcomes (PROMs)
+  // -------------------------------------------------------------------------
+  async submitPatientOutcome(principal: PatientPrincipal, input: SubmitPatientOutcomeDto) {
+    if (input.measurementScale === 'VISUAL_ANALOG_SCALE_10') {
+      if (input.score < 0 || input.score > 10) throw new BadRequestException('VAS_SCORE_OUT_OF_BOUNDS_0_10');
+    } else if (input.measurementScale === 'PATIENT_SATISFACTION_5_POINT') {
+      if (input.score < 1 || input.score > 5) throw new BadRequestException('SATISFACTION_SCORE_OUT_OF_BOUNDS_1_5');
+    } else if (input.measurementScale === 'CLINICAL_GLOBAL_IMPRESSION') {
+      if (input.score < 1 || input.score > 7) throw new BadRequestException('CGI_SCORE_OUT_OF_BOUNDS_1_7');
+    } else if (input.measurementScale === 'STRUCTURED_OBSERVATION') {
+      if (input.score < 0 || input.score > 100) throw new BadRequestException('OBSERVATION_SCORE_OUT_OF_BOUNDS_0_100');
+    }
+
+    return this.withPatientContext(principal, async (tx) => {
+      if (input.checkInId) {
+        const ci = await tx.patientRecoveryCheckIn.findFirst({
+          where: { id: input.checkInId, clinicId: principal.clinicId, patientId: principal.patientId },
+          select: { id: true },
+        });
+        if (!ci) throw new NotFoundException('CHECK_IN_NOT_FOUND');
+      }
+
+      if (input.followUpId) {
+        const fu = await tx.clinicalFollowUp.findFirst({
+          where: { id: input.followUpId, clinicId: principal.clinicId, patientId: principal.patientId },
+          select: { id: true },
+        });
+        if (!fu) throw new NotFoundException('FOLLOW_UP_NOT_FOUND');
+      }
+
+      const outcome = await tx.patientReportedOutcome.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientId: principal.patientId,
+          patientAccountId: principal.patientAccountId,
+          checkInId: input.checkInId ?? null,
+          followUpId: input.followUpId ?? null,
+          procedureExecutionId: input.procedureExecutionId ?? null,
+          treatmentOutcomeId: input.treatmentOutcomeId ?? null,
+          measurementScale: input.measurementScale,
+          score: new Prisma.Decimal(input.score),
+          notes: input.notes?.trim() ?? null,
+        },
+      });
+
+      await tx.patientPortalAuditEvent.create({
+        data: {
+          clinicId: principal.clinicId,
+          patientAccountId: principal.patientAccountId,
+          patientId: principal.patientId,
+          action: 'portal.outcome_submitted',
+          targetType: 'PatientReportedOutcome',
+          targetId: outcome.id,
+          outcome: 'SUCCESS',
+          metadata: { scale: input.measurementScale, score: input.score },
+        },
+      });
+
+      return outcome;
+    });
+  }
+
+  async listPatientOutcomes(principal: PatientPrincipal) {
+    return this.withPatientContext(principal, async (tx) => {
+      return tx.patientReportedOutcome.findMany({
+        where: { clinicId: principal.clinicId, patientId: principal.patientId },
+        orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }],
+        take: 50,
+      });
+    });
   }
 }

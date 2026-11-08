@@ -208,3 +208,25 @@ export class UpdateAdverseEventDto {
   @Min(1, { message: 'expectedVersion must be positive' })
   expectedVersion!: number;
 }
+
+export class ReviewCheckInDto {
+  @IsInt({ message: 'expectedVersion must be an integer' })
+  @Min(1, { message: 'expectedVersion must be positive' })
+  expectedVersion!: number;
+
+  @IsString()
+  status!: 'REVIEWED' | 'ESCALATED';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  clinicianNotes?: string;
+
+  @IsOptional()
+  isEscalated?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  escalationReason?: string;
+}

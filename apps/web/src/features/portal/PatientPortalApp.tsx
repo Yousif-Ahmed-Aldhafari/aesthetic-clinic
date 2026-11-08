@@ -1,24 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { brandStyle, useDocumentIdentity } from '../settings/branding';
 import {
   activatePatientAccount,
   bookPatientAppointment,
   cancelPatientAppointment,
+  createPatientCheckIn,
   fetchAvailability,
   fetchBookableDoctors,
   fetchBookableServices,
   fetchPatientAppointments,
+  fetchPatientCheckIns,
+  fetchPatientConsents,
+  fetchPatientFollowUps,
   fetchPatientProfile,
   fetchPublicClinic,
   patientLogin,
   patientLogout,
+  refusePatientConsent,
   requestPasswordReset,
   reschedulePatientAppointment,
   resetPassword,
+  signPatientConsent,
+  submitPatientOutcome,
+  withdrawPatientConsent,
   type BookableDoctor,
   type BookableService,
   type PatientUser,
   type PortalAppointment,
+  type PortalConsent,
+  type PortalFollowUp,
+  type PortalRecoveryCheckIn,
   type PublicClinic,
   type TimeSlot,
 } from './portal-api';
@@ -49,12 +60,24 @@ function getTokenFromUrl(): string {
   return params.get('token') || '';
 }
 
+const COMMON_SYMPTOMS = [
+  { key: 'mild_swelling', label: 'تورم خفيف أو متوسط', redFlag: false },
+  { key: 'mild_redness', label: 'احمرار موضعي خفيف', redFlag: false },
+  { key: 'mild_bruising', label: 'كدمات طفيفة', redFlag: false },
+  { key: 'severe_pain', label: 'ألم شديد لا يستجيب للمسكنات', redFlag: true },
+  { key: 'fever', label: 'ارتفاع في درجة الحرارة (حمى)', redFlag: true },
+  { key: 'continuous_bleeding', label: 'نزيف مستمر لا يتوقف', redFlag: true },
+  { key: 'skin_blanching', label: 'شحوب أو ابيضاض مفاجئ بالجلد', redFlag: true },
+  { key: 'vision_changes', label: 'تغيرات في الرؤية أو تشوش مفاجئ', redFlag: true },
+  { key: 'shortness_of_breath', label: 'صعوبة أو ضيق في التنفس', redFlag: true },
+];
+
 export function PatientPortalApp({ initialSlug }: { initialSlug?: string }) {
   const slug = initialSlug || getClinicSlugFromPath();
   const [clinic, setClinic] = useState<PublicClinic | null>(null);
   const [patient, setPatient] = useState<PatientUser | null>(null);
   const [csrfToken, setCsrfToken] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'appointments' | 'book' | 'profile'>('appointments');
+  const [activeTab, setActiveTab] = useState<'appointments' | 'book' | 'consents' | 'recovery' | 'profile'>('appointments');
   const [authView, setAuthView] = useState<'login' | 'activate' | 'forgot'>(getTokenFromUrl() ? 'activate' : 'login');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>('');
@@ -94,6 +117,32 @@ export function PatientPortalApp({ initialSlug }: { initialSlug?: string }) {
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [bookingStep, setBookingStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Consents state (Step 5.2)
+  const [consents, setConsents] = useState<PortalConsent[]>([]);
+  const [selectedConsent, setSelectedConsent] = useState<PortalConsent | null>(null);
+  const [viewConsentModal, setViewConsentModal] = useState(false);
+  const [signModal, setSignModal] = useState(false);
+  const [refuseModal, setRefuseModal] = useState(false);
+  const [withdrawModal, setWithdrawModal] = useState(false);
+  const [refuseReason, setRefuseReason] = useState('');
+  const [withdrawReason, setWithdrawReason] = useState('');
+  const [signatureMode, setSignatureMode] = useState<'DRAWN_BASE64' | 'TYPED_CONFIRMATION'>('TYPED_CONFIRMATION');
+  const [typedName, setTypedName] = useState('');
+  const [canvasDrawing, setCanvasDrawing] = useState('');
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  // Recovery & Outcomes state (Step 5.2)
+  const [followUps, setFollowUps] = useState<PortalFollowUp[]>([]);
+  const [checkIns, setCheckIns] = useState<PortalRecoveryCheckIn[]>([]);
+  const [selectedFollowUpId, setSelectedFollowUpId] = useState<string>('');
+  const [painScore, setPainScore] = useState<number>(0);
+  const [selectedSymptoms, setSelectedSymptoms] = useState<Record<string, boolean>>({});
+  const [recoveryNotes, setRecoveryNotes] = useState<string>('');
+  const [emergencyAlert, setEmergencyAlert] = useState<string | null>(null);
+  const [outcomeScore, setOutcomeScore] = useState<number>(5);
+  const [outcomeNotes, setOutcomeNotes] = useState<string>('');
 
   useDocumentIdentity(clinic);
 
@@ -137,9 +186,26 @@ export function PatientPortalApp({ initialSlug }: { initialSlug?: string }) {
       .catch(() => {});
   }, [patient]);
 
+  const reloadConsents = useCallback(() => {
+    if (!patient) return;
+    fetchPatientConsents()
+      .then((data) => setConsents(data))
+      .catch(() => {});
+  }, [patient]);
+
+  const reloadRecovery = useCallback(() => {
+    if (!patient) return;
+    fetchPatientFollowUps().then(setFollowUps).catch(() => {});
+    fetchPatientCheckIns().then(setCheckIns).catch(() => {});
+  }, [patient]);
+
   useEffect(() => {
-    if (patient) reloadAppointments();
-  }, [patient, reloadAppointments]);
+    if (patient) {
+      reloadAppointments();
+      reloadConsents();
+      reloadRecovery();
+    }
+  }, [patient, reloadAppointments, reloadConsents, reloadRecovery]);
 
   // Load services and doctors when booking tab is chosen
   useEffect(() => {
@@ -344,6 +410,196 @@ export function PatientPortalApp({ initialSlug }: { initialSlug?: string }) {
       setError(err?.message || 'تعذّر تغيير الموعد.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  // --- Consent Handlers (Step 5.2) ---
+  async function handleSignConsentConfirm() {
+    if (!selectedConsent) return;
+    const signatureData = signatureMode === 'DRAWN_BASE64' ? canvasDrawing : typedName.trim();
+    if (!signatureData) {
+      setError(signatureMode === 'DRAWN_BASE64' ? 'يرجى رسم التوقيع أولاً' : 'يرجى كتابة الاسم الكامل كتأكيد');
+      return;
+    }
+    setError('');
+    setBusy(true);
+    try {
+      await signPatientConsent(
+        selectedConsent.id,
+        {
+          expectedVersion: selectedConsent.version,
+          signerCapacity: 'PATIENT',
+          signatureType: signatureMode,
+          signatureData,
+        },
+        csrfToken,
+      );
+      setSuccessNotice('تم توقيع إقرار الموافقة بنجاح! سينتقل الإقرار للمراجعة الطبية للتحقق.');
+      setSignModal(false);
+      setSelectedConsent(null);
+      setTypedName('');
+      setCanvasDrawing('');
+      reloadConsents();
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر توقيع الإقرار.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRefuseConsentConfirm() {
+    if (!selectedConsent || !refuseReason.trim()) {
+      setError('يرجى ذكر سبب رفض الإقرار');
+      return;
+    }
+    setError('');
+    setBusy(true);
+    try {
+      await refusePatientConsent(
+        selectedConsent.id,
+        {
+          expectedVersion: selectedConsent.version,
+          reason: refuseReason.trim(),
+        },
+        csrfToken,
+      );
+      setSuccessNotice('تم تسجيل رفض الإقرار وإشعار الطاقم الطبي.');
+      setRefuseModal(false);
+      setSelectedConsent(null);
+      setRefuseReason('');
+      reloadConsents();
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر تسجيل الرفض.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleWithdrawConsentConfirm() {
+    if (!selectedConsent || !withdrawReason.trim()) {
+      setError('يرجى ذكر سبب سحب الموافقة');
+      return;
+    }
+    setError('');
+    setBusy(true);
+    try {
+      await withdrawPatientConsent(
+        selectedConsent.id,
+        {
+          expectedVersion: selectedConsent.version,
+          reason: withdrawReason.trim(),
+        },
+        csrfToken,
+      );
+      setSuccessNotice('تم سحب الموافقة رسميًا وإلغاء صلاحية الإجراء.');
+      setWithdrawModal(false);
+      setSelectedConsent(null);
+      setWithdrawReason('');
+      reloadConsents();
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر سحب الموافقة.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // --- Recovery Check-In Handlers (Step 5.2) ---
+  async function handleSubmitCheckIn(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setEmergencyAlert(null);
+    setBusy(true);
+    try {
+      const res = await createPatientCheckIn(
+        {
+          followUpId: selectedFollowUpId || undefined,
+          painScore,
+          symptoms: selectedSymptoms,
+          recoveryNotes: recoveryNotes.trim() || undefined,
+        },
+        csrfToken,
+      );
+      if (res.emergencyNotice) {
+        setEmergencyAlert(res.emergencyNotice);
+      } else {
+        setSuccessNotice('تم تسجيل تقرير المتابعة وحالتك مستقرة. شكرًا لتعاونك!');
+      }
+      setPainScore(0);
+      setSelectedSymptoms({});
+      setRecoveryNotes('');
+      reloadRecovery();
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر إرسال تقرير المتابعة.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSubmitOutcome(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      await submitPatientOutcome(
+        {
+          measurementScale: 'PATIENT_SATISFACTION_5PT',
+          score: outcomeScore,
+          notes: outcomeNotes.trim() || undefined,
+        },
+        csrfToken,
+      );
+      setSuccessNotice('شكرًا لتقييمك! تم حفظ تقييم النتيجة السريرية بنجاح.');
+      setOutcomeNotes('');
+      reloadRecovery();
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر حفظ التقييم.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Canvas drawing handlers
+  function startDrawing(e: React.MouseEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    setIsDrawing(true);
+    const rect = canvas.getBoundingClientRect();
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1E293B';
+    ctx.beginPath();
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  }
+
+  function draw(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.stroke();
+  }
+
+  function stopDrawing() {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      setCanvasDrawing(canvas.toDataURL('image/png'));
+    }
+  }
+
+  function clearCanvas() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setCanvasDrawing('');
     }
   }
 
@@ -588,6 +844,18 @@ export function PatientPortalApp({ initialSlug }: { initialSlug?: string }) {
                 onClick={() => { setActiveTab('book'); setSuccessNotice(''); }}
               >
                 <span>➕</span> حجز موعد جديد
+              </button>
+              <button
+                className={`portal-nav-btn ${activeTab === 'consents' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('consents'); setSuccessNotice(''); reloadConsents(); }}
+              >
+                <span>📝</span> إقرارات الموافقة ({consents.filter((c) => c.status === 'DRAFT').length})
+              </button>
+              <button
+                className={`portal-nav-btn ${activeTab === 'recovery' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('recovery'); setSuccessNotice(''); reloadRecovery(); }}
+              >
+                <span>❤️‍🩹</span> المتابعة والتعافي
               </button>
               <button
                 className={`portal-nav-btn ${activeTab === 'profile' ? 'active' : ''}`}
@@ -935,10 +1203,685 @@ export function PatientPortalApp({ initialSlug }: { initialSlug?: string }) {
                   </div>
                 </div>
               )}
+
+              {/* Tab 4: Consent Self-Service (Step 5.2) */}
+              {activeTab === 'consents' && (
+                <div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '1rem',
+                    }}
+                  >
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: '1.3rem' }}>إقرارات الموافقة الطبية والتوثيق</h2>
+                      <p style={{ margin: '0.25rem 0 0', color: '#64748B', fontSize: '0.9rem' }}>
+                        مراجعة نماذج الموافقة المستنيرة والتوقيع الإلكتروني الذاتي
+                      </p>
+                    </div>
+                  </div>
+
+                  {consents.length === 0 ? (
+                    <div className="portal-card portal-empty-state">
+                      <p>لا توجد إقرارات موافقة مطلوبة أو مسجلة حاليًا.</p>
+                    </div>
+                  ) : (
+                    consents.map((c) => (
+                      <div key={c.id} className="portal-card">
+                        <div className="portal-card-header">
+                          <div>
+                            <h3>{c.templateVersion.titleAr}</h3>
+                            <small style={{ color: '#64748B' }}>
+                              الغرض:{' '}
+                              {c.purpose === 'PROCEDURE'
+                                ? 'إجراء تجميلي / علاجي'
+                                : c.purpose === 'CLINICAL_PHOTOGRAPHY'
+                                ? 'تصوير سريري للتوثيق الطبي'
+                                : 'تصوير للنشر والتسويق'}
+                              {c.procedureCatalog ? ` · الإجراء: ${c.procedureCatalog.nameAr}` : ''}
+                            </small>
+                          </div>
+                          <span className={`portal-status-badge status-${c.status}`}>
+                            {c.status === 'DRAFT'
+                              ? 'بانتظار توقيعك'
+                              : c.status === 'PENDING_VERIFICATION'
+                              ? 'بانتظار التحقق الطبي'
+                              : c.status === 'ACTIVE'
+                              ? 'سارٍ ومعتمد'
+                              : c.status === 'REFUSED'
+                              ? 'مرفوض'
+                              : c.status === 'WITHDRAWN'
+                              ? 'مسحوب'
+                              : 'منتهي الصلاحية'}
+                          </span>
+                        </div>
+
+                        <div className="portal-appt-grid">
+                          <div className="portal-appt-item">
+                            <label>تاريخ الإنشاء</label>
+                            <span dir="ltr">{c.createdAt.slice(0, 10)}</span>
+                          </div>
+                          <div className="portal-appt-item">
+                            <label>حالة التوثيق</label>
+                            <strong>
+                              {c.signatureEvidence
+                                ? `تم التوقيع (${c.signatureEvidence.signerCapacity === 'PATIENT' ? 'المريض ذاتيًا' : c.signatureEvidence.signerCapacity})`
+                                : 'غير موقع'}
+                            </strong>
+                          </div>
+                          {c.verifiedAt && (
+                            <div className="portal-appt-item">
+                              <label>تاريخ التحقق الطبي</label>
+                              <span dir="ltr">{c.verifiedAt.slice(0, 10)}</span>
+                            </div>
+                          )}
+                          {c.signatureEvidence?.evidenceHashSha256 && (
+                            <div className="portal-appt-item" style={{ gridColumn: 'span 2' }}>
+                              <label>البصمة الرقمية للتوثيق (SHA-256)</label>
+                              <code
+                                dir="ltr"
+                                style={{ fontSize: '0.75rem', background: '#F1F5F9', padding: '2px 6px', borderRadius: 4 }}
+                              >
+                                {c.signatureEvidence.evidenceHashSha256}
+                              </code>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="portal-appt-actions">
+                          <button
+                            className="portal-btn-secondary"
+                            onClick={() => {
+                              setSelectedConsent(c);
+                              setViewConsentModal(true);
+                            }}
+                          >
+                            عرض نص الإقرار والشروط
+                          </button>
+
+                          {c.status === 'DRAFT' && (
+                            <>
+                              <button
+                                className="portal-submit-btn"
+                                style={{ width: 'auto', margin: 0, padding: '0.45rem 1rem' }}
+                                onClick={() => {
+                                  setSelectedConsent(c);
+                                  setSignModal(true);
+                                  setTypedName(patient.fullName);
+                                }}
+                              >
+                                توقيع الإقرار الآن
+                              </button>
+                              <button
+                                className="portal-btn-danger"
+                                onClick={() => {
+                                  setSelectedConsent(c);
+                                  setRefuseModal(true);
+                                }}
+                              >
+                                رفض الإقرار
+                              </button>
+                            </>
+                          )}
+
+                          {c.status === 'ACTIVE' && (
+                            <button
+                              className="portal-btn-danger"
+                              onClick={() => {
+                                setSelectedConsent(c);
+                                setWithdrawModal(true);
+                              }}
+                            >
+                              سحب الموافقة
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* Tab 5: Recovery Check-ins & Follow-up (Step 5.2) */}
+              {activeTab === 'recovery' && (
+                <div>
+                  {emergencyAlert && (
+                    <div
+                      className="portal-alert portal-alert-emergency"
+                      style={{
+                        background: '#FEF2F2',
+                        border: '2px solid #EF4444',
+                        color: '#991B1B',
+                        padding: '1.25rem',
+                        borderRadius: '8px',
+                        marginBottom: '1.5rem',
+                      }}
+                    >
+                      <h4 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem' }}>🚨 تنبيه سريري طارئ</h4>
+                      <p style={{ margin: 0, lineHeight: 1.6, fontSize: '0.95rem' }}>{emergencyAlert}</p>
+                      {clinic?.contactPhone && (
+                        <p style={{ marginTop: '0.75rem', fontWeight: 700 }}>
+                          هاتف طوارئ العيادة:{' '}
+                          <a href={`tel:${clinic.contactPhone}`} dir="ltr" style={{ color: '#DC2626' }}>
+                            {clinic.contactPhone}
+                          </a>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="portal-card">
+                    <h3 style={{ borderBottom: '1px solid #F1F5F9', paddingBottom: '0.75rem', margin: '0 0 1.25rem' }}>
+                      تسجيل تقرير المتابعة الذاتية والتعافي
+                    </h3>
+                    <form onSubmit={handleSubmitCheckIn}>
+                      {followUps.length > 0 && (
+                        <div className="portal-form-group">
+                          <label htmlFor="portal-checkin-fu">جلسة المتابعة المرتبطة (اختياري)</label>
+                          <select
+                            id="portal-checkin-fu"
+                            value={selectedFollowUpId}
+                            onChange={(e) => setSelectedFollowUpId(e.target.value)}
+                          >
+                            <option value="">متابعة عامة / غير مرتبطة بموعد محدد</option>
+                            {followUps.map((fu) => (
+                              <option key={fu.id} value={fu.id}>
+                                {fu.reason} — موعد المتابعة: {fu.scheduledDate.slice(0, 10)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {/* VAS Pain Slider */}
+                      <div className="portal-form-group">
+                        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>مستوى الألم الحالي (مقياس 0 - 10)</span>
+                          <strong
+                            style={{
+                              fontSize: '1.2rem',
+                              color: painScore >= 8 ? '#DC2626' : painScore >= 5 ? '#D97706' : '#059669',
+                            }}
+                          >
+                            {painScore} / 10
+                          </strong>
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="10"
+                          step="1"
+                          value={painScore}
+                          onChange={(e) => setPainScore(parseInt(e.target.value, 10))}
+                          style={{ width: '100%', margin: '0.75rem 0' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748B' }}>
+                          <span>0: لا يوجد ألم إطلاقًا</span>
+                          <span>5: ألم متوسط</span>
+                          <span style={{ color: '#DC2626', fontWeight: 600 }}>10: ألم شديد للغاية وغير محتمل</span>
+                        </div>
+                        {painScore >= 8 && (
+                          <div
+                            style={{
+                              marginTop: '0.5rem',
+                              color: '#DC2626',
+                              fontSize: '0.85rem',
+                              fontWeight: 600,
+                              background: '#FEE2E2',
+                              padding: '0.5rem',
+                              borderRadius: '6px',
+                            }}
+                          >
+                            ⚠️ تنبيه: الألم الشديد (8 فأكثر) يتطلب تقييمًا طبيًا عاجلاً وتصعيدًا تلقائيًا لفريق العيادة.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Symptoms checklist */}
+                      <div className="portal-form-group">
+                        <label>الأعراض الملاحظة (اختر كل ما ينطبق)</label>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                            gap: '0.65rem',
+                            marginTop: '0.5rem',
+                          }}
+                        >
+                          {COMMON_SYMPTOMS.map((sym) => (
+                            <label
+                              key={sym.key}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.6rem 0.75rem',
+                                background: selectedSymptoms[sym.key]
+                                  ? sym.redFlag
+                                    ? '#FEE2E2'
+                                    : '#EFF6FF'
+                                  : '#F8FAFC',
+                                border: `1px solid ${
+                                  selectedSymptoms[sym.key]
+                                    ? sym.redFlag
+                                      ? '#FCA5A5'
+                                      : '#BFDBFE'
+                                    : '#E2E8F0'
+                                }`,
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.88rem',
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={Boolean(selectedSymptoms[sym.key])}
+                                onChange={(e) =>
+                                  setSelectedSymptoms({
+                                    ...selectedSymptoms,
+                                    [sym.key]: e.target.checked,
+                                  })
+                                }
+                              />
+                              <span>{sym.label}</span>
+                              {sym.redFlag && (
+                                <span
+                                  style={{
+                                    marginRight: 'auto',
+                                    color: '#DC2626',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  (عرض حرج)
+                                </span>
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="portal-form-group">
+                        <label htmlFor="portal-checkin-notes">ملاحظات أو أسئلة إضافية للطبيب</label>
+                        <textarea
+                          id="portal-checkin-notes"
+                          rows={3}
+                          placeholder="صف أي ملاحظات أخرى بخصوص الشفاء أو الآثار الجانبية..."
+                          value={recoveryNotes}
+                          onChange={(e) => setRecoveryNotes(e.target.value)}
+                        />
+                      </div>
+
+                      <button type="submit" className="portal-submit-btn" disabled={busy}>
+                        {busy ? 'جارٍ إرسال التقرير…' : 'إرسال تقرير المتابعة'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Patient-Reported Outcome Form */}
+                  <div className="portal-card" style={{ marginTop: '1.5rem' }}>
+                    <h3 style={{ borderBottom: '1px solid #F1F5F9', paddingBottom: '0.75rem', margin: '0 0 1.25rem' }}>
+                      تقييم رضاك عن النتيجة التجميلية والعلاجية (PRO)
+                    </h3>
+                    <form onSubmit={handleSubmitOutcome}>
+                      <div className="portal-form-group">
+                        <label>درجة الرضا عن النتيجة النهائية (1 إلى 5)</label>
+                        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+                          {[1, 2, 3, 4, 5].map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className={`portal-slot-btn ${outcomeScore === val ? 'selected' : ''}`}
+                              style={{ flex: 1, padding: '0.75rem 0.5rem' }}
+                              onClick={() => setOutcomeScore(val)}
+                            >
+                              {val === 1
+                                ? '1 (غير راضٍ)'
+                                : val === 3
+                                ? '3 (متوسط)'
+                                : val === 5
+                                ? '5 (راضٍ تمامًا)'
+                                : String(val)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="portal-form-group">
+                        <label htmlFor="portal-outcome-notes">انطباعك حول النتيجة</label>
+                        <textarea
+                          id="portal-outcome-notes"
+                          rows={2}
+                          placeholder="أدخل أي ملاحظات حول مظهر النتيجة أو ملمسها..."
+                          value={outcomeNotes}
+                          onChange={(e) => setOutcomeNotes(e.target.value)}
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="portal-btn-secondary"
+                        style={{ width: 'auto', padding: '0.55rem 1.25rem' }}
+                        disabled={busy}
+                      >
+                        {busy ? 'جارٍ الحفظ…' : 'حفظ تقييم النتيجة'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Previous Check-ins History */}
+                  {checkIns.length > 0 && (
+                    <div style={{ marginTop: '2rem' }}>
+                      <h3 style={{ fontSize: '1.2rem', marginBottom: '1rem', color: '#334155' }}>
+                        سجل تقارير المتابعة السابقة
+                      </h3>
+                      {checkIns.map((ci) => (
+                        <div key={ci.id} className="portal-card">
+                          <div className="portal-card-header">
+                            <div>
+                              <strong style={{ fontSize: '1rem' }}>
+                                تقرير بتاريخ <span dir="ltr">{ci.checkInDate.slice(0, 10)}</span>
+                              </strong>
+                              {ci.followUp && (
+                                <span style={{ marginRight: '0.75rem', color: '#64748B', fontSize: '0.85rem' }}>
+                                  ({ci.followUp.reason})
+                                </span>
+                              )}
+                            </div>
+                            <span className={`portal-status-badge status-${ci.status}`}>
+                              {ci.status === 'PENDING_REVIEW'
+                                ? 'بانتظار مراجعة الطبيب'
+                                : ci.status === 'REVIEWED'
+                                ? 'تمت المراجعة الطبية'
+                                : 'مُصعّد سريريًا'}
+                            </span>
+                          </div>
+
+                          <div className="portal-appt-grid">
+                            <div className="portal-appt-item">
+                              <label>مستوى الألم</label>
+                              <strong
+                                style={{
+                                  color: ci.painScore >= 8 ? '#DC2626' : ci.painScore >= 5 ? '#D97706' : '#059669',
+                                }}
+                              >
+                                {ci.painScore} / 10
+                              </strong>
+                            </div>
+                            <div className="portal-appt-item">
+                              <label>التصعيد السريري</label>
+                              <span>{ci.isEscalated ? `🚨 نعم (${ci.escalationReason || 'أعراض حرجة'})` : 'طبيعي'}</span>
+                            </div>
+                            {ci.reviewedAt && (
+                              <div className="portal-appt-item" style={{ gridColumn: 'span 2' }}>
+                                <label>توجيهات الطبيب المعالج ({ci.reviewedBy?.user.name || 'طبيب العيادة'})</label>
+                                <div
+                                  style={{
+                                    background: '#F0FDF4',
+                                    border: '1px solid #BBF7D0',
+                                    padding: '0.5rem 0.75rem',
+                                    borderRadius: '6px',
+                                    color: '#166534',
+                                    fontSize: '0.9rem',
+                                  }}
+                                >
+                                  {ci.clinicianNotes || 'تمت المراجعة ولا توجد ملاحظات إضافية.'}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
       </main>
+
+      {/* View Consent Modal */}
+      {viewConsentModal && selectedConsent && (
+        <div className="portal-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="portal-modal" style={{ maxWidth: '650px', maxHeight: '85vh', overflowY: 'auto' }}>
+            <h3>{selectedConsent.templateVersion.titleAr}</h3>
+            <div style={{ color: '#64748B', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              الإصدار {selectedConsent.templateVersion.versionNumber} · البصمة المعتمدة:{' '}
+              <code dir="ltr">{selectedConsent.templateVersion.contentDigestSha256.slice(0, 16)}…</code>
+            </div>
+
+            <div
+              style={{
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                padding: '1rem',
+                borderRadius: '8px',
+                fontSize: '0.9rem',
+                lineHeight: 1.7,
+                whiteSpace: 'pre-wrap',
+                marginBottom: '1rem',
+              }}
+            >
+              {selectedConsent.templateVersion.bodyAr}
+            </div>
+
+            <h4 style={{ margin: '1rem 0 0.5rem', color: '#DC2626' }}>المخاطر والمضاعفات المحتملة:</h4>
+            <div
+              style={{
+                background: '#FEF2F2',
+                border: '1px solid #FECACA',
+                padding: '0.75rem 1rem',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                color: '#991B1B',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {selectedConsent.templateVersion.risksTextAr}
+            </div>
+
+            <h4 style={{ margin: '1rem 0 0.5rem', color: '#1E293B' }}>البدائل العلاجية المتاحة:</h4>
+            <div
+              style={{
+                background: '#F1F5F9',
+                border: '1px solid #CBD5E1',
+                padding: '0.75rem 1rem',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                color: '#334155',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {selectedConsent.templateVersion.alternativesTextAr}
+            </div>
+
+            <div className="portal-modal-actions">
+              <button className="portal-btn-secondary" onClick={() => setViewConsentModal(false)}>
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sign Consent Modal */}
+      {signModal && selectedConsent && patient && (
+        <div className="portal-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="portal-modal" style={{ maxWidth: '540px' }}>
+            <h3>توقيع إقرار الموافقة إلكترونيًا</h3>
+            <p style={{ fontSize: '0.9rem', color: '#64748B' }}>
+              بصفتك المريض صاحب العلاقة، يُلزمك هذا التوقيع بالموافقة الصريحة بعد فهمك للمخاطر والبدائل.
+            </p>
+
+            <div className="portal-auth-tabs" style={{ marginBottom: '1rem' }}>
+              <button
+                className={`portal-auth-tab ${signatureMode === 'TYPED_CONFIRMATION' ? 'active' : ''}`}
+                onClick={() => setSignatureMode('TYPED_CONFIRMATION')}
+              >
+                تأكيد بكتابة الاسم الكامل
+              </button>
+              <button
+                className={`portal-auth-tab ${signatureMode === 'DRAWN_BASE64' ? 'active' : ''}`}
+                onClick={() => setSignatureMode('DRAWN_BASE64')}
+              >
+                رسم التوقيع بيدك
+              </button>
+            </div>
+
+            {signatureMode === 'TYPED_CONFIRMATION' ? (
+              <div className="portal-form-group">
+                <label htmlFor="portal-sign-name">اكتب اسمك الكامل مطابقًا للملف الطبي</label>
+                <input
+                  id="portal-sign-name"
+                  type="text"
+                  value={typedName}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  placeholder="الاسم الكامل"
+                />
+              </div>
+            ) : (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                  ارسم توقيعك في المساحة أدناه:
+                </label>
+                <canvas
+                  ref={canvasRef}
+                  width={480}
+                  height={150}
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  style={{
+                    border: '1px solid #CBD5E1',
+                    borderRadius: '6px',
+                    background: '#FFFFFF',
+                    cursor: 'crosshair',
+                    width: '100%',
+                    touchAction: 'none',
+                  }}
+                />
+                <button
+                  type="button"
+                  className="portal-btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', marginTop: '0.25rem' }}
+                  onClick={clearCanvas}
+                >
+                  مسح وإعادة الرسم
+                </button>
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: '1rem',
+                fontSize: '0.8rem',
+                color: '#64748B',
+                background: '#F8FAFC',
+                padding: '0.5rem',
+                borderRadius: '6px',
+              }}
+            >
+              🔒 سيتم تسجيل بصمة التوثيق وتاريخ وتوقيت التوقيع بدقة وإرسال الإقرار للتحقق السريري.
+            </div>
+
+            <div className="portal-modal-actions">
+              <button
+                className="portal-btn-secondary"
+                onClick={() => {
+                  setSignModal(false);
+                  setSelectedConsent(null);
+                }}
+                disabled={busy}
+              >
+                إلغاء
+              </button>
+              <button className="portal-submit-btn" style={{ width: 'auto', margin: 0 }} onClick={handleSignConsentConfirm} disabled={busy}>
+                {busy ? 'جارٍ التوقيع…' : 'تأكيد التوقيع وإرسال الإقرار'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Refuse Consent Modal */}
+      {refuseModal && selectedConsent && (
+        <div className="portal-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="portal-modal">
+            <h3 style={{ color: '#DC2626' }}>رفض إقرار الموافقة</h3>
+            <p style={{ fontSize: '0.9rem', color: '#64748B' }}>
+              سيؤدي رفض الإقرار إلى إيقاف تنفيذ الإجراء الطبي المرتبط وإشعار الطبيب المختص.
+            </p>
+            <div className="portal-form-group">
+              <label htmlFor="portal-refuse-reason">سبب الرفض (إلزامي)</label>
+              <textarea
+                id="portal-refuse-reason"
+                rows={3}
+                placeholder="أدخل سبب عدم الرغبة في التوقيع على هذا الإجراء..."
+                value={refuseReason}
+                onChange={(e) => setRefuseReason(e.target.value)}
+                required
+              />
+            </div>
+            <div className="portal-modal-actions">
+              <button
+                className="portal-btn-secondary"
+                onClick={() => {
+                  setRefuseModal(false);
+                  setSelectedConsent(null);
+                }}
+                disabled={busy}
+              >
+                تراجع
+              </button>
+              <button className="portal-btn-danger" onClick={handleRefuseConsentConfirm} disabled={busy || !refuseReason.trim()}>
+                {busy ? 'جارٍ المعالجة…' : 'تأكيد رفض الإقرار'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Withdraw Consent Modal */}
+      {withdrawModal && selectedConsent && (
+        <div className="portal-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="portal-modal">
+            <h3 style={{ color: '#DC2626' }}>سحب الموافقة الطبية</h3>
+            <p style={{ fontSize: '0.9rem', color: '#64748B' }}>
+              يحق لك سحب موافقتك في أي وقت قبل مباشرة الإجراء. سيؤدي هذا السحب إلى إلغاء صلاحية الإقرار الطبية فورًا.
+            </p>
+            <div className="portal-form-group">
+              <label htmlFor="portal-withdraw-reason">سبب سحب الموافقة (إلزامي)</label>
+              <textarea
+                id="portal-withdraw-reason"
+                rows={3}
+                placeholder="أدخل سبب سحب الموافقة..."
+                value={withdrawReason}
+                onChange={(e) => setWithdrawReason(e.target.value)}
+                required
+              />
+            </div>
+            <div className="portal-modal-actions">
+              <button
+                className="portal-btn-secondary"
+                onClick={() => {
+                  setWithdrawModal(false);
+                  setSelectedConsent(null);
+                }}
+                disabled={busy}
+              >
+                تراجع
+              </button>
+              <button className="portal-btn-danger" onClick={handleWithdrawConsentConfirm} disabled={busy || !withdrawReason.trim()}>
+                {busy ? 'جارٍ السحب…' : 'تأكيد سحب الموافقة'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cancel Modal */}
       {showCancelModal && selectedAppt && (
