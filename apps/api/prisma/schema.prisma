@@ -178,6 +178,16 @@ model Clinic {
   branches ClinicBranch[]
   branchMemberships BranchMembership[]
   interBranchTransfers InterBranchTransfer[]
+  costLayers InventoryCostLayer[]
+  landedCosts InventoryLandedCost[]
+  landedCostAllocationLines InventoryLandedCostAllocationLine[]
+  costMovements InventoryCostMovement[]
+  valuationSnapshots InventoryValuationSnapshot[]
+  costAdjustments InventoryCostAdjustment[]
+  landedCostCounter InventoryLandedCostCounter?
+  costMovementCounter InventoryCostMovementCounter?
+  valuationSnapshotCounter InventoryValuationSnapshotCounter?
+  costAdjustmentCounter InventoryCostAdjustmentCounter?
 
   @@index([status, createdAt])
 }
@@ -210,6 +220,8 @@ model ClinicBranch {
   sessions       Session[]
   sourceTransfers InterBranchTransfer[] @relation("SourceBranchTransfers")
   destinationTransfers InterBranchTransfer[] @relation("DestinationBranchTransfers")
+  costLayers InventoryCostLayer[]
+  valuationSnapshots InventoryValuationSnapshot[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, code])
@@ -411,6 +423,9 @@ model ClinicMembership {
   dispatchedTransfers InterBranchTransfer[] @relation("TransferDispatcher")
   receivedTransfers InterBranchTransfer[] @relation("TransferReceiver")
   cancelledTransfers InterBranchTransfer[] @relation("TransferCanceller")
+  approvedLandedCosts InventoryLandedCost[] @relation("LandedCostApprover")
+  approvedValuationSnapshots InventoryValuationSnapshot[] @relation("ValuationApprover")
+  approvedCostAdjustments InventoryCostAdjustment[] @relation("CostAdjustmentApprover")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -1975,6 +1990,7 @@ model InventoryProduct {
   goodsReceiptLines     InventoryGoodsReceiptLine[]
   stockCountItems       InventoryStockCountItem[]
   interBranchTransfers  InterBranchTransfer[]
+  costLayers            InventoryCostLayer[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, sku])
@@ -2009,6 +2025,7 @@ model InventoryLocation {
   stockCounts               InventoryStockCount[]
   sourceTransfers           InterBranchTransfer[] @relation("SourceLocationTransfers")
   destinationTransfers      InterBranchTransfer[] @relation("DestinationLocationTransfers")
+  costLayers                InventoryCostLayer[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, code])
@@ -2044,6 +2061,7 @@ model InventoryBatch {
   goodsReceiptLines InventoryGoodsReceiptLine[]
   stockCountItems  InventoryStockCountItem[]
   interBranchTransfers InterBranchTransfer[]
+  costLayers       InventoryCostLayer[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, productId, batchNumber])
@@ -2079,6 +2097,7 @@ model InventoryStockMovement {
   consumptionsAsVoid   InventoryClinicalConsumption[] @relation("ConsumptionVoidMovement")
   goodsReceiptLines    InventoryGoodsReceiptLine[]
   stockCountItems      InventoryStockCountItem[]
+  costMovements        InventoryCostMovement[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, idempotencyKey])
@@ -2121,6 +2140,7 @@ model InterBranchTransfer {
   dispatchedBy            ClinicMembership?         @relation("TransferDispatcher", fields: [clinicId, dispatchedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   receivedBy              ClinicMembership?         @relation("TransferReceiver", fields: [clinicId, receivedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   cancelledBy             ClinicMembership?         @relation("TransferCanceller", fields: [clinicId, cancelledByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  costMovements           InventoryCostMovement[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, transferNumber])
@@ -2202,6 +2222,7 @@ model InventoryClinicalConsumption {
   movement              InventoryStockMovement    @relation("ConsumptionSourceMovement", fields: [clinicId, movementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   voidMovement          InventoryStockMovement?   @relation("ConsumptionVoidMovement", fields: [clinicId, voidMovementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   actor                 ClinicMembership          @relation("ConsumptionActor", fields: [clinicId, actorMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  costMovements         InventoryCostMovement[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, idempotencyKey])
@@ -2301,6 +2322,7 @@ model InventoryPurchaseOrder {
   approvedBy             ClinicMembership?         @relation("POApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   lines                  InventoryPurchaseOrderLine[]
   goodsReceipts          InventoryGoodsReceipt[]
+  landedCosts            InventoryLandedCost[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, orderNumber])
@@ -2365,6 +2387,7 @@ model InventoryGoodsReceipt {
   destinationLocation    InventoryLocation         @relation(fields: [clinicId, destinationLocationId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   receiver               ClinicMembership          @relation("GRReceiver", fields: [clinicId, receiverMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   lines                  InventoryGoodsReceiptLine[]
+  landedCosts            InventoryLandedCost[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, receiptNumber])
@@ -2398,6 +2421,8 @@ model InventoryGoodsReceiptLine {
   batch               InventoryBatch?            @relation(fields: [clinicId, batchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   location            InventoryLocation          @relation(fields: [clinicId, locationId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   movement            InventoryStockMovement?    @relation(fields: [clinicId, movementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  costLayers          InventoryCostLayer[]
+  landedCostAllocationLines InventoryLandedCostAllocationLine[]
 
   @@unique([clinicId, id])
   @@index([clinicId, productId])
@@ -3272,4 +3297,264 @@ model PatientReportedOutcome {
   @@unique([clinicId, id])
   @@index([clinicId, patientId, submittedAt])
   @@index([clinicId, checkInId])
+}
+
+
+// Phase 5 Step 5.4 — Advanced Inventory Costing, Landed Cost Allocation & FIFO Valuation
+
+enum InventoryCostStatus {
+  VERIFIED
+  UNVERIFIED_COST
+  ADJUSTED
+  EXHAUSTED
+}
+
+enum InventoryCostProvenance {
+  GOODS_RECEIPT
+  OPENING_BALANCE
+  TRANSFER_IN
+  ADJUSTMENT
+}
+
+enum LandedCostAllocationMethod {
+  BY_QUANTITY
+  BY_VALUE
+}
+
+enum LandedCostStatus {
+  DRAFT
+  APPROVED
+  ADJUSTED
+}
+
+enum CostMovementType {
+  RECEIPT
+  ISSUE
+  CONSUMPTION
+  WASTE
+  TRANSFER_OUT
+  TRANSFER_IN
+  ADJUSTMENT
+}
+
+enum ValuationSnapshotStatus {
+  PROVISIONAL
+  APPROVED
+  SUPERSEDED
+}
+
+enum CostAdjustmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model InventoryCostLayer {
+  id                      String                    @id @default(uuid()) @db.Uuid
+  clinicId                String                    @db.Uuid
+  productId               String                    @db.Uuid
+  branchId                String?                   @db.Uuid
+  locationId              String?                   @db.Uuid
+  batchId                 String?                   @db.Uuid
+  goodsReceiptLineId      String?                   @db.Uuid
+  layerDate               DateTime                  @default(now()) @db.Timestamptz(3)
+  initialQuantity         Decimal                   @db.Decimal(12, 4)
+  remainingQuantity       Decimal                   @db.Decimal(12, 4)
+  unitAcquisitionCostMinor BigInt                   @default(0)
+  unitLandedCostMinor     BigInt                    @default(0)
+  totalRemainingCostMinor BigInt                    @default(0)
+  costStatus              InventoryCostStatus       @default(VERIFIED)
+  sourceProvenance        InventoryCostProvenance   @default(GOODS_RECEIPT)
+  currency                String                    @default("SAR") @db.VarChar(3)
+  version                 Int                       @default(1)
+  createdAt               DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic                  Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  product                 InventoryProduct          @relation(fields: [clinicId, productId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  branch                  ClinicBranch?             @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  location                InventoryLocation?        @relation(fields: [clinicId, locationId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  batch                   InventoryBatch?           @relation(fields: [clinicId, batchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  goodsReceiptLine        InventoryGoodsReceiptLine? @relation(fields: [clinicId, goodsReceiptLineId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  movements               InventoryCostMovement[]
+  allocationLines         InventoryLandedCostAllocationLine[]
+  adjustments             InventoryCostAdjustment[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, productId, costStatus, layerDate])
+  @@index([clinicId, branchId, costStatus])
+  @@index([clinicId, batchId])
+}
+
+model InventoryLandedCost {
+  id                      String                    @id @default(uuid()) @db.Uuid
+  clinicId                String                    @db.Uuid
+  allocationNumber        String                    @db.VarChar(50)
+  purchaseOrderId         String?                   @db.Uuid
+  goodsReceiptId          String?                   @db.Uuid
+  freightCostMinor        BigInt                    @default(0)
+  customsDutyMinor        BigInt                    @default(0)
+  insuranceCostMinor      BigInt                    @default(0)
+  handlingCostMinor       BigInt                    @default(0)
+  otherChargesMinor       BigInt                    @default(0)
+  discountCreditMinor     BigInt                    @default(0)
+  totalLandedCostMinor    BigInt                    @default(0)
+  allocationMethod        LandedCostAllocationMethod @default(BY_VALUE)
+  status                  LandedCostStatus          @default(DRAFT)
+  approvedByMembershipId  String?                   @db.Uuid
+  approvedAt              DateTime?                 @db.Timestamptz(3)
+  notes                   String?                   @db.VarChar(1000)
+  version                 Int                       @default(1)
+  createdAt               DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic                  Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  purchaseOrder           InventoryPurchaseOrder?   @relation(fields: [clinicId, purchaseOrderId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  goodsReceipt            InventoryGoodsReceipt?    @relation(fields: [clinicId, goodsReceiptId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy              ClinicMembership?         @relation("LandedCostApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  allocationLines         InventoryLandedCostAllocationLine[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, allocationNumber])
+  @@index([clinicId, status])
+}
+
+model InventoryLandedCostAllocationLine {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  clinicId               String                     @db.Uuid
+  landedCostId           String                     @db.Uuid
+  goodsReceiptLineId     String?                    @db.Uuid
+  costLayerId            String?                    @db.Uuid
+  allocatedAmountMinor   BigInt                     @default(0)
+  roundingRemainderMinor BigInt                     @default(0)
+  createdAt              DateTime                   @default(now()) @db.Timestamptz(3)
+
+  clinic                 Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  landedCost             InventoryLandedCost        @relation(fields: [clinicId, landedCostId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  goodsReceiptLine       InventoryGoodsReceiptLine? @relation(fields: [clinicId, goodsReceiptLineId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  costLayer              InventoryCostLayer?        @relation(fields: [clinicId, costLayerId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, landedCostId])
+}
+
+model InventoryCostMovement {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  clinicId               String                     @db.Uuid
+  movementNumber         String                     @db.VarChar(50)
+  costLayerId            String                     @db.Uuid
+  stockMovementId        String?                    @db.Uuid
+  consumptionId          String?                    @db.Uuid
+  transferId             String?                    @db.Uuid
+  movementType           CostMovementType
+  quantity               Decimal                    @db.Decimal(12, 4)
+  unitCostMinor          BigInt                     @default(0)
+  totalCostMinor         BigInt                     @default(0)
+  wasteCostMinor         BigInt                     @default(0)
+  notes                  String?                    @db.VarChar(1000)
+  occurredAt             DateTime                   @default(now()) @db.Timestamptz(3)
+  createdAt              DateTime                   @default(now()) @db.Timestamptz(3)
+
+  clinic                 Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  costLayer              InventoryCostLayer         @relation(fields: [clinicId, costLayerId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  stockMovement          InventoryStockMovement?    @relation(fields: [clinicId, stockMovementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  consumption            InventoryClinicalConsumption? @relation(fields: [clinicId, consumptionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  transfer               InterBranchTransfer?       @relation(fields: [clinicId, transferId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, movementNumber])
+  @@index([clinicId, costLayerId, occurredAt])
+  @@index([clinicId, movementType, occurredAt])
+}
+
+model InventoryValuationSnapshot {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  clinicId               String                     @db.Uuid
+  snapshotNumber         String                     @db.VarChar(50)
+  snapshotDate           DateTime                   @default(now()) @db.Timestamptz(3)
+  branchId               String?                    @db.Uuid
+  totalUnits             Decimal                    @db.Decimal(12, 4)
+  totalValueMinor        BigInt                     @default(0)
+  verifiedValueMinor     BigInt                     @default(0)
+  unverifiedValueMinor   BigInt                     @default(0)
+  transitValueMinor      BigInt                     @default(0)
+  valuationMethod        String                     @default("FIFO_ACTUAL_LANDED_COST") @db.VarChar(50)
+  breakdownJson          Json
+  discrepancyCount       Int                        @default(0)
+  discrepancyMinor       BigInt                     @default(0)
+  status                 ValuationSnapshotStatus    @default(PROVISIONAL)
+  approvedByMembershipId String?                    @db.Uuid
+  approvedAt             DateTime?                  @db.Timestamptz(3)
+  notes                  String?                    @db.VarChar(1000)
+  version                Int                        @default(1)
+  createdAt              DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                   @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch                 ClinicBranch?              @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy             ClinicMembership?          @relation("ValuationApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, snapshotNumber])
+  @@index([clinicId, status, snapshotDate])
+}
+
+model InventoryCostAdjustment {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  clinicId               String                     @db.Uuid
+  adjustmentNumber       String                     @db.VarChar(50)
+  costLayerId            String                     @db.Uuid
+  reason                 String                     @db.VarChar(1000)
+  previousUnitCostMinor  BigInt                     @default(0)
+  newUnitCostMinor       BigInt                     @default(0)
+  deltaUnitCostMinor     BigInt                     @default(0)
+  quantityAffected       Decimal                    @db.Decimal(12, 4)
+  totalDeltaMinor        BigInt                     @default(0)
+  status                 CostAdjustmentStatus       @default(PENDING)
+  approvedByMembershipId String?                    @db.Uuid
+  approvedAt             DateTime?                  @db.Timestamptz(3)
+  notes                  String?                    @db.VarChar(1000)
+  createdAt              DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                   @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  costLayer              InventoryCostLayer         @relation(fields: [clinicId, costLayerId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy             ClinicMembership?          @relation("CostAdjustmentApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, adjustmentNumber])
+  @@index([clinicId, costLayerId])
+  @@index([clinicId, status])
+}
+
+model InventoryLandedCostCounter {
+  id         String   @id @default(uuid()) @db.Uuid
+  clinicId   String   @unique @db.Uuid
+  lastNumber Int      @default(0)
+
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model InventoryCostMovementCounter {
+  id         String   @id @default(uuid()) @db.Uuid
+  clinicId   String   @unique @db.Uuid
+  lastNumber Int      @default(0)
+
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model InventoryValuationSnapshotCounter {
+  id         String   @id @default(uuid()) @db.Uuid
+  clinicId   String   @unique @db.Uuid
+  lastNumber Int      @default(0)
+
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model InventoryCostAdjustmentCounter {
+  id         String   @id @default(uuid()) @db.Uuid
+  clinicId   String   @unique @db.Uuid
+  lastNumber Int      @default(0)
+
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }

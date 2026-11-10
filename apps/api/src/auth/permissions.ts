@@ -43,6 +43,7 @@ export const permissions = [
   'reports.operational.read',
   'branches.read', 'branches.manage',
   'inventory.transfers.read', 'inventory.transfers.manage',
+  'inventory.costing.read', 'inventory.costing.manage', 'inventory.costing.approve',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -62,6 +63,7 @@ const inventoryManagement: Permission[] = [
   'inventory.stock-counts.read', 'inventory.stock-counts.manage', 'inventory.stock-counts.approve',
   'inventory.alerts.read', 'inventory.alerts.acknowledge',
   'inventory.transfers.read', 'inventory.transfers.manage',
+  'inventory.costing.read', 'inventory.costing.manage', 'inventory.costing.approve',
 ];
 const packageManagement: Permission[] = [
   'packages.catalog.read', 'packages.catalog.manage',
@@ -115,6 +117,7 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'refunds.request', 'refunds.approve', 'refunds.reject', 'refunds.settle',
     'commissions.plans.read', 'commissions.accruals.read', 'commissions.accruals.manage',
     'commissions.adjustments.request', 'commissions.settlements.read', 'commissions.settlements.manage',
-    'finance.reconciliation.read', 'reports.operational.read'],
+    'finance.reconciliation.read', 'reports.operational.read',
+    'inventory.costing.read', 'inventory.costing.manage'],
 };
 export const permissionsFor = (role: ClinicRole): readonly Permission[] => Object.hasOwn(rolePermissions, role) ? rolePermissions[role] : [];

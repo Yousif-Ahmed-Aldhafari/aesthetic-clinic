@@ -64,6 +64,13 @@ Apply `20261030000200_clinical_photography` with `npm run db:migrate`, `npm run 
 - Unit and policy tests: `apps/api/test/clinical-photo-policy.test.ts` and `apps/web/test/clinical-photos.test.mjs`.
 - Database integration tests: `apps/api/test/clinical-photo.integration.test.ts`.
 
+## Phase 5.4 advanced inventory costing, landed cost allocation & FIFO valuation
+
+Apply `20261111000100_inventory_costing_valuation` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All inventory costing endpoints reside under `/api/v1/clinics/:clinicId/inventory/costing`.
+- Unit and policy tests: `apps/api/test/costing-policy.test.ts`.
+- Database integration tests: `apps/api/test/costing.integration.test.ts`.
+- Invariants: Physical lot dispensing (FEFO) remains strictly separate from financial FIFO cost layer attribution (`InventoryCostLayer`). Landed charges (freight, duties, customs, storage) are allocated deterministically via `BY_VALUE` or `BY_QUANTITY` using integer minor units, attributing remainder to the final line item. Inter-branch stock transfers preserve historical unit landed cost in transit and at receipt. Clinical consumption depletes FIFO layers and records immutable `InventoryCostMovement` entries. Opening balances support backfill with `UNVERIFIED_COST` requiring segregated approval (`VERIFIED`). Periodic snapshots (`InventoryValuationSnapshot`) provide immutable audit records enforced by PostgreSQL database triggers. All 10 costing tables enforce `FORCE ROW LEVEL SECURITY`.
+
 ## Phase 3.5 clinical follow-ups, recovery monitoring, and treatment outcomes
 
 Apply `20261030000300_clinical_followups_outcomes` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All clinical follow-up, outcome, and adverse event endpoints reside under `/api/v1/clinics/:clinicId/clinical`.

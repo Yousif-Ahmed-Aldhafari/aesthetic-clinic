@@ -247,3 +247,4 @@ All requests require authentication, clinic scope selection, and `X-CSRF-Token`.
 ## 7. Advanced Modules
 - **Batch / Lot Traceability & Expiry Management (Step 4.2)**: See [inventory-lot-traceability.md](inventory-lot-traceability.md).
 - **Suppliers, Purchase Orders, Goods Receiving, Stocktaking & Alerts (Step 4.3)**: See [inventory-purchasing.md](inventory-purchasing.md).
+- **Advanced Costing, Landed Cost Allocation & FIFO Valuation (Step 5.4)**: See [inventory-cost-accounting.md](inventory-cost-accounting.md).

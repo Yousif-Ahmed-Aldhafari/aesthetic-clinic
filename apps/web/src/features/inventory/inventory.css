@@ -516,3 +516,214 @@
   font-size: 0.75rem;
   height: 26px;
 }
+
+/* ==========================================================================
+   Costing, Landed Cost & FIFO Valuation Styles (Step 5.4)
+   ========================================================================== */
+
+.costing-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  direction: rtl;
+  text-align: right;
+}
+
+.costing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.costing-header h2 {
+  margin: 0 0 0.35rem 0;
+  font-size: 1.4rem;
+  color: #1f2937;
+}
+
+.costing-subtitle {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.costing-header-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.costing-disclaimer-banner {
+  background: #fdf4ff;
+  border: 1px solid #f0abfc;
+  border-radius: 10px;
+  padding: 0.85rem 1.25rem;
+  font-size: 0.85rem;
+  color: #701a75;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  line-height: 1.5;
+}
+
+.disclaimer-badge {
+  background: #c026d3;
+  color: #ffffff;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.costing-alert {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.costing-tabs-nav {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0.4rem;
+  overflow-x: auto;
+}
+
+.costing-tab-btn {
+  background: none;
+  border: none;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.costing-tab-btn:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.costing-tab-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.valuation-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.valuation-metric-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.valuation-metric-card.primary {
+  border-top: 4px solid #0284c7;
+}
+
+.valuation-metric-card.success {
+  border-top: 4px solid #10b981;
+}
+
+.valuation-metric-card.warning {
+  border-top: 4px solid #f59e0b;
+}
+
+.valuation-metric-card.info {
+  border-top: 4px solid #6366f1;
+}
+
+.valuation-metric-card.danger {
+  border-top: 4px solid #ef4444;
+}
+
+.metric-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.metric-value {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #111827;
+}
+
+.metric-hint {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.costing-table-container {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.25rem;
+  overflow-x: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.costing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  text-align: right;
+}
+
+.costing-table th {
+  background: #f9fafb;
+  color: #374151;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.costing-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f3f4f6;
+  color: #1f2937;
+  vertical-align: middle;
+}
+
+.costing-table tr:hover td {
+  background: #fafafa;
+}
+
+.costing-action-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.costing-action-card h3 {
+  margin: 0 0 0.5rem 0;
+  color: #111827;
+}
+
+.costing-action-card p {
+  color: #4b5563;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-bottom: 1rem;
+}

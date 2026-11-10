@@ -614,6 +614,71 @@ export class BranchRepository {
         },
       });
 
+      // Deplete source branch cost layers and record TRANSFER_OUT cost movements
+      const srcLayers = await tx.inventoryCostLayer.findMany({
+        where: {
+          clinicId: c.clinicId,
+          productId: product.id,
+          branchId: srcBranch.id,
+          remainingQuantity: { gt: 0 },
+          costStatus: { in: ['VERIFIED', 'UNVERIFIED_COST', 'ADJUSTED'] },
+        },
+        orderBy: [{ layerDate: 'asc' }, { id: 'asc' }],
+      });
+
+      const sortedSrcLayers = [...srcLayers].sort((a, b) => {
+        if (input.batchId) {
+          const aMatches = a.batchId === input.batchId;
+          const bMatches = b.batchId === input.batchId;
+          if (aMatches && !bMatches) return -1;
+          if (!aMatches && bMatches) return 1;
+        }
+        return a.layerDate.getTime() - b.layerDate.getTime();
+      });
+
+      let remDispatch = qty;
+      for (const layer of sortedSrcLayers) {
+        if (remDispatch.lessThanOrEqualTo(0)) break;
+        const take = Prisma.Decimal.min(remDispatch, layer.remainingQuantity);
+        const newRem = layer.remainingQuantity.minus(take);
+        const costMinor = BigInt(take.mul(layer.unitLandedCostMinor.toString()).round().toString());
+        const newTotalMinor = BigInt(newRem.mul(layer.unitLandedCostMinor.toString()).round().toString());
+
+        await tx.inventoryCostLayer.update({
+          where: { id: layer.id },
+          data: {
+            remainingQuantity: newRem,
+            totalRemainingCostMinor: newTotalMinor,
+            costStatus: newRem.equals(0) ? 'EXHAUSTED' : layer.costStatus,
+            version: { increment: 1 },
+          },
+        });
+
+        const counter = await tx.inventoryCostMovementCounter.upsert({
+          where: { clinicId: c.clinicId },
+          create: { clinicId: c.clinicId, lastNumber: 1 },
+          update: { lastNumber: { increment: 1 } },
+          select: { lastNumber: true },
+        });
+        const movementNumber = `CM-${String(counter.lastNumber).padStart(6, '0')}`;
+
+        await tx.inventoryCostMovement.create({
+          data: {
+            clinicId: c.clinicId,
+            movementNumber,
+            costLayerId: layer.id,
+            transferId: transfer.id,
+            movementType: 'TRANSFER_OUT',
+            quantity: take,
+            unitCostMinor: layer.unitLandedCostMinor,
+            totalCostMinor: costMinor,
+            notes: `Dispatch inter-branch transfer: ${transfer.transferNumber}`,
+          },
+        });
+
+        remDispatch = remDispatch.minus(take);
+      }
+
       await this.audit.record(
         {
           clinicId: c.clinicId,
@@ -715,6 +780,59 @@ export class BranchRepository {
         },
       });
 
+      // Create destination branch cost layer from dispatched transfer provenance
+      const transferOutMovements = await tx.inventoryCostMovement.findMany({
+        where: { clinicId: c.clinicId, transferId: transfer.id, movementType: 'TRANSFER_OUT' },
+        include: { costLayer: true },
+      });
+
+      for (const m of transferOutMovements) {
+        const layer = m.costLayer;
+        const unitLandedCostMinor = layer.unitLandedCostMinor;
+        const totalRemainingCostMinor = BigInt(m.quantity.mul(unitLandedCostMinor.toString()).round().toString());
+
+        const dstLayer = await tx.inventoryCostLayer.create({
+          data: {
+            clinicId: c.clinicId,
+            productId: transfer.productId,
+            branchId: transfer.destinationBranchId,
+            locationId: transfer.destinationLocationId,
+            batchId: transfer.batchId,
+            layerDate: new Date(),
+            initialQuantity: m.quantity,
+            remainingQuantity: m.quantity,
+            unitAcquisitionCostMinor: layer.unitAcquisitionCostMinor,
+            unitLandedCostMinor,
+            totalRemainingCostMinor,
+            costStatus: layer.costStatus,
+            sourceProvenance: 'TRANSFER_IN',
+            currency: layer.currency,
+          },
+        });
+
+        const counter = await tx.inventoryCostMovementCounter.upsert({
+          where: { clinicId: c.clinicId },
+          create: { clinicId: c.clinicId, lastNumber: 1 },
+          update: { lastNumber: { increment: 1 } },
+          select: { lastNumber: true },
+        });
+        const movementNumber = `CM-${String(counter.lastNumber).padStart(6, '0')}`;
+
+        await tx.inventoryCostMovement.create({
+          data: {
+            clinicId: c.clinicId,
+            movementNumber,
+            costLayerId: dstLayer.id,
+            transferId: transfer.id,
+            movementType: 'TRANSFER_IN',
+            quantity: m.quantity,
+            unitCostMinor: unitLandedCostMinor,
+            totalCostMinor: totalRemainingCostMinor,
+            notes: `Receive inter-branch transfer: ${transfer.transferNumber}`,
+          },
+        });
+      }
+
       await this.audit.record(
         {
           clinicId: c.clinicId,
@@ -783,11 +901,55 @@ export class BranchRepository {
               movementType: 'TRANSFER_IN',
               quantity: transfer.quantity,
               balanceAfter: revertedOnHand,
-              reasonCode: 'DISCREPANCY_CORRECTION',
+              reasonCode: 'INTERNAL_TRANSFER',
               reasonExplanation: `Cancelled inter-branch transfer: ${transfer.transferNumber}`,
               actorMembershipId: c.membershipId,
             },
           });
+
+          // Restore cost layers back to source branch
+          const transferOutMovements = await tx.inventoryCostMovement.findMany({
+            where: { clinicId: c.clinicId, transferId: transfer.id, movementType: 'TRANSFER_OUT' },
+            include: { costLayer: true },
+          });
+
+          for (const m of transferOutMovements) {
+            const layer = m.costLayer;
+            const newRem = layer.remainingQuantity.plus(m.quantity);
+            const newTotal = BigInt(newRem.mul(layer.unitLandedCostMinor.toString()).round().toString());
+
+            await tx.inventoryCostLayer.update({
+              where: { id: layer.id },
+              data: {
+                remainingQuantity: newRem,
+                totalRemainingCostMinor: newTotal,
+                costStatus: layer.costStatus === 'EXHAUSTED' ? 'VERIFIED' : layer.costStatus,
+                version: { increment: 1 },
+              },
+            });
+
+            const counter = await tx.inventoryCostMovementCounter.upsert({
+              where: { clinicId: c.clinicId },
+              create: { clinicId: c.clinicId, lastNumber: 1 },
+              update: { lastNumber: { increment: 1 } },
+              select: { lastNumber: true },
+            });
+            const movementNumber = `CM-${String(counter.lastNumber).padStart(6, '0')}`;
+
+            await tx.inventoryCostMovement.create({
+              data: {
+                clinicId: c.clinicId,
+                movementNumber,
+                costLayerId: layer.id,
+                transferId: transfer.id,
+                movementType: 'ADJUSTMENT',
+                quantity: m.quantity,
+                unitCostMinor: layer.unitLandedCostMinor,
+                totalCostMinor: m.totalCostMinor,
+                notes: `Cancelled transfer restitution: ${transfer.transferNumber}`,
+              },
+            });
+          }
         }
       }
 

@@ -153,3 +153,13 @@ ALTER TABLE "InterBranchTransfer" FORCE ROW LEVEL SECURITY;
 - `POST /api/v1/clinics/:clinicId/transfers/dispatch`: Dispatch inventory stock to another branch.
 - `POST /api/v1/clinics/:clinicId/transfers/:transferId/receive`: Acknowledge and receive transfer.
 - `POST /api/v1/clinics/:clinicId/transfers/:transferId/cancel`: Cancel dispatched transfer and revert inventory.
+
+---
+
+## 7. Inter-Branch Costing & Valuation Invariance (Step 5.4)
+
+In Step 5.4, inter-branch inventory transfers (`InterBranchTransfer`) are fully integrated with the FIFO costing engine:
+- **Dispatch**: Decrements FIFO cost layers at the origin branch (`TRANSFER_OUT`) while preserving historical unit landed cost in transit.
+- **Receipt**: Generates a new `InventoryCostLayer` at the destination branch (`TRANSFER_IN`) at the exact unit landed cost of the dispatched goods.
+- **Cancellation Restitution**: If a transfer is cancelled before receipt, the stock and cost layers are restored to the origin branch at the exact acquisition value.
+See [inventory-cost-accounting.md](inventory-cost-accounting.md) for full accounting specifications.

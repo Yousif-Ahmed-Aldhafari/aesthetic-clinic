@@ -1429,3 +1429,23 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Session Branch Context (`selectedBranchId`)**: Active staff sessions hold `selectedBranchId`. The branch switching API (`POST /api/v1/auth/branch`) validates authorization before updating the session operating context.
 - **GiST Exclusion Cross-Branch Practitioner Scheduling**: Overlapping appointments for a practitioner across different branches are strictly blocked at the PostgreSQL engine level via GiST exclusion constraint (`clinic_practitioner_schedule_excl`).
 - **Two-Step Inter-Branch Inventory Movement (`InterBranchTransfer`)**: Custodial stock transfers (`DISPATCHED` ➔ `RECEIVED`) with automatic `TRANSFER_OUT` and `TRANSFER_IN` ledger movements, discrepancy tracking, and cancelation reversion.
+
+## 10. Step 5.4: Advanced Inventory Costing, Landed Cost Allocation & FIFO Valuation
+
+### Financial Cost Layers vs Physical Lots
+- **Physical Safety vs Accounting Valuation**: Separation of concerns between physical clinical lot dispensing (`InventoryBatch`, FEFO based on expiration) and statutory financial valuation (`InventoryCostLayer`, FIFO based on layer acquisition date).
+- **Clinic & Branch Tenancy**: Every cost layer enforces tenant boundary via composite foreign keys `("clinicId", "branchId")` and `("clinicId", "productId")`.
+
+### Landed Cost Allocation Engine
+- **Deterministic Minor-Unit Math**: Landed charges (freight, duties, customs, storage, cold-chain handling) are allocated across goods receipts using `BY_VALUE` or `BY_QUANTITY`.
+- **Integer Rounding Remainder Attribution**: Remainder minor currency units are attributed to the final allocation line, preventing fractional currency drift.
+- **Unit Landed Cost Calculation**: Line base acquisition cost + allocated landed cost divided by line quantity.
+
+### FIFO Consumption & Inter-Branch Stock Transfers
+- **Layer Depletion Engine (`allocateFifoConsumption`)**: Depletes active layers in strict `layerDate ASC, id ASC` order, setting depleted layers to `costStatus = 'EXHAUSTED'` and creating immutable `InventoryCostMovement` records.
+- **Transfer Invariance**: Dispatched stock decrements origin branch layers (`TRANSFER_OUT`). Receiving branch creates new layers at the destination branch preserving historical landed unit cost (`TRANSFER_IN`). Cancelled transfers restore original cost layers without value degradation.
+
+### Segregation of Duties & Database Security
+- **Dual-Control Approval**: Staff can draft opening balances (`UNVERIFIED_COST`) or revaluation adjustments (`PENDING`). Only `CLINIC_OWNER` or `CLINIC_ADMIN` holding `inventory.costing.approve` can verify opening balances or approve revaluation adjustments.
+- **FORCE ROW LEVEL SECURITY**: Applied to all 10 costing tables in PostgreSQL (`InventoryCostLayer`, `InventoryLandedCost`, `InventoryLandedCostAllocationLine`, `InventoryCostMovement`, `InventoryValuationSnapshot`, `InventoryCostAdjustment`, and counters).
+- **Immutability Triggers**: `trg_prevent_cost_movement_mutation` and `trg_prevent_valuation_snapshot_mutation` raise `42501` on raw `UPDATE` or `DELETE`, ensuring an unalterable financial audit trail.
