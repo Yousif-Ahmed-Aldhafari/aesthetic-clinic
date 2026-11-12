@@ -218,7 +218,7 @@ if (!enabled) {
     assert(meta.ciphertextSha256);
     assert(meta.plaintextSize > 0);
     assert(meta.ciphertextSize > 0);
-    assert.equal(meta.latestMigration, '20261111000100_inventory_costing_valuation');
+    assert.equal(meta.latestMigration, '20261112000100_payment_regulatory_integrations');
     assert(meta.migrationCount >= 30, 'Must record all applied migrations');
 
     // Completeness verification: all public tables tracked

@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isUUID } from 'class-validator';
-import type { Prisma, ClinicRole } from '../generated/prisma/client.js';
+import type { Prisma, ClinicRole, PaymentProviderCode } from '../generated/prisma/client.js';
 import type { Environment } from '../config/environment.js';
 import { authorizationHash, equal } from '../auth/crypto.js';
 import { AuthError } from '../auth/auth-error.js';
@@ -11,7 +11,7 @@ import { PrismaService } from './prisma.service.js';
 import { VerifiedSessions, type VerifiedPrincipal } from './verified-sessions.js';
 
 // Feature callbacks receive only tenant delegates, never raw SQL/global identity.
-export type TenantTransaction = Pick<Prisma.TransactionClient,'clinic'|'clinicBranding'|'clinicDomain'|'clinicMembership'|'patient'|'patientCounter'|'clinicService'|'bookableResource'|'resourceAvailability'|'resourceTimeOff'|'schedulingState'|'appointment'|'visit'|'queueTicket'|'queueCounter'|'queueConfiguration'|'queueCommand'|'invoice'|'invoiceLine'|'payment'|'paymentReversal'|'financialAuditEvent'|'clinicInvoiceCounter'|'clinicBillingProfile'|'clinicAsset'|'clinicIdentityState'|'clinicIdentityAuditEvent'|'clinicSlugReservation'|'auditEvent'|'privacyRequest'|'patientExport'|'retentionPolicy'|'clinicalEncounter'|'clinicalNote'|'clinicalNoteAmendment'|'medicalHistory'|'aestheticProcedureCatalog'|'treatmentPlan'|'treatmentPlanRevision'|'treatmentPlanItem'|'procedureExecution'|'consentTemplate'|'consentTemplateVersion'|'patientConsent'|'consentSignatureEvidence'|'consentWithdrawal'|'clinicalPhotoSession'|'clinicalPhoto'|'photoComparisonGroup'|'photoAnnotation'|'clinicalFollowUp'|'followUpAssessment'|'followUpAssessmentAmendment'|'treatmentOutcome'|'adverseEvent'|'inventoryProduct'|'inventoryLocation'|'inventoryStockMovement'|'inventoryBalance'|'inventoryBatch'|'inventoryBatchBalance'|'inventoryClinicalConsumption'|'inventorySupplier'|'inventoryPurchaseOrder'|'inventoryPurchaseOrderLine'|'inventoryPurchaseOrderCounter'|'inventoryGoodsReceipt'|'inventoryGoodsReceiptLine'|'inventoryGoodsReceiptCounter'|'inventoryStockCount'|'inventoryStockCountItem'|'inventoryStockCountCounter'|'inventoryAlertAcknowledgment'|'treatmentPackage'|'treatmentPackageVersion'|'treatmentPackageItem'|'patientPackage'|'patientPackageEntitlement'|'packageRedemption'|'packageRedemptionReversal'|'installmentPlanCounter'|'installmentPlan'|'installmentSchedule'|'installmentAllocation'|'refundRequest'|'practitionerCommissionPlan'|'practitionerCommissionAssignment'|'practitionerCommissionRule'|'commissionSettlementCounter'|'practitionerCommissionSettlement'|'practitionerCommissionAccrual'|'practitionerCommissionAdjustment'|'patientAccount'|'patientSession'|'patientVerificationToken'|'patientPortalAuditEvent'|'patientRecoveryCheckIn'|'patientReportedOutcome'|'clinicBranch'|'branchMembership'|'interBranchTransfer'|'inventoryCostLayer'|'inventoryLandedCost'|'inventoryLandedCostAllocationLine'|'inventoryCostMovement'|'inventoryValuationSnapshot'|'inventoryCostAdjustment'|'inventoryLandedCostCounter'|'inventoryCostMovementCounter'|'inventoryValuationSnapshotCounter'|'inventoryCostAdjustmentCounter'> & {identityLocks:()=>Promise<{currencyLocked:boolean;timezoneLocked:boolean}>};
+export type TenantTransaction = Pick<Prisma.TransactionClient,'clinic'|'clinicBranding'|'clinicDomain'|'clinicMembership'|'patient'|'patientCounter'|'clinicService'|'bookableResource'|'resourceAvailability'|'resourceTimeOff'|'schedulingState'|'appointment'|'visit'|'queueTicket'|'queueCounter'|'queueConfiguration'|'queueCommand'|'invoice'|'invoiceLine'|'payment'|'paymentReversal'|'financialAuditEvent'|'clinicInvoiceCounter'|'clinicBillingProfile'|'clinicAsset'|'clinicIdentityState'|'clinicIdentityAuditEvent'|'clinicSlugReservation'|'auditEvent'|'privacyRequest'|'patientExport'|'retentionPolicy'|'clinicalEncounter'|'clinicalNote'|'clinicalNoteAmendment'|'medicalHistory'|'aestheticProcedureCatalog'|'treatmentPlan'|'treatmentPlanRevision'|'treatmentPlanItem'|'procedureExecution'|'consentTemplate'|'consentTemplateVersion'|'patientConsent'|'consentSignatureEvidence'|'consentWithdrawal'|'clinicalPhotoSession'|'clinicalPhoto'|'photoComparisonGroup'|'photoAnnotation'|'clinicalFollowUp'|'followUpAssessment'|'followUpAssessmentAmendment'|'treatmentOutcome'|'adverseEvent'|'inventoryProduct'|'inventoryLocation'|'inventoryStockMovement'|'inventoryBalance'|'inventoryBatch'|'inventoryBatchBalance'|'inventoryClinicalConsumption'|'inventorySupplier'|'inventoryPurchaseOrder'|'inventoryPurchaseOrderLine'|'inventoryPurchaseOrderCounter'|'inventoryGoodsReceipt'|'inventoryGoodsReceiptLine'|'inventoryGoodsReceiptCounter'|'inventoryStockCount'|'inventoryStockCountItem'|'inventoryStockCountCounter'|'inventoryAlertAcknowledgment'|'treatmentPackage'|'treatmentPackageVersion'|'treatmentPackageItem'|'patientPackage'|'patientPackageEntitlement'|'packageRedemption'|'packageRedemptionReversal'|'installmentPlanCounter'|'installmentPlan'|'installmentSchedule'|'installmentAllocation'|'refundRequest'|'practitionerCommissionPlan'|'practitionerCommissionAssignment'|'practitionerCommissionRule'|'commissionSettlementCounter'|'practitionerCommissionSettlement'|'practitionerCommissionAccrual'|'practitionerCommissionAdjustment'|'patientAccount'|'patientSession'|'patientVerificationToken'|'patientPortalAuditEvent'|'patientRecoveryCheckIn'|'patientReportedOutcome'|'clinicBranch'|'branchMembership'|'interBranchTransfer'|'inventoryCostLayer'|'inventoryLandedCost'|'inventoryLandedCostAllocationLine'|'inventoryCostMovement'|'inventoryValuationSnapshot'|'inventoryCostAdjustment'|'inventoryLandedCostCounter'|'inventoryCostMovementCounter'|'inventoryValuationSnapshotCounter'|'inventoryCostAdjustmentCounter'|'paymentProviderConfiguration'|'paymentIntent'|'paymentProviderEvent'|'paymentSettlement'|'externalRefund'|'externalPayout'|'externalReconciliationRun'|'externalReconciliationFinding'|'clinicRegulatoryProfile'|'regulatoryDocument'|'regulatorySubmission'|'regulatorySubmissionEvent'|'externalPayoutCounter'|'externalReconciliationRunCounter'|'regulatoryDocumentCounter'> & {identityLocks:()=>Promise<{currencyLocked:boolean;timezoneLocked:boolean}>};
 export type TenantContext={userId:string;membershipId:string;clinicId:string;role:ClinicRole;permissions:readonly Permission[];slug:string;displayName:string;selectedBranchId?:string|null};
 @Injectable()
 export class TenantDatabaseService {
@@ -41,7 +41,124 @@ export class TenantDatabaseService {
       if(options.identityWrite)await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'clinic-identity:'+membership.clinicId},0))::text`;
       else await tx.$queryRaw`SELECT pg_advisory_xact_lock_shared(hashtextextended(${'clinic-identity:'+membership.clinicId},0))::text`;
       const context={userId:user.id,membershipId:membership.id,clinicId:membership.clinicId,role:membership.role,permissions,slug:membership.clinic.slug,displayName:membership.clinic.displayName,selectedBranchId:session.selectedBranchId};
-      return work({clinic:tx.clinic,clinicBranding:tx.clinicBranding,clinicDomain:tx.clinicDomain,clinicMembership:tx.clinicMembership,patient:tx.patient,patientCounter:tx.patientCounter,clinicService:tx.clinicService,bookableResource:tx.bookableResource,resourceAvailability:tx.resourceAvailability,resourceTimeOff:tx.resourceTimeOff,schedulingState:tx.schedulingState,appointment:tx.appointment,visit:tx.visit,queueTicket:tx.queueTicket,queueCounter:tx.queueCounter,queueConfiguration:tx.queueConfiguration,queueCommand:tx.queueCommand,invoice:tx.invoice,invoiceLine:tx.invoiceLine,payment:tx.payment,paymentReversal:tx.paymentReversal,financialAuditEvent:tx.financialAuditEvent,clinicInvoiceCounter:tx.clinicInvoiceCounter,clinicBillingProfile:tx.clinicBillingProfile,clinicAsset:tx.clinicAsset,clinicIdentityState:tx.clinicIdentityState,clinicIdentityAuditEvent:tx.clinicIdentityAuditEvent,clinicSlugReservation:tx.clinicSlugReservation,auditEvent:tx.auditEvent,privacyRequest:tx.privacyRequest,patientExport:tx.patientExport,retentionPolicy:tx.retentionPolicy,clinicalEncounter:tx.clinicalEncounter,clinicalNote:tx.clinicalNote,clinicalNoteAmendment:tx.clinicalNoteAmendment,medicalHistory:tx.medicalHistory,aestheticProcedureCatalog:tx.aestheticProcedureCatalog,treatmentPlan:tx.treatmentPlan,treatmentPlanRevision:tx.treatmentPlanRevision,treatmentPlanItem:tx.treatmentPlanItem,procedureExecution:tx.procedureExecution,consentTemplate:tx.consentTemplate,consentTemplateVersion:tx.consentTemplateVersion,patientConsent:tx.patientConsent,consentSignatureEvidence:tx.consentSignatureEvidence,consentWithdrawal:tx.consentWithdrawal,clinicalPhotoSession:tx.clinicalPhotoSession,clinicalPhoto:tx.clinicalPhoto,photoComparisonGroup:tx.photoComparisonGroup,photoAnnotation:tx.photoAnnotation,clinicalFollowUp:tx.clinicalFollowUp,followUpAssessment:tx.followUpAssessment,followUpAssessmentAmendment:tx.followUpAssessmentAmendment,treatmentOutcome:tx.treatmentOutcome,adverseEvent:tx.adverseEvent,inventoryProduct:tx.inventoryProduct,inventoryLocation:tx.inventoryLocation,inventoryStockMovement:tx.inventoryStockMovement,inventoryBalance:tx.inventoryBalance,inventoryBatch:tx.inventoryBatch,inventoryBatchBalance:tx.inventoryBatchBalance,inventoryClinicalConsumption:tx.inventoryClinicalConsumption,inventorySupplier:tx.inventorySupplier,inventoryPurchaseOrder:tx.inventoryPurchaseOrder,inventoryPurchaseOrderLine:tx.inventoryPurchaseOrderLine,inventoryPurchaseOrderCounter:tx.inventoryPurchaseOrderCounter,inventoryGoodsReceipt:tx.inventoryGoodsReceipt,inventoryGoodsReceiptLine:tx.inventoryGoodsReceiptLine,inventoryGoodsReceiptCounter:tx.inventoryGoodsReceiptCounter,inventoryStockCount:tx.inventoryStockCount,inventoryStockCountItem:tx.inventoryStockCountItem,inventoryStockCountCounter:tx.inventoryStockCountCounter,inventoryAlertAcknowledgment:tx.inventoryAlertAcknowledgment,treatmentPackage:tx.treatmentPackage,treatmentPackageVersion:tx.treatmentPackageVersion,treatmentPackageItem:tx.treatmentPackageItem,patientPackage:tx.patientPackage,patientPackageEntitlement:tx.patientPackageEntitlement,packageRedemption:tx.packageRedemption,packageRedemptionReversal:tx.packageRedemptionReversal,installmentPlanCounter:tx.installmentPlanCounter,installmentPlan:tx.installmentPlan,installmentSchedule:tx.installmentSchedule,installmentAllocation:tx.installmentAllocation,refundRequest:tx.refundRequest,practitionerCommissionPlan:tx.practitionerCommissionPlan,practitionerCommissionAssignment:tx.practitionerCommissionAssignment,practitionerCommissionRule:tx.practitionerCommissionRule,commissionSettlementCounter:tx.commissionSettlementCounter,practitionerCommissionSettlement:tx.practitionerCommissionSettlement,practitionerCommissionAccrual:tx.practitionerCommissionAccrual,practitionerCommissionAdjustment:tx.practitionerCommissionAdjustment,patientAccount:tx.patientAccount,patientSession:tx.patientSession,patientVerificationToken:tx.patientVerificationToken,patientPortalAuditEvent:tx.patientPortalAuditEvent,patientRecoveryCheckIn:tx.patientRecoveryCheckIn,patientReportedOutcome:tx.patientReportedOutcome,clinicBranch:tx.clinicBranch,branchMembership:tx.branchMembership,interBranchTransfer:tx.interBranchTransfer,inventoryCostLayer:tx.inventoryCostLayer,inventoryLandedCost:tx.inventoryLandedCost,inventoryLandedCostAllocationLine:tx.inventoryLandedCostAllocationLine,inventoryCostMovement:tx.inventoryCostMovement,inventoryValuationSnapshot:tx.inventoryValuationSnapshot,inventoryCostAdjustment:tx.inventoryCostAdjustment,inventoryLandedCostCounter:tx.inventoryLandedCostCounter,inventoryCostMovementCounter:tx.inventoryCostMovementCounter,inventoryValuationSnapshotCounter:tx.inventoryValuationSnapshotCounter,inventoryCostAdjustmentCounter:tx.inventoryCostAdjustmentCounter,identityLocks:async()=>{const [flags]=await tx.$queryRaw<{currencyLocked:boolean;timezoneLocked:boolean}[]>`SELECT * FROM lamssa_security.administration_locks(${membership.clinicId}::uuid)`;if(!flags)throw new ForbiddenException();return flags;}},context);
+      return work({clinic:tx.clinic,clinicBranding:tx.clinicBranding,clinicDomain:tx.clinicDomain,clinicMembership:tx.clinicMembership,patient:tx.patient,patientCounter:tx.patientCounter,clinicService:tx.clinicService,bookableResource:tx.bookableResource,resourceAvailability:tx.resourceAvailability,resourceTimeOff:tx.resourceTimeOff,schedulingState:tx.schedulingState,appointment:tx.appointment,visit:tx.visit,queueTicket:tx.queueTicket,queueCounter:tx.queueCounter,queueConfiguration:tx.queueConfiguration,queueCommand:tx.queueCommand,invoice:tx.invoice,invoiceLine:tx.invoiceLine,payment:tx.payment,paymentReversal:tx.paymentReversal,financialAuditEvent:tx.financialAuditEvent,clinicInvoiceCounter:tx.clinicInvoiceCounter,clinicBillingProfile:tx.clinicBillingProfile,clinicAsset:tx.clinicAsset,clinicIdentityState:tx.clinicIdentityState,clinicIdentityAuditEvent:tx.clinicIdentityAuditEvent,clinicSlugReservation:tx.clinicSlugReservation,auditEvent:tx.auditEvent,privacyRequest:tx.privacyRequest,patientExport:tx.patientExport,retentionPolicy:tx.retentionPolicy,clinicalEncounter:tx.clinicalEncounter,clinicalNote:tx.clinicalNote,clinicalNoteAmendment:tx.clinicalNoteAmendment,medicalHistory:tx.medicalHistory,aestheticProcedureCatalog:tx.aestheticProcedureCatalog,treatmentPlan:tx.treatmentPlan,treatmentPlanRevision:tx.treatmentPlanRevision,treatmentPlanItem:tx.treatmentPlanItem,procedureExecution:tx.procedureExecution,consentTemplate:tx.consentTemplate,consentTemplateVersion:tx.consentTemplateVersion,patientConsent:tx.patientConsent,consentSignatureEvidence:tx.consentSignatureEvidence,consentWithdrawal:tx.consentWithdrawal,clinicalPhotoSession:tx.clinicalPhotoSession,clinicalPhoto:tx.clinicalPhoto,photoComparisonGroup:tx.photoComparisonGroup,photoAnnotation:tx.photoAnnotation,clinicalFollowUp:tx.clinicalFollowUp,followUpAssessment:tx.followUpAssessment,followUpAssessmentAmendment:tx.followUpAssessmentAmendment,treatmentOutcome:tx.treatmentOutcome,adverseEvent:tx.adverseEvent,inventoryProduct:tx.inventoryProduct,inventoryLocation:tx.inventoryLocation,inventoryStockMovement:tx.inventoryStockMovement,inventoryBalance:tx.inventoryBalance,inventoryBatch:tx.inventoryBatch,inventoryBatchBalance:tx.inventoryBatchBalance,inventoryClinicalConsumption:tx.inventoryClinicalConsumption,inventorySupplier:tx.inventorySupplier,inventoryPurchaseOrder:tx.inventoryPurchaseOrder,inventoryPurchaseOrderLine:tx.inventoryPurchaseOrderLine,inventoryPurchaseOrderCounter:tx.inventoryPurchaseOrderCounter,inventoryGoodsReceipt:tx.inventoryGoodsReceipt,inventoryGoodsReceiptLine:tx.inventoryGoodsReceiptLine,inventoryGoodsReceiptCounter:tx.inventoryGoodsReceiptCounter,inventoryStockCount:tx.inventoryStockCount,inventoryStockCountItem:tx.inventoryStockCountItem,inventoryStockCountCounter:tx.inventoryStockCountCounter,inventoryAlertAcknowledgment:tx.inventoryAlertAcknowledgment,treatmentPackage:tx.treatmentPackage,treatmentPackageVersion:tx.treatmentPackageVersion,treatmentPackageItem:tx.treatmentPackageItem,patientPackage:tx.patientPackage,patientPackageEntitlement:tx.patientPackageEntitlement,packageRedemption:tx.packageRedemption,packageRedemptionReversal:tx.packageRedemptionReversal,installmentPlanCounter:tx.installmentPlanCounter,installmentPlan:tx.installmentPlan,installmentSchedule:tx.installmentSchedule,installmentAllocation:tx.installmentAllocation,refundRequest:tx.refundRequest,practitionerCommissionPlan:tx.practitionerCommissionPlan,practitionerCommissionAssignment:tx.practitionerCommissionAssignment,practitionerCommissionRule:tx.practitionerCommissionRule,commissionSettlementCounter:tx.commissionSettlementCounter,practitionerCommissionSettlement:tx.practitionerCommissionSettlement,practitionerCommissionAccrual:tx.practitionerCommissionAccrual,practitionerCommissionAdjustment:tx.practitionerCommissionAdjustment,patientAccount:tx.patientAccount,patientSession:tx.patientSession,patientVerificationToken:tx.patientVerificationToken,patientPortalAuditEvent:tx.patientPortalAuditEvent,patientRecoveryCheckIn:tx.patientRecoveryCheckIn,patientReportedOutcome:tx.patientReportedOutcome,clinicBranch:tx.clinicBranch,branchMembership:tx.branchMembership,interBranchTransfer:tx.interBranchTransfer,inventoryCostLayer:tx.inventoryCostLayer,inventoryLandedCost:tx.inventoryLandedCost,inventoryLandedCostAllocationLine:tx.inventoryLandedCostAllocationLine,inventoryCostMovement:tx.inventoryCostMovement,inventoryValuationSnapshot:tx.inventoryValuationSnapshot,inventoryCostAdjustment:tx.inventoryCostAdjustment,inventoryLandedCostCounter:tx.inventoryLandedCostCounter,inventoryCostMovementCounter:tx.inventoryCostMovementCounter,inventoryValuationSnapshotCounter:tx.inventoryValuationSnapshotCounter,inventoryCostAdjustmentCounter:tx.inventoryCostAdjustmentCounter,paymentProviderConfiguration:tx.paymentProviderConfiguration,paymentIntent:tx.paymentIntent,paymentProviderEvent:tx.paymentProviderEvent,paymentSettlement:tx.paymentSettlement,externalRefund:tx.externalRefund,externalPayout:tx.externalPayout,externalReconciliationRun:tx.externalReconciliationRun,externalReconciliationFinding:tx.externalReconciliationFinding,clinicRegulatoryProfile:tx.clinicRegulatoryProfile,regulatoryDocument:tx.regulatoryDocument,regulatorySubmission:tx.regulatorySubmission,regulatorySubmissionEvent:tx.regulatorySubmissionEvent,externalPayoutCounter:tx.externalPayoutCounter,externalReconciliationRunCounter:tx.externalReconciliationRunCounter,regulatoryDocumentCounter:tx.regulatoryDocumentCounter,identityLocks:async()=>{const [flags]=await tx.$queryRaw<{currencyLocked:boolean;timezoneLocked:boolean}[]>`SELECT * FROM lamssa_security.administration_locks(${membership.clinicId}::uuid)`;if(!flags)throw new ForbiddenException();return flags;}},context);
     },{maxWait:5000,timeout:10000,...(options.isolationLevel?{isolationLevel:options.isolationLevel}:{})});
+  }
+
+  async resolvePaymentWebhookTarget(providerCode: PaymentProviderCode, providerIntentId: string) {
+    return this.prisma.$transaction(async tx => {
+      await this.prisma.assertRuntimeRole(tx);
+      const rows = await tx.$queryRaw<{
+        clinicId: string;
+        paymentIntentId: string;
+        providerConfigId: string;
+        encryptedWebhookSecret: string | null;
+        mode: 'SANDBOX' | 'LIVE';
+        isEnabled: boolean;
+      }[]>`SELECT * FROM lamssa_security.resolve_payment_webhook_target(${providerCode}::"PaymentProviderCode", ${providerIntentId})`;
+      return rows;
+    }, { maxWait: 5000, timeout: 10000 });
+  }
+
+  async withWebhookContext<T>(
+    clinicId: string,
+    paymentIntentId: string,
+    work: (
+      tx: TenantTransaction,
+      postWebhookPayment: (
+        eventId: string,
+      ) => Promise<{ posted: boolean; paymentId: string | null; reason: string | null }>,
+    ) => Promise<T>,
+  ): Promise<T> {
+    if (!isUUID(clinicId) || !isUUID(paymentIntentId)) throw new ForbiddenException();
+    return this.prisma.$transaction(async tx => {
+      await this.prisma.assertRuntimeRole(tx);
+      await tx.$queryRaw`SELECT set_config('lamssa.clinic_id', ${clinicId}, true),
+        set_config('lamssa.webhook_intent_id', ${paymentIntentId}, true)`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock_shared(hashtextextended(${'clinic-identity:' + clinicId}, 0))::text`;
+      await tx.$queryRaw`SELECT id FROM public."PaymentIntent" WHERE "clinicId" = ${clinicId}::uuid AND id = ${paymentIntentId}::uuid FOR UPDATE`;
+      return work({
+        clinic: tx.clinic, clinicBranding: tx.clinicBranding, clinicDomain: tx.clinicDomain,
+        clinicMembership: tx.clinicMembership, patient: tx.patient, patientCounter: tx.patientCounter,
+        clinicService: tx.clinicService, bookableResource: tx.bookableResource,
+        resourceAvailability: tx.resourceAvailability, resourceTimeOff: tx.resourceTimeOff,
+        schedulingState: tx.schedulingState, appointment: tx.appointment, visit: tx.visit,
+        queueTicket: tx.queueTicket, queueCounter: tx.queueCounter, queueConfiguration: tx.queueConfiguration,
+        queueCommand: tx.queueCommand, invoice: tx.invoice, invoiceLine: tx.invoiceLine,
+        payment: tx.payment, paymentReversal: tx.paymentReversal, financialAuditEvent: tx.financialAuditEvent,
+        clinicInvoiceCounter: tx.clinicInvoiceCounter, clinicBillingProfile: tx.clinicBillingProfile,
+        clinicAsset: tx.clinicAsset, clinicIdentityState: tx.clinicIdentityState,
+        clinicIdentityAuditEvent: tx.clinicIdentityAuditEvent, clinicSlugReservation: tx.clinicSlugReservation,
+        auditEvent: tx.auditEvent, privacyRequest: tx.privacyRequest, patientExport: tx.patientExport,
+        retentionPolicy: tx.retentionPolicy, clinicalEncounter: tx.clinicalEncounter,
+        clinicalNote: tx.clinicalNote, clinicalNoteAmendment: tx.clinicalNoteAmendment,
+        medicalHistory: tx.medicalHistory, aestheticProcedureCatalog: tx.aestheticProcedureCatalog,
+        treatmentPlan: tx.treatmentPlan, treatmentPlanRevision: tx.treatmentPlanRevision,
+        treatmentPlanItem: tx.treatmentPlanItem, procedureExecution: tx.procedureExecution,
+        consentTemplate: tx.consentTemplate, consentTemplateVersion: tx.consentTemplateVersion,
+        patientConsent: tx.patientConsent, consentSignatureEvidence: tx.consentSignatureEvidence,
+        consentWithdrawal: tx.consentWithdrawal, clinicalPhotoSession: tx.clinicalPhotoSession,
+        clinicalPhoto: tx.clinicalPhoto, photoComparisonGroup: tx.photoComparisonGroup,
+        photoAnnotation: tx.photoAnnotation, clinicalFollowUp: tx.clinicalFollowUp,
+        followUpAssessment: tx.followUpAssessment, followUpAssessmentAmendment: tx.followUpAssessmentAmendment,
+        treatmentOutcome: tx.treatmentOutcome, adverseEvent: tx.adverseEvent,
+        inventoryProduct: tx.inventoryProduct, inventoryLocation: tx.inventoryLocation,
+        inventoryStockMovement: tx.inventoryStockMovement, inventoryBalance: tx.inventoryBalance,
+        inventoryBatch: tx.inventoryBatch, inventoryBatchBalance: tx.inventoryBatchBalance,
+        inventoryClinicalConsumption: tx.inventoryClinicalConsumption, inventorySupplier: tx.inventorySupplier,
+        inventoryPurchaseOrder: tx.inventoryPurchaseOrder, inventoryPurchaseOrderLine: tx.inventoryPurchaseOrderLine,
+        inventoryPurchaseOrderCounter: tx.inventoryPurchaseOrderCounter,
+        inventoryGoodsReceipt: tx.inventoryGoodsReceipt, inventoryGoodsReceiptLine: tx.inventoryGoodsReceiptLine,
+        inventoryGoodsReceiptCounter: tx.inventoryGoodsReceiptCounter,
+        inventoryStockCount: tx.inventoryStockCount, inventoryStockCountItem: tx.inventoryStockCountItem,
+        inventoryStockCountCounter: tx.inventoryStockCountCounter,
+        inventoryAlertAcknowledgment: tx.inventoryAlertAcknowledgment,
+        treatmentPackage: tx.treatmentPackage, treatmentPackageVersion: tx.treatmentPackageVersion,
+        treatmentPackageItem: tx.treatmentPackageItem, patientPackage: tx.patientPackage,
+        patientPackageEntitlement: tx.patientPackageEntitlement, packageRedemption: tx.packageRedemption,
+        packageRedemptionReversal: tx.packageRedemptionReversal,
+        installmentPlanCounter: tx.installmentPlanCounter, installmentPlan: tx.installmentPlan,
+        installmentSchedule: tx.installmentSchedule, installmentAllocation: tx.installmentAllocation,
+        refundRequest: tx.refundRequest, practitionerCommissionPlan: tx.practitionerCommissionPlan,
+        practitionerCommissionAssignment: tx.practitionerCommissionAssignment,
+        practitionerCommissionRule: tx.practitionerCommissionRule,
+        commissionSettlementCounter: tx.commissionSettlementCounter,
+        practitionerCommissionSettlement: tx.practitionerCommissionSettlement,
+        practitionerCommissionAccrual: tx.practitionerCommissionAccrual,
+        practitionerCommissionAdjustment: tx.practitionerCommissionAdjustment,
+        patientAccount: tx.patientAccount, patientSession: tx.patientSession,
+        patientVerificationToken: tx.patientVerificationToken, patientPortalAuditEvent: tx.patientPortalAuditEvent,
+        patientRecoveryCheckIn: tx.patientRecoveryCheckIn, patientReportedOutcome: tx.patientReportedOutcome,
+        clinicBranch: tx.clinicBranch, branchMembership: tx.branchMembership,
+        interBranchTransfer: tx.interBranchTransfer, inventoryCostLayer: tx.inventoryCostLayer,
+        inventoryLandedCost: tx.inventoryLandedCost, inventoryLandedCostAllocationLine: tx.inventoryLandedCostAllocationLine,
+        inventoryCostMovement: tx.inventoryCostMovement, inventoryValuationSnapshot: tx.inventoryValuationSnapshot,
+        inventoryCostAdjustment: tx.inventoryCostAdjustment, inventoryLandedCostCounter: tx.inventoryLandedCostCounter,
+        inventoryCostMovementCounter: tx.inventoryCostMovementCounter,
+        inventoryValuationSnapshotCounter: tx.inventoryValuationSnapshotCounter,
+        inventoryCostAdjustmentCounter: tx.inventoryCostAdjustmentCounter,
+        paymentProviderConfiguration: tx.paymentProviderConfiguration,
+        paymentIntent: tx.paymentIntent, paymentProviderEvent: tx.paymentProviderEvent,
+        paymentSettlement: tx.paymentSettlement, externalRefund: tx.externalRefund,
+        externalPayout: tx.externalPayout, externalReconciliationRun: tx.externalReconciliationRun,
+        externalReconciliationFinding: tx.externalReconciliationFinding,
+        clinicRegulatoryProfile: tx.clinicRegulatoryProfile, regulatoryDocument: tx.regulatoryDocument,
+        regulatorySubmission: tx.regulatorySubmission, regulatorySubmissionEvent: tx.regulatorySubmissionEvent,
+        externalPayoutCounter: tx.externalPayoutCounter,
+        externalReconciliationRunCounter: tx.externalReconciliationRunCounter,
+        regulatoryDocumentCounter: tx.regulatoryDocumentCounter,
+        identityLocks: async () => {
+          const [flags] = await tx.$queryRaw<{ currencyLocked: boolean; timezoneLocked: boolean }[]>`SELECT * FROM lamssa_security.administration_locks(${clinicId}::uuid)`;
+          if (!flags) throw new ForbiddenException();
+          return flags;
+        },
+      }, async (eventId: string) => {
+        if (!isUUID(eventId)) throw new ForbiddenException();
+        const [res] = await tx.$queryRaw<{ posted: boolean; paymentId: string | null; reason: string | null }[]>`
+          SELECT * FROM lamssa_security.post_webhook_payment(${clinicId}::uuid, ${paymentIntentId}::uuid, ${eventId}::uuid)
+        `;
+        return res ?? { posted: false, paymentId: null, reason: 'WEBHOOK_PAYMENT_POST_FAILED' };
+      });
+    }, { maxWait: 5000, timeout: 10000 });
   }
 }

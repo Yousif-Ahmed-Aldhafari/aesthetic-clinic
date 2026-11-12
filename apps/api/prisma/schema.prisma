@@ -188,6 +188,21 @@ model Clinic {
   costMovementCounter InventoryCostMovementCounter?
   valuationSnapshotCounter InventoryValuationSnapshotCounter?
   costAdjustmentCounter InventoryCostAdjustmentCounter?
+  paymentProviderConfigs PaymentProviderConfiguration[]
+  paymentIntents PaymentIntent[]
+  paymentProviderEvents PaymentProviderEvent[]
+  paymentSettlements PaymentSettlement[]
+  externalRefunds ExternalRefund[]
+  externalPayouts ExternalPayout[]
+  externalReconciliationRuns ExternalReconciliationRun[]
+  externalReconciliationFindings ExternalReconciliationFinding[]
+  regulatoryProfile ClinicRegulatoryProfile?
+  regulatoryDocuments RegulatoryDocument[]
+  regulatorySubmissions RegulatorySubmission[]
+  regulatorySubmissionEvents RegulatorySubmissionEvent[]
+  externalPayoutCounter ExternalPayoutCounter?
+  externalReconciliationRunCounter ExternalReconciliationRunCounter?
+  regulatoryDocumentCounter RegulatoryDocumentCounter?
 
   @@index([status, createdAt])
 }
@@ -222,6 +237,7 @@ model ClinicBranch {
   destinationTransfers InterBranchTransfer[] @relation("DestinationBranchTransfers")
   costLayers InventoryCostLayer[]
   valuationSnapshots InventoryValuationSnapshot[]
+  paymentIntents PaymentIntent[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, code])
@@ -426,6 +442,13 @@ model ClinicMembership {
   approvedLandedCosts InventoryLandedCost[] @relation("LandedCostApprover")
   approvedValuationSnapshots InventoryValuationSnapshot[] @relation("ValuationApprover")
   approvedCostAdjustments InventoryCostAdjustment[] @relation("CostAdjustmentApprover")
+  initiatedPaymentIntents PaymentIntent[] @relation("PaymentIntentInitiator")
+  initiatedExternalRefunds ExternalRefund[] @relation("ExternalRefundInitiator")
+  preparedExternalPayouts ExternalPayout[] @relation("ExternalPayoutPreparer")
+  approvedExternalPayouts ExternalPayout[] @relation("ExternalPayoutApprover")
+  executedReconciliationRuns ExternalReconciliationRun[] @relation("ReconciliationRunner")
+  createdRegulatoryDocuments RegulatoryDocument[] @relation("RegulatoryDocCreator")
+  submittedRegulatorySubmissions RegulatorySubmission[] @relation("RegulatorySubmitter")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -575,6 +598,7 @@ model Patient {
   patientAccount PatientAccount?
   recoveryCheckIns PatientRecoveryCheckIn[]
   patientReportedOutcomes PatientReportedOutcome[]
+  paymentIntents PaymentIntent[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -1349,6 +1373,8 @@ model Invoice {
   installmentPlans InstallmentPlan[]
   refundRequests RefundRequest[]
   commissionAccruals PractitionerCommissionAccrual[]
+  paymentIntents PaymentIntent[]
+  regulatoryDocuments RegulatoryDocument[]
   @@unique([clinicId,id])
   @@unique([clinicId,number])
   @@unique([clinicId,requestKey])
@@ -1392,6 +1418,7 @@ model Payment {
   invoice Invoice @relation(fields:[clinicId,invoiceId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   reversals PaymentReversal[]
   installmentAllocations InstallmentAllocation[]
+  paymentIntents PaymentIntent[]
   @@unique([clinicId,id])
   @@unique([clinicId,id,invoiceId])
   @@unique([clinicId,requestKey])
@@ -1415,6 +1442,7 @@ model PaymentReversal {
   invoice Invoice @relation(fields:[clinicId,invoiceId],references:[clinicId,id],onDelete:Restrict,onUpdate:Restrict)
   payment Payment @relation(fields:[clinicId,paymentId,invoiceId],references:[clinicId,id,invoiceId],onDelete:Restrict,onUpdate:Restrict)
   refundRequests RefundRequest[]
+  externalRefunds ExternalRefund[]
   @@unique([clinicId, id])
   @@unique([clinicId,requestKey])
   @@index([clinicId,paymentId,createdAt,id])
@@ -2876,6 +2904,7 @@ model RefundRequest {
   approvedBy              ClinicMembership?   @relation("RefundApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   rejectedBy              ClinicMembership?   @relation("RefundRejecter", fields: [clinicId, rejectedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   settledBy               ClinicMembership?   @relation("RefundSettler", fields: [clinicId, settledByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  externalRefunds         ExternalRefund[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, requestKey])
@@ -3032,6 +3061,7 @@ model PractitionerCommissionSettlement {
   confirmedBy              ClinicMembership?                  @relation("CommissionSettlementConfirmer", fields: [clinicId, confirmedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   accruals                 PractitionerCommissionAccrual[]
   adjustments              PractitionerCommissionAdjustment[]
+  externalPayouts          ExternalPayout[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, settlementNumber])
@@ -3159,6 +3189,7 @@ model PatientAccount {
   auditEvents         PatientPortalAuditEvent[]
   recoveryCheckIns    PatientRecoveryCheckIn[]
   patientReportedOutcomes PatientReportedOutcome[]
+  paymentIntents      PaymentIntent[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, patientId])
@@ -3557,4 +3588,468 @@ model InventoryCostAdjustmentCounter {
   lastNumber Int      @default(0)
 
   clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+// =============================================================================
+// Phase 5 Step 5.5: Payment Gateway, Banking & Regulatory Integration Foundations
+// =============================================================================
+
+enum PaymentProviderCode {
+  SANDBOX_MOCK
+  MOYASAR
+  CHECKOUT_COM
+  STRIPE
+  REGIONAL_BANK_GATEWAY
+}
+
+enum IntegrationMode {
+  SANDBOX
+  LIVE
+}
+
+enum ProviderHealthStatus {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  DISABLED
+}
+
+enum PaymentIntentStatus {
+  CREATED
+  REQUIRES_ACTION
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum WebhookProcessingStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED_DUPLICATE
+  FAILED_RETRYABLE
+  DEAD_LETTER
+}
+
+enum ExternalRefundStatus {
+  INITIATED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  REJECTED
+}
+
+enum ExternalPayoutStatus {
+  PREPARED
+  APPROVED
+  SUBMITTED
+  PROCESSING
+  SETTLED
+  FAILED
+  CANCELLED
+}
+
+enum ReconciliationScope {
+  INTERNAL_LEDGER
+  PAYMENT_PROVIDER
+  BANK_STATEMENT
+}
+
+enum ReconciliationFindingType {
+  PROVIDER_PAYMENT_MISSING
+  INTERNAL_PAYMENT_MISSING
+  AMOUNT_MISMATCH
+  CURRENCY_MISMATCH
+  DUPLICATE_PROVIDER_EVENT
+  REFUND_STATUS_MISMATCH
+  PAYOUT_UNVERIFIED
+  SETTLEMENT_FEE_VARIANCE
+}
+
+enum ReconciliationFindingSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum ReconciliationRunStatus {
+  COMPLETED
+  COMPLETED_WITH_FINDINGS
+  FAILED
+}
+
+enum RegulatoryFramework {
+  NOT_CONFIGURED
+  SA_ZATCA
+  AE_FTA
+  GENERIC_TAX_INVOICE
+}
+
+enum RegulatoryDocumentType {
+  TAX_INVOICE
+  SIMPLIFIED_TAX_INVOICE
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+enum RegulatorySubmissionStatus {
+  NOT_CONFIGURED
+  DRAFT
+  VALIDATED_LOCALLY
+  MOCK_SUBMITTED
+  REJECTED
+  SUBMITTED
+}
+
+model PaymentProviderConfiguration {
+  id                     String               @id @default(uuid()) @db.Uuid
+  clinicId               String               @db.Uuid
+  providerCode           PaymentProviderCode
+  mode                   IntegrationMode      @default(SANDBOX)
+  isEnabled              Boolean              @default(false)
+  supportedCurrencies    String[]
+  jurisdiction           String               @default("SA") @db.VarChar(16)
+  capabilities           Json
+  encryptedApiKey        String?              @db.Text
+  encryptedWebhookSecret String?              @db.Text
+  keyVersion             Int                  @default(1)
+  secretFingerprint      String?              @db.Char(16)
+  healthStatus           ProviderHealthStatus @default(DISABLED)
+  lastHealthCheckedAt    DateTime?            @db.Timestamptz(3)
+  version                Int                  @default(1)
+  createdAt              DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime             @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paymentIntents         PaymentIntent[]
+  providerEvents         PaymentProviderEvent[]
+  settlements            PaymentSettlement[]
+  externalRefunds        ExternalRefund[]
+  externalPayouts        ExternalPayout[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, providerCode, mode])
+  @@index([clinicId, isEnabled])
+}
+
+model PaymentIntent {
+  id                          String                       @id @default(uuid()) @db.Uuid
+  clinicId                    String                       @db.Uuid
+  branchId                    String?                      @db.Uuid
+  invoiceId                   String                       @db.Uuid
+  patientId                   String                       @db.Uuid
+  providerConfigId            String                       @db.Uuid
+  providerCode                PaymentProviderCode
+  mode                        IntegrationMode              @default(SANDBOX)
+  providerIntentId            String?                      @db.VarChar(128)
+  amountMinor                 BigInt
+  currency                    String                       @db.Char(3)
+  currencyScale               Int
+  status                      PaymentIntentStatus          @default(CREATED)
+  checkoutUrl                 String?                      @db.VarChar(500)
+  initiatedByMembershipId     String?                      @db.Uuid
+  initiatedByPatientAccountId String?                      @db.Uuid
+  postedPaymentId             String?                      @db.Uuid
+  failureCode                 String?                      @db.VarChar(80)
+  failureMessage              String?                      @db.VarChar(300)
+  idempotencyKey              String                       @db.Uuid
+  requestHash                 String                       @db.Char(64)
+  version                     Int                          @default(1)
+  createdAt                   DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime                     @updatedAt @db.Timestamptz(3)
+  expiresAt                   DateTime?                    @db.Timestamptz(3)
+
+  clinic                      Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch                      ClinicBranch?                @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  invoice                     Invoice                      @relation(fields: [clinicId, invoiceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  patient                     Patient                      @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  providerConfig              PaymentProviderConfiguration @relation(fields: [clinicId, providerConfigId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  initiatedByMembership       ClinicMembership?            @relation("PaymentIntentInitiator", fields: [clinicId, initiatedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  initiatedByPatientAccount   PatientAccount?              @relation(fields: [clinicId, initiatedByPatientAccountId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  postedPayment               Payment?                     @relation(fields: [clinicId, postedPaymentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  events                      PaymentProviderEvent[]
+  externalRefunds             ExternalRefund[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, idempotencyKey])
+  @@unique([clinicId, providerCode, providerIntentId])
+  @@index([clinicId, invoiceId, status])
+  @@index([clinicId, status, createdAt])
+}
+
+model PaymentProviderEvent {
+  id                String                       @id @default(uuid()) @db.Uuid
+  clinicId          String                       @db.Uuid
+  providerConfigId  String?                      @db.Uuid
+  paymentIntentId   String?                      @db.Uuid
+  providerCode      PaymentProviderCode
+  providerEventId   String                       @db.VarChar(128)
+  eventType         String                       @db.VarChar(80)
+  signatureVerified Boolean
+  eventTimestamp    DateTime?                    @db.Timestamptz(3)
+  rawPayloadHash    String                       @db.Char(64)
+  sanitizedPayload  Json
+  processingStatus  WebhookProcessingStatus      @default(RECEIVED)
+  retryCount        Int                          @default(0)
+  nextRetryAt       DateTime?                    @db.Timestamptz(3)
+  errorMessage      String?                      @db.VarChar(500)
+  processedAt       DateTime?                    @db.Timestamptz(3)
+  createdAt         DateTime                     @default(now()) @db.Timestamptz(3)
+
+  clinic            Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  providerConfig    PaymentProviderConfiguration? @relation(fields: [clinicId, providerConfigId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  paymentIntent     PaymentIntent?               @relation(fields: [clinicId, paymentIntentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, providerCode, providerEventId])
+  @@index([clinicId, processingStatus, createdAt])
+}
+
+model PaymentSettlement {
+  id                   String                       @id @default(uuid()) @db.Uuid
+  clinicId             String                       @db.Uuid
+  providerConfigId     String                       @db.Uuid
+  providerCode         PaymentProviderCode
+  providerSettlementId String                       @db.VarChar(128)
+  currency             String                       @db.Char(3)
+  currencyScale        Int
+  grossAmountMinor     BigInt
+  feeAmountMinor       BigInt
+  netAmountMinor       BigInt
+  settledAt            DateTime                     @db.Timestamptz(3)
+  bankReference        String?                      @db.VarChar(128)
+  isExternallyVerified Boolean                      @default(false)
+  evidenceJson         Json?
+  createdAt            DateTime                     @default(now()) @db.Timestamptz(3)
+
+  clinic               Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  providerConfig       PaymentProviderConfiguration @relation(fields: [clinicId, providerConfigId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, providerCode, providerSettlementId])
+  @@index([clinicId, settledAt])
+}
+
+model ExternalRefund {
+  id                      String                       @id @default(uuid()) @db.Uuid
+  clinicId                String                       @db.Uuid
+  refundRequestId         String                       @db.Uuid
+  paymentIntentId         String?                      @db.Uuid
+  paymentReversalId       String?                      @db.Uuid
+  providerConfigId        String                       @db.Uuid
+  providerCode            PaymentProviderCode
+  mode                    IntegrationMode              @default(SANDBOX)
+  providerRefundId        String?                      @db.VarChar(128)
+  amountMinor             BigInt
+  currency                String                       @db.Char(3)
+  currencyScale           Int
+  status                  ExternalRefundStatus         @default(INITIATED)
+  initiatedByMembershipId String                       @db.Uuid
+  failureReason           String?                      @db.VarChar(300)
+  idempotencyKey          String                       @db.Uuid
+  requestHash             String                       @db.Char(64)
+  evidenceJson            Json?
+  version                 Int                          @default(1)
+  createdAt               DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                     @updatedAt @db.Timestamptz(3)
+
+  clinic                  Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  refundRequest           RefundRequest                @relation(fields: [clinicId, refundRequestId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  paymentIntent           PaymentIntent?               @relation(fields: [clinicId, paymentIntentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  paymentReversal         PaymentReversal?             @relation(fields: [clinicId, paymentReversalId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  providerConfig          PaymentProviderConfiguration @relation(fields: [clinicId, providerConfigId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  initiatedBy             ClinicMembership             @relation("ExternalRefundInitiator", fields: [clinicId, initiatedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, idempotencyKey])
+  @@unique([clinicId, providerCode, providerRefundId])
+  @@index([clinicId, refundRequestId, status])
+}
+
+model ExternalPayout {
+  id                     String                        @id @default(uuid()) @db.Uuid
+  clinicId               String                        @db.Uuid
+  commissionSettlementId String                        @db.Uuid
+  providerConfigId       String?                       @db.Uuid
+  providerCode           PaymentProviderCode?
+  mode                   IntegrationMode               @default(SANDBOX)
+  payoutNumber           String                        @db.VarChar(40)
+  providerPayoutId       String?                       @db.VarChar(128)
+  amountMinor            BigInt
+  currency               String                        @db.Char(3)
+  currencyScale          Int
+  status                 ExternalPayoutStatus          @default(PREPARED)
+  preparedByMembershipId String                        @db.Uuid
+  approvedByMembershipId String?                       @db.Uuid
+  approvedAt             DateTime?                     @db.Timestamptz(3)
+  submittedAt            DateTime?                     @db.Timestamptz(3)
+  settledAt              DateTime?                     @db.Timestamptz(3)
+  bankReference          String?                       @db.VarChar(128)
+  isExternallyVerified   Boolean                       @default(false)
+  failureReason          String?                       @db.VarChar(300)
+  idempotencyKey         String                        @db.Uuid
+  version                Int                           @default(1)
+  createdAt              DateTime                      @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                      @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic                        @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  commissionSettlement   PractitionerCommissionSettlement @relation(fields: [clinicId, commissionSettlementId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  providerConfig         PaymentProviderConfiguration? @relation(fields: [clinicId, providerConfigId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  preparedBy             ClinicMembership              @relation("ExternalPayoutPreparer", fields: [clinicId, preparedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy             ClinicMembership?             @relation("ExternalPayoutApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, payoutNumber])
+  @@unique([clinicId, idempotencyKey])
+  @@index([clinicId, status, createdAt])
+}
+
+model ExternalReconciliationRun {
+  id                     String                        @id @default(uuid()) @db.Uuid
+  clinicId               String                        @db.Uuid
+  runNumber              String                        @db.VarChar(40)
+  scope                  ReconciliationScope
+  providerCode           PaymentProviderCode?
+  periodStart            DateTime                      @db.Timestamptz(3)
+  periodEnd              DateTime                      @db.Timestamptz(3)
+  status                 ReconciliationRunStatus
+  totalChecked           Int
+  discrepancyCount       Int
+  summaryJson            Json
+  executedByMembershipId String                        @db.Uuid
+  createdAt              DateTime                      @default(now()) @db.Timestamptz(3)
+
+  clinic                 Clinic                        @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  executedBy             ClinicMembership              @relation("ReconciliationRunner", fields: [clinicId, executedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  findings               ExternalReconciliationFinding[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, runNumber])
+  @@index([clinicId, createdAt])
+}
+
+model ExternalReconciliationFinding {
+  id                  String                        @id @default(uuid()) @db.Uuid
+  clinicId            String                        @db.Uuid
+  runId               String                        @db.Uuid
+  findingType         ReconciliationFindingType
+  severity            ReconciliationFindingSeverity
+  entityType          String                        @db.VarChar(50)
+  entityId            String                        @db.VarChar(128)
+  expectedAmountMinor BigInt?
+  actualAmountMinor   BigInt?
+  currency            String?                       @db.Char(3)
+  descriptionAr       String                        @db.Text
+  descriptionEn       String                        @db.Text
+  metadataJson        Json?
+  createdAt           DateTime                      @default(now()) @db.Timestamptz(3)
+
+  clinic              Clinic                        @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  run                 ExternalReconciliationRun     @relation(fields: [clinicId, runId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, runId, findingType])
+}
+
+model ClinicRegulatoryProfile {
+  clinicId               String              @id @db.Uuid
+  countryCode            String              @default("SA") @db.Char(2)
+  framework              RegulatoryFramework @default(NOT_CONFIGURED)
+  taxRegistrationNumber  String?             @db.VarChar(60)
+  invoiceNumberingPrefix String?             @db.VarChar(20)
+  isEInvoicingEnabled    Boolean             @default(false)
+  sandboxMode            Boolean             @default(true)
+  configJson             Json?
+  version                Int                 @default(1)
+  updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model RegulatoryDocument {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  clinicId              String                     @db.Uuid
+  invoiceId             String                     @db.Uuid
+  documentNumber        String                     @db.VarChar(48)
+  documentType          RegulatoryDocumentType
+  framework             RegulatoryFramework
+  countryCode           String                     @db.Char(2)
+  canonicalHash         String                     @db.Char(64)
+  payloadJson           Json
+  status                RegulatorySubmissionStatus @default(DRAFT)
+  isImmutable           Boolean                    @default(false)
+  createdByMembershipId String                     @db.Uuid
+  createdAt             DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                   @updatedAt @db.Timestamptz(3)
+
+  clinic                Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  invoice               Invoice                    @relation(fields: [clinicId, invoiceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy             ClinicMembership           @relation("RegulatoryDocCreator", fields: [clinicId, createdByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  submissions           RegulatorySubmission[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, documentNumber])
+  @@index([clinicId, invoiceId])
+}
+
+model RegulatorySubmission {
+  id                      String                     @id @default(uuid()) @db.Uuid
+  clinicId                String                     @db.Uuid
+  documentId              String                     @db.Uuid
+  framework               RegulatoryFramework
+  mode                    IntegrationMode            @default(SANDBOX)
+  status                  RegulatorySubmissionStatus
+  externalReferenceId     String?                    @db.VarChar(128)
+  responseSummary         Json?
+  submittedByMembershipId String                     @db.Uuid
+  submittedAt             DateTime                   @default(now()) @db.Timestamptz(3)
+  createdAt               DateTime                   @default(now()) @db.Timestamptz(3)
+
+  clinic                  Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  document                RegulatoryDocument         @relation(fields: [clinicId, documentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  submittedBy             ClinicMembership           @relation("RegulatorySubmitter", fields: [clinicId, submittedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  events                  RegulatorySubmissionEvent[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, documentId, createdAt])
+}
+
+model RegulatorySubmissionEvent {
+  id           String                     @id @default(uuid()) @db.Uuid
+  clinicId     String                     @db.Uuid
+  submissionId String                     @db.Uuid
+  eventType    String                     @db.VarChar(64)
+  status       RegulatorySubmissionStatus
+  detailsJson  Json?
+  occurredAt   DateTime                   @default(now()) @db.Timestamptz(3)
+
+  clinic       Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  submission   RegulatorySubmission       @relation(fields: [clinicId, submissionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, submissionId, occurredAt])
+}
+
+model ExternalPayoutCounter {
+  id         String @id @default(uuid()) @db.Uuid
+  clinicId   String @unique @db.Uuid
+  lastNumber Int    @default(0)
+
+  clinic     Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model ExternalReconciliationRunCounter {
+  id         String @id @default(uuid()) @db.Uuid
+  clinicId   String @unique @db.Uuid
+  lastNumber Int    @default(0)
+
+  clinic     Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model RegulatoryDocumentCounter {
+  id         String @id @default(uuid()) @db.Uuid
+  clinicId   String @unique @db.Uuid
+  lastNumber Int    @default(0)
+
+  clinic     Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }

@@ -24,10 +24,12 @@ import { InventoryRepository } from './inventory.repository.js';
 import { PatientPortalRepository } from './patient-portal.repository.js';
 import { BranchRepository } from './branch.repository.js';
 import { CostingRepository } from './costing.repository.js';
+import { IntegrationCryptoService } from '../integrations/integration-crypto.service.js';
+import { IntegrationsRepository } from './integrations.repository.js';
 
 @Module({
-  providers:[CostingRepository,ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,InventoryRepository,PatientPortalRepository,BranchRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
+  providers:[CostingRepository,ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,InventoryRepository,PatientPortalRepository,BranchRepository,IntegrationCryptoService,IntegrationsRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
   // Raw Prisma is private to database infrastructure, never exported to features.
-  exports:[CostingRepository,ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,InventoryRepository,PatientPortalRepository,BranchRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
+  exports:[CostingRepository,ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,InventoryRepository,PatientPortalRepository,BranchRepository,IntegrationCryptoService,IntegrationsRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
 })
 export class PrismaModule {}

@@ -2412,13 +2412,18 @@ export class InventoryRepository {
           });
         }
 
-        // Deplete FIFO cost layers
+        // Deplete Branch-Scoped Specific-Batch-First FIFO cost layers
+        const loc = await tx.inventoryLocation.findFirst({
+          where: { id: input.locationId, clinicId: c.clinicId },
+          select: { branchId: true },
+        });
         const costLayers = await tx.inventoryCostLayer.findMany({
           where: {
             clinicId: c.clinicId,
             productId: input.productId,
             remainingQuantity: { gt: 0 },
             costStatus: { in: ['VERIFIED', 'UNVERIFIED_COST', 'ADJUSTED'] },
+            ...(loc?.branchId ? { OR: [{ branchId: loc.branchId }, { branchId: null }] } : {}),
           },
           orderBy: [{ layerDate: 'asc' }, { id: 'asc' }],
         });
@@ -2436,15 +2441,25 @@ export class InventoryRepository {
           if (remToAllocate.lessThanOrEqualTo(0)) break;
           const take = Prisma.Decimal.min(remToAllocate, layer.remainingQuantity);
           const newRemaining = layer.remainingQuantity.minus(take);
-          const costMinor = BigInt(take.mul(layer.unitLandedCostMinor.toString()).round().toString());
+          let costMinor: bigint;
+          let newTotalCostMinor: bigint;
+          if (newRemaining.equals(0)) {
+            costMinor = layer.totalRemainingCostMinor;
+            newTotalCostMinor = 0n;
+          } else {
+            const computed = BigInt(take.mul(layer.unitLandedCostMinor.toString()).round().toString());
+            costMinor = computed > layer.totalRemainingCostMinor ? layer.totalRemainingCostMinor : computed;
+            newTotalCostMinor = layer.totalRemainingCostMinor - costMinor;
+          }
 
           let wasteCostMinor = 0n;
           if (wasteQty.greaterThan(0)) {
             const wasteRatio = wasteQty.div(totalDeduction);
-            wasteCostMinor = BigInt(take.mul(wasteRatio).mul(layer.unitLandedCostMinor.toString()).round().toString());
+            const computedWaste = BigInt(
+              new Prisma.Decimal(costMinor.toString()).mul(wasteRatio).round().toString(),
+            );
+            wasteCostMinor = computedWaste > costMinor ? costMinor : computedWaste;
           }
-
-          const newTotalCostMinor = BigInt(newRemaining.mul(layer.unitLandedCostMinor.toString()).round().toString());
 
           await tx.inventoryCostLayer.update({
             where: { id: layer.id },

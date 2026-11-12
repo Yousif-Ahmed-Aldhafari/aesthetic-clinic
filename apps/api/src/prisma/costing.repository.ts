@@ -296,7 +296,7 @@ export class CostingRepository {
         }
 
         if (layer) {
-          // Calculate unit landed cost addition in minor units
+          // Calculate unit landed cost addition in minor units, preserving exact monetary conservation
           const initialQty = layer.initialQuantity;
           const additionalUnitLandedMinor = BigInt(
             new Prisma.Decimal(allocLine.allocatedAmountMinor.toString())
@@ -305,17 +305,28 @@ export class CostingRepository {
               .toString(),
           );
 
-          const newUnitLandedCostMinor = layer.unitAcquisitionCostMinor + additionalUnitLandedMinor;
-          const newTotalRemainingCostMinor = BigInt(
-            layer.remainingQuantity.mul(newUnitLandedCostMinor.toString()).round().toString(),
-          );
+          const newUnitLandedCostMinor = layer.unitLandedCostMinor + additionalUnitLandedMinor;
+          const allocatedShareMinor = layer.remainingQuantity.equals(initialQty)
+            ? allocLine.allocatedAmountMinor
+            : BigInt(
+                new Prisma.Decimal(allocLine.allocatedAmountMinor.toString())
+                  .mul(layer.remainingQuantity)
+                  .div(initialQty)
+                  .floor()
+                  .toString(),
+              );
+          const newTotalRemainingCostMinor = layer.totalRemainingCostMinor + allocatedShareMinor;
 
           await tx.inventoryCostLayer.update({
             where: { id: layer.id },
             data: {
               unitLandedCostMinor: newUnitLandedCostMinor,
               totalRemainingCostMinor: newTotalRemainingCostMinor,
-              costStatus: layer.remainingQuantity.equals(0) ? 'EXHAUSTED' : 'VERIFIED',
+              costStatus: layer.remainingQuantity.equals(0)
+                ? 'EXHAUSTED'
+                : layer.costStatus === 'UNVERIFIED_COST'
+                  ? 'UNVERIFIED_COST'
+                  : 'VERIFIED',
               version: { increment: 1 },
             },
           });
@@ -569,23 +580,33 @@ export class CostingRepository {
         productSummaries.set(l.productId, existingProd);
       }
 
-      // Stock in transit valuation from InterBranchTransfer in DISPATCHED status
+      // Stock in transit valuation from InterBranchTransfer in DISPATCHED status using exact historical TRANSFER_OUT cost movements
       const transitTransfers = await tx.interBranchTransfer.findMany({
         where: {
           clinicId: c.clinicId,
           status: 'DISPATCHED',
           ...(q.branchId ? { sourceBranchId: q.branchId } : {}),
         },
+        select: { id: true, quantity: true, productId: true },
       });
 
       let transitValueMinor = 0n;
       let transitUnits = new Prisma.Decimal('0.0000');
-      for (const t of transitTransfers) {
-        transitUnits = transitUnits.plus(t.quantity);
-        // Estimate transit value by latest cost layer of that product
-        const prodLayer = layers.find((l) => l.productId === t.productId);
-        if (prodLayer) {
-          transitValueMinor += BigInt(t.quantity.mul(prodLayer.unitLandedCostMinor.toString()).round().toString());
+      if (transitTransfers.length > 0) {
+        const transitIds = transitTransfers.map((t) => t.id);
+        for (const t of transitTransfers) {
+          transitUnits = transitUnits.plus(t.quantity);
+        }
+        const transitMovements = await tx.inventoryCostMovement.findMany({
+          where: {
+            clinicId: c.clinicId,
+            transferId: { in: transitIds },
+            movementType: 'TRANSFER_OUT',
+          },
+          select: { totalCostMinor: true },
+        });
+        for (const m of transitMovements) {
+          transitValueMinor += m.totalCostMinor;
         }
       }
 
@@ -1030,24 +1051,29 @@ export class CostingRepository {
       const takeQty = Prisma.Decimal.min(remainingToAllocate, layer.remainingQuantity);
       const newRemainingQty = layer.remainingQuantity.minus(takeQty);
 
-      const costMinor = BigInt(
-        takeQty.mul(layer.unitLandedCostMinor.toString()).round().toString(),
-      );
+      let costMinor: bigint;
+      let newTotalCostMinor: bigint;
+      if (newRemainingQty.equals(0)) {
+        // Final depletion absorbs exact remaining layer cost including any rounding remainder
+        costMinor = layer.totalRemainingCostMinor;
+        newTotalCostMinor = 0n;
+      } else {
+        const computed = BigInt(takeQty.mul(layer.unitLandedCostMinor.toString()).round().toString());
+        costMinor = computed > layer.totalRemainingCostMinor ? layer.totalRemainingCostMinor : computed;
+        newTotalCostMinor = layer.totalRemainingCostMinor - costMinor;
+      }
       totalAllocatedCostMinor += costMinor;
 
       // Apportion waste cost if applicable
       let wasteCostMinor = 0n;
       if (params.wasteQuantity && params.wasteQuantity.greaterThan(0)) {
         const wasteRatio = params.wasteQuantity.div(totalNeeded);
-        wasteCostMinor = BigInt(
-          takeQty.mul(wasteRatio).mul(layer.unitLandedCostMinor.toString()).round().toString(),
+        const computedWaste = BigInt(
+          new Prisma.Decimal(costMinor.toString()).mul(wasteRatio).round().toString(),
         );
+        wasteCostMinor = computedWaste > costMinor ? costMinor : computedWaste;
         totalWasteCostMinor += wasteCostMinor;
       }
-
-      const newTotalCostMinor = BigInt(
-        newRemainingQty.mul(layer.unitLandedCostMinor.toString()).round().toString(),
-      );
 
       await tx.inventoryCostLayer.update({
         where: { id: layer.id },

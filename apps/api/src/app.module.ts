@@ -31,6 +31,7 @@ import { InventoryModule } from './inventory/inventory.module.js';
 import { PatientPortalModule } from './portal/patient-portal.module.js';
 import { BranchModule } from './branches/branch.module.js';
 import { CostingModule } from './costing/costing.module.js';
+import { IntegrationsModule } from './integrations/integrations.module.js';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { CostingModule } from './costing/costing.module.js';
     PatientPortalModule,
     BranchModule,
     CostingModule,
+    IntegrationsModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],

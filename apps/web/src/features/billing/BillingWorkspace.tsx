@@ -11,10 +11,11 @@ import { RefundsWorkspace } from './RefundsWorkspace';
 import { CommissionsWorkspace } from './CommissionsWorkspace';
 import { ReconciliationWorkspace } from './ReconciliationWorkspace';
 import { OperationalReportsWorkspace } from './OperationalReportsWorkspace';
+import { IntegrationsWorkspace } from '../integrations/IntegrationsWorkspace';
 import { formatMoney, invoiceStatuses, methodNames, reasonNames } from './billing-money';
 import './billing.css';
 
-type BillingTab = 'INVOICES' | 'PACKAGES' | 'INSTALLMENTS' | 'REFUNDS' | 'COMMISSIONS' | 'RECONCILIATION' | 'REPORTS';
+type BillingTab = 'INVOICES' | 'PACKAGES' | 'INSTALLMENTS' | 'REFUNDS' | 'COMMISSIONS' | 'RECONCILIATION' | 'REPORTS' | 'INTEGRATIONS';
 
 const message=(e:unknown)=>e instanceof ApiError?e.message:'تعذّر الاتصال. راجع السجل قبل إعادة المحاولة؛ أعد إرسال الطلب نفسه عند الشك في نتيجته.';
 export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic:ClinicContext;csrfToken:string;onAuthError:(e:unknown)=>void;onLegacy:()=>void}){
@@ -25,6 +26,7 @@ export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic
   const canCommissions = can('commissions.plans.read') || can('commissions.accruals.read') || can('commissions.accruals.read-own') || can('commissions.settlements.read');
   const canReconcile = can('finance.reconciliation.read');
   const canOperationalReports = can('reports.operational.read');
+  const canIntegrations = can('integrations.providers.read') || can('integrations.payments.read') || can('integrations.reconciliation.read') || can('integrations.regulatory.read');
   const [q,setQ]=useState(''),[status,setStatus]=useState('ALL'),[cursors,setCursors]=useState<(string|null)[]>([null]),[reload,setReload]=useState(0);
   const [page,setPage]=useState<BillingPage<InvoiceRecord>|null>(null),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [profile,setProfile]=useState<BillingProfile|null>(null),[summary,setSummary]=useState<Summary|null>(null),[settingsError,setSettingsError]=useState('');
@@ -122,6 +124,14 @@ export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic
           التقارير التشغيلية
         </button>
       )}
+      {canIntegrations && (
+        <button
+          className={`inventory-tab-btn ${activeTab === 'INTEGRATIONS' ? 'active' : ''}`}
+          onClick={() => setActiveTab('INTEGRATIONS')}
+        >
+          البوابات والامتثال
+        </button>
+      )}
     </div>
 
     {activeTab === 'PACKAGES' && (
@@ -141,6 +151,9 @@ export function BillingWorkspace({clinic,csrfToken,onAuthError,onLegacy}:{clinic
     )}
     {activeTab === 'REPORTS' && (
       <OperationalReportsWorkspace clinic={clinic} onAuthError={onAuthError} />
+    )}
+    {activeTab === 'INTEGRATIONS' && (
+      <IntegrationsWorkspace clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} />
     )}
 
     {activeTab === 'INVOICES' && (

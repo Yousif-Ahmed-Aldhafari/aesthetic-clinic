@@ -7,7 +7,7 @@ import type { Environment } from './config/environment.js';
 async function bootstrap(): Promise<void> {
   // Import inside the boundary so invalid configuration cannot print raw startup errors.
   const { AppModule } = await import('./app.module.js');
-  const app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
+  const app = await NestFactory.create(AppModule, { logger: false, abortOnError: false, rawBody: true });
   configureApp(app);
   app.enableShutdownHooks();
   const config = app.get(ConfigService<Environment, true>);

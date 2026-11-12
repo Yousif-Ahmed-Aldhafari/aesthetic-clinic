@@ -853,5 +853,74 @@ describe('Advanced Inventory Costing, FIFO Valuation & Accounting Integration Te
         client.release();
       }
     });
+
+    it('Step 5.4 audit regression: preserves exact minor-unit conservation across odd-lot FIFO depletion', async () => {
+      const oddProduct = await owner.inventoryProduct.create({
+        data: {
+          clinicId: clinicAId,
+          sku: `ODD-${suffix}`,
+          nameAr: 'منتج تقريب فردي',
+          nameEn: 'Odd Lot Product',
+          category: 'CONSUMABLE',
+          unit: 'VIAL',
+          isActive: true,
+        },
+      });
+      await owner.inventoryBalance.create({
+        data: {
+          clinicId: clinicAId,
+          productId: oddProduct.id,
+          locationId: locA1Id,
+          onHandQuantity: new Prisma.Decimal(3),
+        },
+      });
+      const oddLayer = await owner.inventoryCostLayer.create({
+        data: {
+          clinicId: clinicAId,
+          productId: oddProduct.id,
+          locationId: locA1Id,
+          branchId: branchA1Id,
+          costStatus: 'VERIFIED',
+          initialQuantity: new Prisma.Decimal(3),
+          remainingQuantity: new Prisma.Decimal(3),
+          unitAcquisitionCostMinor: 33n,
+          unitLandedCostMinor: 33n,
+          totalRemainingCostMinor: 100n,
+          currency: 'SAR',
+          layerDate: new Date(),
+        },
+      });
+
+      const principal = verifiedSessions.issue(userAdminAId, sessionAdminAId);
+      const totalAllocated = await tenantDb.withClinicContext(
+        principal,
+        clinicAId,
+        ['inventory.costing.manage'],
+        async (tx) => {
+          const r1 = await costingRepo.allocateFifoConsumption(tx, clinicAId, {
+            productId: oddProduct.id,
+            branchId: branchA1Id,
+            quantity: new Prisma.Decimal(1),
+          });
+          const r2 = await costingRepo.allocateFifoConsumption(tx, clinicAId, {
+            productId: oddProduct.id,
+            branchId: branchA1Id,
+            quantity: new Prisma.Decimal(1),
+          });
+          const r3 = await costingRepo.allocateFifoConsumption(tx, clinicAId, {
+            productId: oddProduct.id,
+            branchId: branchA1Id,
+            quantity: new Prisma.Decimal(1),
+          });
+          return r1.totalAllocatedCostMinor + r2.totalAllocatedCostMinor + r3.totalAllocatedCostMinor;
+        },
+      );
+      assert.equal(totalAllocated, 100n);
+
+      const depleted = await owner.inventoryCostLayer.findUniqueOrThrow({ where: { id: oddLayer.id } });
+      assert.equal(depleted.remainingQuantity.toString(), '0');
+      assert.equal(depleted.totalRemainingCostMinor, 0n);
+      assert.equal(depleted.costStatus, 'EXHAUSTED');
+    });
   });
 });

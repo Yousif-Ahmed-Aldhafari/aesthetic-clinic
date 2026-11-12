@@ -641,8 +641,16 @@ export class BranchRepository {
         if (remDispatch.lessThanOrEqualTo(0)) break;
         const take = Prisma.Decimal.min(remDispatch, layer.remainingQuantity);
         const newRem = layer.remainingQuantity.minus(take);
-        const costMinor = BigInt(take.mul(layer.unitLandedCostMinor.toString()).round().toString());
-        const newTotalMinor = BigInt(newRem.mul(layer.unitLandedCostMinor.toString()).round().toString());
+        let costMinor: bigint;
+        let newTotalMinor: bigint;
+        if (newRem.equals(0)) {
+          costMinor = layer.totalRemainingCostMinor;
+          newTotalMinor = 0n;
+        } else {
+          const computed = BigInt(take.mul(layer.unitLandedCostMinor.toString()).round().toString());
+          costMinor = computed > layer.totalRemainingCostMinor ? layer.totalRemainingCostMinor : computed;
+          newTotalMinor = layer.totalRemainingCostMinor - costMinor;
+        }
 
         await tx.inventoryCostLayer.update({
           where: { id: layer.id },
@@ -789,7 +797,13 @@ export class BranchRepository {
       for (const m of transferOutMovements) {
         const layer = m.costLayer;
         const unitLandedCostMinor = layer.unitLandedCostMinor;
-        const totalRemainingCostMinor = BigInt(m.quantity.mul(unitLandedCostMinor.toString()).round().toString());
+        const totalRemainingCostMinor = m.totalCostMinor;
+        const resolvedStatus =
+          layer.costStatus === 'EXHAUSTED'
+            ? layer.sourceProvenance === 'OPENING_BALANCE'
+              ? 'UNVERIFIED_COST'
+              : 'VERIFIED'
+            : layer.costStatus;
 
         const dstLayer = await tx.inventoryCostLayer.create({
           data: {
@@ -804,7 +818,7 @@ export class BranchRepository {
             unitAcquisitionCostMinor: layer.unitAcquisitionCostMinor,
             unitLandedCostMinor,
             totalRemainingCostMinor,
-            costStatus: layer.costStatus,
+            costStatus: resolvedStatus,
             sourceProvenance: 'TRANSFER_IN',
             currency: layer.currency,
           },
@@ -916,14 +930,19 @@ export class BranchRepository {
           for (const m of transferOutMovements) {
             const layer = m.costLayer;
             const newRem = layer.remainingQuantity.plus(m.quantity);
-            const newTotal = BigInt(newRem.mul(layer.unitLandedCostMinor.toString()).round().toString());
+            const newTotal = layer.totalRemainingCostMinor + m.totalCostMinor;
 
             await tx.inventoryCostLayer.update({
               where: { id: layer.id },
               data: {
                 remainingQuantity: newRem,
                 totalRemainingCostMinor: newTotal,
-                costStatus: layer.costStatus === 'EXHAUSTED' ? 'VERIFIED' : layer.costStatus,
+                costStatus:
+                  layer.costStatus === 'EXHAUSTED'
+                    ? layer.sourceProvenance === 'OPENING_BALANCE'
+                      ? 'UNVERIFIED_COST'
+                      : 'VERIFIED'
+                    : layer.costStatus,
                 version: { increment: 1 },
               },
             });
