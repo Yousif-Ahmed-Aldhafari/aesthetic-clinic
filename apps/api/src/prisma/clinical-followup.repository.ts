@@ -13,6 +13,7 @@ import type {
   CompleteFollowUpAssessmentDto,
   RecordAdverseEventDto,
   RecordTreatmentOutcomeDto,
+  ReviewCheckInDto,
   ScheduleFollowUpDto,
   UpdateAdverseEventDto,
   UpdateFollowUpStatusDto,
@@ -537,7 +538,7 @@ export class ClinicalFollowUpRepository {
       });
 
       return {
-        items: items.map((i) => clean(i as unknown as Record<string, unknown>)),
+        items: items.map((i: unknown) => clean(i as unknown as Record<string, unknown>)),
       };
     });
   }
@@ -690,8 +691,102 @@ export class ClinicalFollowUpRepository {
       });
 
       return {
-        items: items.map((i) => clean(i as unknown as Record<string, unknown>)),
+        items: items.map((i: unknown) => clean(i as unknown as Record<string, unknown>)),
       };
+    });
+  }
+
+  /**
+   * Lists patient recovery check-ins for the clinician review queue.
+   */
+  async listRecoveryCheckIns(proof: VerifiedPrincipal, clinicId: string, patientId?: string, status?: string) {
+    return this.database.withClinicContext(proof, clinicId, ['clinical.follow-ups.read'], async (tx, c) => {
+      const where: Record<string, unknown> = { clinicId: c.clinicId };
+      if (patientId) where.patientId = patientId;
+      if (status) where.status = status;
+
+      const items = await tx.patientRecoveryCheckIn.findMany({
+        where,
+        include: {
+          patient: { select: { id: true, fullName: true, patientNumber: true } },
+          reviewedBy: { select: { id: true, user: { select: { name: true } } } },
+          followUp: { select: { id: true, reason: true, scheduledDate: true } },
+        },
+        orderBy: [{ isEscalated: 'desc' }, { checkInDate: 'desc' }],
+        take: 100,
+      });
+
+      return {
+        items: items.map((i: unknown) => clean(i as unknown as Record<string, unknown>)),
+      };
+    });
+  }
+
+  /**
+   * Retrieves single recovery check-in for clinician review.
+   */
+  async getRecoveryCheckIn(proof: VerifiedPrincipal, clinicId: string, checkInId: string) {
+    return this.database.withClinicContext(proof, clinicId, ['clinical.follow-ups.read'], async (tx, c) => {
+      const checkIn = await tx.patientRecoveryCheckIn.findFirst({
+        where: { id: checkInId, clinicId: c.clinicId },
+        include: {
+          patient: { select: { id: true, fullName: true, patientNumber: true, phone: true } },
+          reviewedBy: { select: { id: true, user: { select: { name: true } } } },
+          followUp: { select: { id: true, reason: true, scheduledDate: true, recoveryInstructions: true } },
+          outcomes: true,
+        },
+      });
+      if (!checkIn) throw new NotFoundException('CHECK_IN_NOT_FOUND');
+      return clean(checkIn as unknown as Record<string, unknown>);
+    });
+  }
+
+  /**
+   * Clinician reviews and signs off on a submitted patient recovery check-in.
+   */
+  async reviewRecoveryCheckIn(proof: VerifiedPrincipal, clinicId: string, checkInId: string, input: ReviewCheckInDto) {
+    return this.database.withClinicContext(proof, clinicId, ['clinical.follow-ups.update'], async (tx, c) => {
+      const checkIn = await tx.patientRecoveryCheckIn.findFirst({
+        where: { id: checkInId, clinicId: c.clinicId },
+      });
+      if (!checkIn) throw new NotFoundException('CHECK_IN_NOT_FOUND');
+      if (checkIn.version !== input.expectedVersion) throw new ConflictException('STALE_VERSION');
+
+      const updated = await tx.patientRecoveryCheckIn.update({
+        where: {
+          clinicId_id: { clinicId: c.clinicId, id: checkInId },
+          version: input.expectedVersion,
+        },
+        data: {
+          status: input.status as any,
+          reviewedAt: new Date(),
+          reviewedByMembershipId: c.membershipId,
+          clinicianNotes: input.clinicianNotes?.trim() ?? null,
+          isEscalated: input.isEscalated !== undefined ? input.isEscalated : checkIn.isEscalated,
+          escalationReason: input.escalationReason?.trim() ?? checkIn.escalationReason,
+          version: { increment: 1 },
+        },
+        include: {
+          patient: { select: { id: true, fullName: true, patientNumber: true } },
+          reviewedBy: { select: { id: true, user: { select: { name: true } } } },
+        },
+      });
+
+      await this.audit.record(
+        {
+          clinicId: c.clinicId,
+          actorId: c.userId,
+          action: 'clinical.recovery_checkin.reviewed',
+          category: 'CLINICAL',
+          targetType: 'PatientRecoveryCheckIn',
+          targetId: checkInId,
+          outcome: 'SUCCESS',
+          metadata: { status: input.status, isEscalated: updated.isEscalated },
+        },
+        tx,
+      );
+
+      return clean(updated as unknown as Record<string, unknown>);
     });
   }
 

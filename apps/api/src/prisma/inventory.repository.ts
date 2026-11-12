@@ -53,6 +53,7 @@ import type { VerifiedPrincipal } from './verified-sessions.js';
 import { TenantDatabaseService } from './tenant-database.service.js';
 import { AuditRepository } from './audit.repository.js';
 import { ConsentEligibilityService } from '../treatments/consent-eligibility.service.js';
+import { currencyScale } from '../billing/money.js';
 
 const toDecimal = (val: unknown, field: string, opts?: { allowZero?: boolean }) =>
   new Prisma.Decimal(validateDecimalString(val, field, opts));
@@ -298,9 +299,14 @@ export class InventoryRepository {
       });
       if (existing) throw new InventoryError('INVENTORY_DUPLICATE_CODE');
 
+      const branchId = (input as any).branchId
+        ?? (await tx.clinicBranch.findFirst({ where: { clinicId: c.clinicId, code: 'MAIN' }, select: { id: true } }))?.id
+        ?? (await tx.clinicBranch.findFirstOrThrow({ where: { clinicId: c.clinicId }, select: { id: true } })).id;
+
       const row = await tx.inventoryLocation.create({
         data: {
           clinicId: c.clinicId,
+          branchId,
           code,
           nameAr,
           nameEn: input.nameEn?.trim() || null,
@@ -2406,6 +2412,92 @@ export class InventoryRepository {
           });
         }
 
+        // Deplete Branch-Scoped Specific-Batch-First FIFO cost layers
+        const loc = await tx.inventoryLocation.findFirst({
+          where: { id: input.locationId, clinicId: c.clinicId },
+          select: { branchId: true },
+        });
+        const costLayers = await tx.inventoryCostLayer.findMany({
+          where: {
+            clinicId: c.clinicId,
+            productId: input.productId,
+            remainingQuantity: { gt: 0 },
+            costStatus: { in: ['VERIFIED', 'UNVERIFIED_COST', 'ADJUSTED'] },
+            ...(loc?.branchId ? { OR: [{ branchId: loc.branchId }, { branchId: null }] } : {}),
+          },
+          orderBy: [{ layerDate: 'asc' }, { id: 'asc' }],
+        });
+
+        const sortedLayers = [...costLayers].sort((a, b) => {
+          const aMatches = a.batchId === batch.id;
+          const bMatches = b.batchId === batch.id;
+          if (aMatches && !bMatches) return -1;
+          if (!aMatches && bMatches) return 1;
+          return a.layerDate.getTime() - b.layerDate.getTime();
+        });
+
+        let remToAllocate = totalDeduction;
+        for (const layer of sortedLayers) {
+          if (remToAllocate.lessThanOrEqualTo(0)) break;
+          const take = Prisma.Decimal.min(remToAllocate, layer.remainingQuantity);
+          const newRemaining = layer.remainingQuantity.minus(take);
+          let costMinor: bigint;
+          let newTotalCostMinor: bigint;
+          if (newRemaining.equals(0)) {
+            costMinor = layer.totalRemainingCostMinor;
+            newTotalCostMinor = 0n;
+          } else {
+            const computed = BigInt(take.mul(layer.unitLandedCostMinor.toString()).round().toString());
+            costMinor = computed > layer.totalRemainingCostMinor ? layer.totalRemainingCostMinor : computed;
+            newTotalCostMinor = layer.totalRemainingCostMinor - costMinor;
+          }
+
+          let wasteCostMinor = 0n;
+          if (wasteQty.greaterThan(0)) {
+            const wasteRatio = wasteQty.div(totalDeduction);
+            const computedWaste = BigInt(
+              new Prisma.Decimal(costMinor.toString()).mul(wasteRatio).round().toString(),
+            );
+            wasteCostMinor = computedWaste > costMinor ? costMinor : computedWaste;
+          }
+
+          await tx.inventoryCostLayer.update({
+            where: { id: layer.id },
+            data: {
+              remainingQuantity: newRemaining,
+              totalRemainingCostMinor: newTotalCostMinor,
+              costStatus: newRemaining.equals(0) ? 'EXHAUSTED' : layer.costStatus,
+              version: { increment: 1 },
+            },
+          });
+
+          const counter = await tx.inventoryCostMovementCounter.upsert({
+            where: { clinicId: c.clinicId },
+            create: { clinicId: c.clinicId, lastNumber: 1 },
+            update: { lastNumber: { increment: 1 } },
+            select: { lastNumber: true },
+          });
+          const movementNumber = `CM-${String(counter.lastNumber).padStart(6, '0')}`;
+
+          await tx.inventoryCostMovement.create({
+            data: {
+              clinicId: c.clinicId,
+              movementNumber,
+              costLayerId: layer.id,
+              consumptionId: consumption.id,
+              stockMovementId: movement.id,
+              movementType: 'CONSUMPTION',
+              quantity: take,
+              unitCostMinor: layer.unitLandedCostMinor,
+              totalCostMinor: costMinor,
+              wasteCostMinor,
+              notes: `Clinical consumption for procedure ${procedure.id}`,
+            },
+          });
+
+          remToAllocate = remToAllocate.minus(take);
+        }
+
         await this.audit.record(
           {
             clinicId: c.clinicId,
@@ -3615,6 +3707,61 @@ export class InventoryRepository {
             receiptId: createdReceipt.id,
           })),
         });
+
+        const insertedLines = await tx.inventoryGoodsReceiptLine.findMany({
+          where: { clinicId: c.clinicId, receiptId: createdReceipt.id, disposition: 'ACCEPTED' },
+        });
+
+        const clinic = await tx.clinic.findUniqueOrThrow({ where: { id: c.clinicId }, select: { currency: true } });
+        const scale = currencyScale(clinic.currency);
+        const factor = new Prisma.Decimal(10 ** scale);
+
+        for (const line of insertedLines) {
+          const unitAcquisitionCostMinor = BigInt(line.unitCost.mul(factor).round().toString());
+          const totalRemainingCostMinor = BigInt(line.receivedQuantity.mul(unitAcquisitionCostMinor.toString()).round().toString());
+
+          const layer = await tx.inventoryCostLayer.create({
+            data: {
+              clinicId: c.clinicId,
+              productId: line.productId,
+              branchId: location.branchId,
+              locationId: line.locationId,
+              batchId: line.batchId,
+              goodsReceiptLineId: line.id,
+              layerDate: createdReceipt.receiptDate,
+              initialQuantity: line.receivedQuantity,
+              remainingQuantity: line.receivedQuantity,
+              unitAcquisitionCostMinor,
+              unitLandedCostMinor: unitAcquisitionCostMinor,
+              totalRemainingCostMinor,
+              costStatus: 'VERIFIED',
+              sourceProvenance: 'GOODS_RECEIPT',
+              currency: clinic.currency,
+            },
+          });
+
+          const counter = await tx.inventoryCostMovementCounter.upsert({
+            where: { clinicId: c.clinicId },
+            create: { clinicId: c.clinicId, lastNumber: 1 },
+            update: { lastNumber: { increment: 1 } },
+            select: { lastNumber: true },
+          });
+          const movementNumber = `CM-${String(counter.lastNumber).padStart(6, '0')}`;
+
+          await tx.inventoryCostMovement.create({
+            data: {
+              clinicId: c.clinicId,
+              movementNumber,
+              costLayerId: layer.id,
+              stockMovementId: line.movementId,
+              movementType: 'RECEIPT',
+              quantity: line.receivedQuantity,
+              unitCostMinor: unitAcquisitionCostMinor,
+              totalCostMinor: totalRemainingCostMinor,
+              notes: `Goods receipt line ${line.id}`,
+            },
+          });
+        }
       }
 
       const goodsReceipt = await tx.inventoryGoodsReceipt.findFirstOrThrow({

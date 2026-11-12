@@ -116,3 +116,13 @@ The migration `20261101000500_commissions_reconciliation_reporting` provisions 7
 | Practitioner Performance | أداء وإنتاجية الأطباء |
 | Inventory Valuation | تقييم المخزون وتكلفة المواد |
 | Appointment Utilization | إشغال المواعيد ومعدلات الحضور |
+
+---
+
+## 6. Integration with Step 5.4 Advanced Inventory Costing & Landed Cost Valuation
+
+In Phase 5 Step 5.4, the inventory valuation domain was upgraded from an estimated moving cost model to a comprehensive, audit-grade FIFO actual landed cost valuation engine (`FIFO_ACTUAL_LANDED_COST`).
+- Physical dispensing (FEFO) remains strictly segregated from financial valuation (FIFO).
+- Landed costs are allocated to cost layers with integer minor unit math.
+- Periodic snapshots (`InventoryValuationSnapshot`) provide database-enforced immutable balance sheets for financial and tax reconciliation.
+For full details, see [inventory-cost-accounting.md](inventory-cost-accounting.md).

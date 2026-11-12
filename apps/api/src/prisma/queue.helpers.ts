@@ -38,11 +38,12 @@ export async function ticket(tx:TenantTransaction,c:TenantContext,id:string){
 export async function makeVisit(tx:TenantTransaction,c:TenantContext,input:{patientId:string;appointmentId?:string;doctorResourceId:string;roomResourceId?:string|null;requestKey:string;hash:string}){
   const patient=await tx.patient.findFirst({where:{id:input.patientId,clinicId:c.clinicId},select:{id:true,status:true}});
   if(!patient)throw new NotFoundException();if(patient.status!=='ACTIVE')throw new QueueError('QUEUE_INACTIVE_PATIENT');
-  await queueAssignment(tx,c,input.doctorResourceId,input.roomResourceId);
+  const {doctor,room}=await queueAssignment(tx,c,input.doctorResourceId,input.roomResourceId);
   if(await tx.visit.findFirst({where:{clinicId:c.clinicId,patientId:patient.id,status:{in:['WAITING','IN_SERVICE']}},select:{id:true}}))throw new QueueError('QUEUE_DUPLICATE');
   const day=todayInZone(await clinicTimezone(tx,c.clinicId)),businessDate=new Date(day+'T00:00:00Z');
   const counter=await tx.queueCounter.upsert({where:{clinicId_businessDate:{clinicId:c.clinicId,businessDate}},create:{clinicId:c.clinicId,businessDate,lastNumber:1},update:{lastNumber:{increment:1}},select:{lastNumber:true}});
-  const visit=await tx.visit.create({data:{clinicId:c.clinicId,patientId:patient.id,appointmentId:input.appointmentId??null,source:input.appointmentId?'APPOINTMENT':'WALK_IN',checkInKey:input.requestKey,requestHash:input.hash},select:{id:true}});
+  const visitBranchId=(input as any).branchId??room?.branchId??doctor.branchId;
+  const visit=await tx.visit.create({data:{clinicId:c.clinicId,branchId:visitBranchId,patientId:patient.id,appointmentId:input.appointmentId??null,source:input.appointmentId?'APPOINTMENT':'WALK_IN',checkInKey:input.requestKey,requestHash:input.hash},select:{id:true}});
   return tx.queueTicket.create({data:{clinicId:c.clinicId,visitId:visit.id,businessDate,number:counter.lastNumber,doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null},select:ticketProjection});
 }
 // Called only inside the appointment/queue writer transaction. ARRIVED retries

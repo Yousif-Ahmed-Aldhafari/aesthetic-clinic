@@ -106,7 +106,7 @@ after(async () => {
 live('valid login stores only hashed verifiers and uses HttpOnly scoped cookies',async()=>{
   const browser=new Browser(), response=await browser.login(); assert.equal(response.status,200);
   const data=await response.json() as Record<string,unknown>;
-  assert.deepEqual(Object.keys(data).sort(),['csrfToken','expiresAt','selectedClinicId','user']);
+  assert.deepEqual(Object.keys(data).sort(),['csrfToken','expiresAt','selectedBranchId','selectedClinicId','user']);
   assert.deepEqual(Object.keys(data.user as object).sort(),['email','id','name']);
   const cookie=response.headers.getSetCookie().find(s=>s.startsWith('lamssa_session='))!;
   assert(cookie.includes('HttpOnly') && cookie.includes('SameSite=Lax') && cookie.includes('Path=/api/v1'));

@@ -54,7 +54,20 @@ export class BillingRepository {
     if(!patient)throw new NotFoundException();if(patient.status!=='ACTIVE')throw new BadRequestException();
     if(input.visitId&&!await tx.visit.findFirst({where:{clinicId:c.clinicId,id:input.visitId,patientId:patient.id},select:{id:true}}))throw new NotFoundException();
     const clinic=await tx.clinic.findFirstOrThrow({where:{id:c.clinicId},select:{currency:true}}),scale=currencyScale(clinic.currency),computed=calculate(input.lines,scale);
-    const row=await tx.invoice.create({data:{clinicId:c.clinicId,patientId:patient.id,visitId:input.visitId??null,currency:clinic.currency,currencyScale:scale,patientName:patient.fullName,patientNumber:patient.patientNumber,requestKey:input.requestKey,requestHash:hash,...computed.totals}});
+    let invoiceBranchId = (input as any).branchId ?? null;
+    if (!invoiceBranchId && input.visitId) {
+      const v = await tx.visit.findFirst({ where: { clinicId: c.clinicId, id: input.visitId }, select: { branchId: true } });
+      if (v) invoiceBranchId = v.branchId;
+    }
+    if (!invoiceBranchId && c.selectedBranchId) {
+      invoiceBranchId = c.selectedBranchId;
+    }
+    if (!invoiceBranchId) {
+      const b = (await tx.clinicBranch.findFirst({ where: { clinicId: c.clinicId, code: 'MAIN' }, select: { id: true } }))
+        ?? (await tx.clinicBranch.findFirstOrThrow({ where: { clinicId: c.clinicId }, select: { id: true } }));
+      invoiceBranchId = b.id;
+    }
+    const row=await tx.invoice.create({data:{clinicId:c.clinicId,branchId:invoiceBranchId,patientId:patient.id,visitId:input.visitId??null,currency:clinic.currency,currencyScale:scale,patientName:patient.fullName,patientNumber:patient.patientNumber,requestKey:input.requestKey,requestHash:hash,...computed.totals}});
     await tx.invoiceLine.createMany({data:computed.items.map(l=>({...l,clinicId:c.clinicId,invoiceId:row.id}))});
     await audit(tx,c,'DRAFT_CREATED',row.id,row.version,{totalMinor:row.totalMinor.toString(),linesHash:financialHash(computed.items)});
     await this.auditRepo.record({clinicId:c.clinicId,actorId:c.userId,action:'invoices.draft',category:'FINANCE',targetType:'Invoice',targetId:row.id,outcome:'SUCCESS',metadata:{totalMinor:row.totalMinor.toString()}},tx);

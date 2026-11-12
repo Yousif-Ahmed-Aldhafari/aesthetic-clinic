@@ -32,7 +32,10 @@ export class SchedulingRepository {
   createResource(proof:VerifiedPrincipal,clinicId:string,input:ResourceInput){return mutateScheduling(this.database,proof,clinicId,[...configPermissions,'staff.read'],async(tx,c)=>{
     if(input.kind==='DOCTOR'){if(!input.doctorMembershipId)throw new BadRequestException();await checkDoctor(tx,c,input.doctorMembershipId);}
     else if(input.doctorMembershipId!=null)throw new BadRequestException();
-    const r=await tx.bookableResource.create({data:{clinicId:c,kind:input.kind,label:input.label,doctorMembershipId:input.doctorMembershipId??null},select:resourceSelect});return resourceResponse(r);
+    const branchId = (input as any).branchId
+      ?? (await tx.clinicBranch.findFirst({ where: { clinicId: c, code: 'MAIN' }, select: { id: true } }))?.id
+      ?? (await tx.clinicBranch.findFirstOrThrow({ where: { clinicId: c }, select: { id: true } })).id;
+    const r=await tx.bookableResource.create({data:{clinicId:c,branchId,kind:input.kind,label:input.label,doctorMembershipId:input.doctorMembershipId??null},select:resourceSelect});return resourceResponse(r);
   });}
   updateResource(proof:VerifiedPrincipal,clinicId:string,id:string,input:UpdateResource){return mutateScheduling(this.database,proof,clinicId,configPermissions,async(tx,c)=>{
     const current=await resource(tx,c,id);if(current.version!==input.expectedVersion)throw new SchedulingError('STALE_VERSION');

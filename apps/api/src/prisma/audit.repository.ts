@@ -73,7 +73,7 @@ export class AuditRepository {
       metadata: (sanitizedMetadata ?? undefined) as Prisma.InputJsonValue | undefined,
     };
 
-    if (tx) {
+    if (tx && input.actorId) {
       const created = await tx.auditEvent.create({ data, select: auditSelect });
       return auditResponse(created);
     }

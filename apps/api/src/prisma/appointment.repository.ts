@@ -11,11 +11,11 @@ import { calendarRange, localCandidates, localView, nextStatuses, plainDate, wit
 import type { AppointmentQuery, AppointmentStatusInput, AvailabilityQuery, CreateAppointment, UpdateAppointment } from '../appointments/scheduling-input.js';
 import { bookingResources, clinicTimezone, mutateScheduling, validatedBooking } from './scheduling.helpers.js';
 import { AuditRepository } from './audit.repository.js';
-const projection={id:true,patientId:true,serviceId:true,doctorResourceId:true,roomResourceId:true,startAt:true,endAt:true,status:true,cancellationReason:true,version:true,createdAt:true,updatedAt:true,
+const projection={id:true,branchId:true,patientId:true,serviceId:true,doctorResourceId:true,roomResourceId:true,startAt:true,endAt:true,status:true,cancellationReason:true,version:true,createdAt:true,updatedAt:true,
   patient:{select:{id:true,patientNumber:true,fullName:true}},service:{select:{id:true,name:true}},doctor:{select:{id:true,label:true}},room:{select:{id:true,label:true}}} satisfies Prisma.AppointmentSelect;
 type Row=Prisma.AppointmentGetPayload<{select:typeof projection}>;
 const response=(p:Row,timeZone:string)=>({
-  id:p.id,patient:p.patient,service:p.service,doctor:p.doctor,room:p.room,
+  id:p.id,branchId:p.branchId,patient:p.patient,service:p.service,doctor:p.doctor,room:p.room,
   startAt:p.startAt.toISOString(),endAt:p.endAt.toISOString(),
   startLocal:localView(p.startAt,timeZone).local,endLocal:localView(p.endAt,timeZone).local,
   startOffset:localView(p.startAt,timeZone).offset,endOffset:localView(p.endAt,timeZone).offset,
@@ -52,7 +52,7 @@ export class AppointmentRepository {
     const hash=bookingHash(input),existing=await tx.appointment.findFirst({where:{clinicId:id,bookingKey:input.bookingKey},select:{...projection,requestHash:true}});
     if(existing){if(existing.requestHash!==hash)throw new SchedulingError('IDEMPOTENCY_CONFLICT');return response(existing,await clinicTimezone(tx,id));}
     const times=await validatedBooking(tx,id,input.patientId,input);
-    const p=await tx.appointment.create({data:{clinicId:id,patientId:input.patientId,serviceId:input.serviceId,doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null,startAt:times.startAt,endAt:times.endAt,bookingKey:input.bookingKey,requestHash:hash},select:projection});
+    const p=await tx.appointment.create({data:{clinicId:id,branchId:times.branchId,patientId:input.patientId,serviceId:input.serviceId,doctorResourceId:input.doctorResourceId,roomResourceId:input.roomResourceId??null,startAt:times.startAt,endAt:times.endAt,bookingKey:input.bookingKey,requestHash:hash},select:projection});
     await this.audit.record({clinicId:id,actorId:c.userId,action:'appointments.book',category:'SCHEDULING',targetType:'Appointment',targetId:p.id,outcome:'SUCCESS',metadata:{patientId:input.patientId,serviceId:input.serviceId,doctorResourceId:input.doctorResourceId}},tx);
     return response(p,times.timeZone);
   });}

@@ -15,6 +15,7 @@ import {
   CompleteFollowUpAssessmentDto,
   RecordAdverseEventDto,
   RecordTreatmentOutcomeDto,
+  ReviewCheckInDto,
   ScheduleFollowUpDto,
   UpdateAdverseEventDto,
   UpdateFollowUpStatusDto,
@@ -137,5 +138,40 @@ export class ClinicalFollowUpController {
     @Query('patientId') patientId?: string,
   ) {
     return this.followUps.listAdverseEvents(r.auth!.principal, clinicId, patientId);
+  }
+
+  // -------------------------------------------------------------
+  // Clinician Recovery Check-In Review Queue
+  // -------------------------------------------------------------
+  @Get('recovery-check-ins')
+  @ClinicPermissions('clinical.follow-ups.read')
+  listRecoveryCheckIns(
+    @Req() r: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Query('patientId') patientId?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.followUps.listRecoveryCheckIns(r.auth!.principal, clinicId, patientId, status);
+  }
+
+  @Get('recovery-check-ins/:checkInId')
+  @ClinicPermissions('clinical.follow-ups.read')
+  getRecoveryCheckIn(
+    @Req() r: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('checkInId') checkInId: string,
+  ) {
+    return this.followUps.getRecoveryCheckIn(r.auth!.principal, clinicId, checkInId);
+  }
+
+  @Post('recovery-check-ins/:checkInId/review')
+  @ClinicPermissions('clinical.follow-ups.update')
+  reviewRecoveryCheckIn(
+    @Req() r: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('checkInId') checkInId: string,
+    @Body() body: ReviewCheckInDto,
+  ) {
+    return this.followUps.reviewRecoveryCheckIn(r.auth!.principal, clinicId, checkInId, body);
   }
 }

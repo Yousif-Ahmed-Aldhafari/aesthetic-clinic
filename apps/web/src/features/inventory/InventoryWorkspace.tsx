@@ -19,6 +19,7 @@ import { SupplierManagementPanel } from './SupplierManagementPanel';
 import { PurchaseOrderManagementPanel } from './PurchaseOrderManagementPanel';
 import { StockCountPanel } from './StockCountPanel';
 import { InventoryAlertsBanner } from './InventoryAlertsBanner';
+import { CostingWorkspace } from './CostingWorkspace';
 import './inventory.css';
 
 interface Props {
@@ -37,7 +38,8 @@ type MainTab =
   | 'PURCHASE_ORDERS'
   | 'STOCK_COUNTS'
   | 'MOVEMENTS'
-  | 'RECONCILE';
+  | 'RECONCILE'
+  | 'COSTING';
 
 export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('OVERVIEW');
@@ -66,6 +68,7 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
   const canManageStockCounts = permissions.includes('inventory.stock-counts.manage');
   const canReconcileStockCounts = permissions.includes('inventory.stock-counts.reconcile');
   const canAcknowledgeAlerts = permissions.includes('inventory.alerts.acknowledge');
+  const canCostingRead = permissions.includes('inventory.costing.read');
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -233,6 +236,15 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
           >
             <span>⚖️</span> مطابقة الدفتر
           </button>
+
+          {canCostingRead && (
+            <button
+              className={`inventory-tab-btn ${activeTab === 'COSTING' ? 'active' : ''}`}
+              onClick={() => setActiveTab('COSTING')}
+            >
+              <span>💰</span> تكاليف ومحاسبة المخزون (FIFO)
+            </button>
+          )}
         </nav>
 
         {canPerformStock && (
@@ -493,6 +505,14 @@ export function InventoryWorkspace({ clinic, csrfToken, onAuthError }: Props) {
               clinicId={clinic.clinicId}
               csrfToken={csrfToken}
               canReconcile={canReconcile}
+            />
+          )}
+
+          {activeTab === 'COSTING' && (
+            <CostingWorkspace
+              clinic={clinic}
+              csrfToken={csrfToken}
+              onAuthError={onAuthError}
             />
           )}
         </>

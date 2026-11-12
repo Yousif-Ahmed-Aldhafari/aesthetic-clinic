@@ -257,3 +257,8 @@ All routes require authentication, valid clinic tenancy header/cookie, and CSRF 
 - `POST /api/v1/clinics/:clinicId/inventory/clinical-consumption`: Record procedure lot consumption (validates doctor match, consent, and deducts stock).
 - `GET /api/v1/clinics/:clinicId/inventory/clinical-consumption`: List consumptions with optional filter by `procedureExecutionId`.
 - `POST /api/v1/clinics/:clinicId/inventory/clinical-consumption/:id/void`: Void a consumption record and restore stock.
+
+---
+
+## 8. Physical Lots vs Financial FIFO Cost Layers (Step 5.4)
+Physical lot dispensing follows First-Expired, First-Out (FEFO) to safeguard patient clinical safety. Financial valuation follows First-In, First-Out (FIFO) acquisition cost layers (`InventoryCostLayer`) with landed cost allocation. For detailed accounting architecture, see [inventory-cost-accounting.md](inventory-cost-accounting.md).
