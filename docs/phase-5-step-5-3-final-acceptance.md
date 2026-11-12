@@ -1,8 +1,8 @@
 # Lamssa — Phase 5, Step 5.3: Multi-Branch Clinic Management Final Acceptance Report
 
-**Branch:** `phase/5-patient-enterprise`  
-**Commit:** `f8dc541` (`feat(branches): implement Phase 5 Step 5.3 multi-branch management`)  
-**Base Commit:** `39d5ea7`  
+**Branch:** `phase/5-patient-enterprise`<br />
+**Commit:** `f8dc541` (`feat(branches): implement Phase 5 Step 5.3 multi-branch management`)<br />
+**Base Commit:** `39d5ea7`
 
 ---
 

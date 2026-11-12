@@ -210,3 +210,27 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Unit Tests**: `npm test` (72 tests passing: 16 web + 56 api).
 - **Database Integration Tests**: `npm run test:db` (191 tests passing across all 12 test suites).
 - **Browser Smoke Suite**: `node scripts/patients-browser-smoke.mjs` (33/33 browser checks passing with 0 runtime errors).
+
+---
+
+## 10. Phase 5 Privacy, Consent, Branch Governance, Costing & Payment Security Addendum
+
+### 10.1 Patient Portal Identity & Dual-Session Isolation (Step 5.1 & 5.2)
+- **Principal Segregation**: Patient credentials (`PatientAccount`, `PatientSession`) operate in an isolated domain completely decoupled from staff credentials (`User`, `Session`). Staff credentials cannot authenticate patient endpoints, and patient sessions cannot access clinical administration or financial systems.
+- **Intra-Clinic Data Isolation**: Hardened PostgreSQL RLS helper `lamssa_security.patient_row_allows(target_clinic, target_patient)` strictly confines patient queries to their authenticated records. Cross-patient and cross-clinic access is denied at the database engine level.
+- **PHI Projection Defense**: Patient portal endpoints project strictly filtered demographic, appointment, and consent summaries. Clinicians' private internal notes, staff audit logs, and internal cost layers are inaccessible.
+- **Consent Governance & Cryptographic Digests**: Consent forms generate deterministic SHA-256 digests binding the legal text to the patient's signature evidence. Procedure execution is gated fail-closed on verified clinician review (`ConsentEligibilityService`).
+
+### 10.2 Multi-Branch Data Governance (Step 5.3)
+- **Branch-Level Access Scoping**: `BranchMembership` constrains operational staff (nurses, receptionists) to their assigned branch. Clinic owners and administrators retain organization-wide oversight.
+- **Physical Custody Audit**: Inter-branch stock transfers enforce a two-step custodial trail (`DISPATCHED` ➔ `RECEIVED`) with recorded custody timestamps, tracking discrepancies explicitly.
+
+### 10.3 Inventory Cost Accounting Governance (Step 5.4)
+- **Segregation of Duties**: Physical procedure dispensing uses FEFO (`InventoryBatch`) for patient safety, while financial valuation uses FIFO (`InventoryCostLayer`). Clinical dispensed lot tracking remains unmutated by financial cost adjustments.
+- **Dual-Control Authorization**: Cost layer revaluations and opening balance verifications require segregated approval permissions (`inventory.costing.approve`).
+
+### 10.4 Payment Integrations & Webhook Ingestion Hardening (Step 5.5 & 5.6)
+- **Zero Cardholder Data Storage**: No primary account numbers (PAN), CVVs, or card magnetic track data are received or stored.
+- **Secret Encryption at Rest**: External payment provider keys and webhook secrets are encrypted at rest with AES-256-GCM + HKDF-SHA256 key derivation.
+- **Elimination of Custom GUC Bypass**: Custom session bypass flags (`lamssa.internal_security_lookup`) were eliminated from all RLS policies and replaced with standard PostgreSQL `maintenance_owner` policies across all 15 integration tables (93 tables total under `FORCE ROW LEVEL SECURITY`).
+- **Authenticated Webhook Call Validation**: The `SECURITY DEFINER` function `post_webhook_payment` requires matching session context, active clinic status, payable intent status, and an authentic, fresh (<5 min) `PaymentProviderEvent` in `RECEIVED` status. Replay attacks are permanently blocked by transitioning the event to `PROCESSED`.

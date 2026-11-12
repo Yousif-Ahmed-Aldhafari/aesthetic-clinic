@@ -164,3 +164,14 @@ The **Lamssa Patient Portal** delivers a secure, Arabic-first, RTL self-service 
 - **Components**:
   - `PatientPortalApp.tsx`: Wizard booking flow, appointment status tracking, profile pane, login, activation, and recovery dialogs.
   - Full Arabic RTL accessibility (`dir="rtl"`, aria-live alerts, dialog focus management).
+
+---
+
+## 7. Security Acceptance (Step 5.6)
+
+As verified during the Phase 5 final security acceptance audit:
+- Patient identity is strictly isolated via PostgreSQL `FORCE ROW LEVEL SECURITY` and `lamssa_security.patient_row_allows`.
+- Activation tokens are cryptographically generated, stored as SHA-256 hashes, and invalidated immediately upon first use.
+- Rate limiting and lockout thresholds protect against credential stuffing.
+- Direct booking enforces doctor and room conflict checks (`23P01`) and idempotency deduplication.
+- Full details in [docs/phase-5-final-acceptance.md](phase-5-final-acceptance.md).

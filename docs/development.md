@@ -64,6 +64,23 @@ Apply `20261030000200_clinical_photography` with `npm run db:migrate`, `npm run 
 - Unit and policy tests: `apps/api/test/clinical-photo-policy.test.ts` and `apps/web/test/clinical-photos.test.mjs`.
 - Database integration tests: `apps/api/test/clinical-photo.integration.test.ts`.
 
+## Phase 5.6 final security, privacy, financial integrity & acceptance (2026-11-12)
+
+Final acceptance audit across all five Phase 5 modules on branch `phase/5-patient-enterprise`.
+- Migration: `20261112000100_payment_regulatory_integrations` updated to eliminate custom GUC bypass (`lamssa.internal_security_lookup`) and standardize `maintenance_owner` policy (`FOR ALL TO owner_name USING (true) WITH CHECK (true)`) across all 15 integration tables (93 tables total under `FORCE ROW LEVEL SECURITY`).
+- Webhook posting: `post_webhook_payment` hardened to require matching session GUCs, active clinic, payable intent, and an authentic, fresh (<5 min) `PaymentProviderEvent` in `RECEIVED` status. Replay attacks permanently prevented by atomic status transition to `PROCESSED`.
+- Negative SQL tests: `apps/api/test/integrations.integration.test.ts` verified under `lamssa_runtime` that setting GUC flags returns zero rows across tenant boundaries and unauthenticated payment posting fails closed.
+- Browser acceptance: `scripts/patients-browser-smoke.mjs` expanded to 43 passing checks with 0 runtime errors.
+- Test suites: 186 unit tests passed, 306 database tests passed (1 intentional CREATEDB skip), 43 browser checks passed, 31 migrations applied, 0 git diff check defects.
+- Artifact: `docs/phase-5-final-acceptance.md`. Branch is **READY FOR CODE MERGE** into `main`. Production deployment remains gated on clinical board sign-off and tax authority onboarding.
+
+## Phase 5.5 payment gateway, banking & regulatory integration foundations
+
+Apply `20261112000100_payment_regulatory_integrations` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All payment and regulatory endpoints reside under `/api/v1/clinics/:clinicId/integrations`.
+- Unit and policy tests: `apps/api/test/integrations-policy.test.ts`.
+- Database integration tests: `apps/api/test/integrations.integration.test.ts`.
+- Invariants: Provider-neutral payment lifecycle (`PaymentProviderConfiguration`, `PaymentIntent`, `PaymentProviderEvent`, `PaymentSettlement`, `ExternalRefund`, `ExternalPayout`, `ExternalReconciliationRun`, `ExternalReconciliationFinding`). Supports deterministic `SANDBOX_MOCK`; live gateway adapters (`MOYASAR`, `CHECKOUT_COM`, `STRIPE`, `REGIONAL_BANK_GATEWAY`) are disabled-by-default stubs. Credentials encrypted at rest with AES-256-GCM + HKDF-SHA256. Webhooks verified via HMAC-SHA256 within 300-second window. Confirmed payments atomically post to `Payment`, increment `Invoice.netPaidMinor`, and append to `FinancialAuditEvent`. Regulatory profile supports `SA_ZATCA`, `AE_FTA`, and `GENERIC_TAX_INVOICE` with mock transmission boundaries (`MOCK_SUBMITTED`). All 15 new tables enforce `FORCE ROW LEVEL SECURITY`.
+
 ## Phase 5.4 advanced inventory costing, landed cost allocation & FIFO valuation
 
 Apply `20261111000100_inventory_costing_valuation` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All inventory costing endpoints reside under `/api/v1/clinics/:clinicId/inventory/costing`.

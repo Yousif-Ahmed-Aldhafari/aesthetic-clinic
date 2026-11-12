@@ -512,8 +512,8 @@ live('Patient Outcomes: PRO submission with PATIENT_PORTAL provenance', async ()
 
   // Direct SQL inspection: verify row level RLS and provenance
   const rlsCheck = await pool.query(
-    `SELECT id, "clinicId", "patientId", score, "measurementScale" 
-     FROM public."PatientReportedOutcome" 
+    `SELECT id, "clinicId", "patientId", score, "measurementScale"
+     FROM public."PatientReportedOutcome"
      WHERE id = $1`,
     [outcomeData.id],
   );

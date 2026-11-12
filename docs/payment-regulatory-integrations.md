@@ -67,3 +67,20 @@ The inventory costing engine (`apps/api/src/prisma/costing.repository.ts` and `i
 - When a physical `batchId` is specified in clinical consumption, active cost layers matching that `batchId` within the location's branch are depleted first (`layerDate ASC, id ASC`), falling back to oldest branch layers.
 - Physical `InventoryClinicalConsumption.batchId` is never overwritten by accounting attribution.
 - Exact minor-unit conservation is enforced on final layer depletion (`newTotalCostMinor = 0n`, absorbing rounding remainders) and on 100% inter-branch transfers.
+
+---
+
+## 8. Step 5.6 Security Hardening & RLS Normalization
+
+### Complete Removal of `lamssa.internal_security_lookup`
+The temporary session GUC `lamssa.internal_security_lookup` was eliminated from all RLS policies on `PaymentIntent`, `PaymentProviderConfiguration`, `Invoice`, `Payment`, and `FinancialAuditEvent`.
+- All 15 integration tables now implement the standard `maintenance_owner` policy (`FOR ALL TO lamssa_migration_user USING (true) WITH CHECK (true)`).
+- `SECURITY DEFINER` functions execute queries under table owner privileges without relying on any custom GUC.
+
+### Hardened `post_webhook_payment` Verification
+`post_webhook_payment` was hardened to prevent unauthorized execution:
+1. Verifies caller session GUCs: `lamssa.clinic_id` matches `p_clinic_id` and `lamssa.webhook_intent_id` matches `p_payment_intent_id`.
+2. Validates clinic is `ACTIVE` and `PaymentIntent` is in payable status (`CREATED`, `REQUIRES_ACTION`, `PROCESSING`).
+3. Verifies an authentic, fresh (<5 min) `PaymentProviderEvent` exists in `RECEIVED` status matching `(p_clinic_id, p_payment_intent_id, p_event_id)`.
+4. Transitions the event to `PROCESSED` atomically, preventing replay attacks.
+5. Backed by negative SQL tests in `apps/api/test/integrations.integration.test.ts`.

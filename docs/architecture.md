@@ -1449,3 +1449,23 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Dual-Control Approval**: Staff can draft opening balances (`UNVERIFIED_COST`) or revaluation adjustments (`PENDING`). Only `CLINIC_OWNER` or `CLINIC_ADMIN` holding `inventory.costing.approve` can verify opening balances or approve revaluation adjustments.
 - **FORCE ROW LEVEL SECURITY**: Applied to all 10 costing tables in PostgreSQL (`InventoryCostLayer`, `InventoryLandedCost`, `InventoryLandedCostAllocationLine`, `InventoryCostMovement`, `InventoryValuationSnapshot`, `InventoryCostAdjustment`, and counters).
 - **Immutability Triggers**: `trg_prevent_cost_movement_mutation` and `trg_prevent_valuation_snapshot_mutation` raise `42501` on raw `UPDATE` or `DELETE`, ensuring an unalterable financial audit trail.
+
+## 11. Step 5.5: Payment Gateway, Banking & Regulatory Integration Foundations
+
+### Provider-Neutral Architecture & Financial Ledger Invariants
+- **Multi-Provider Orchestration**: Encapsulates external payment lifecycle under `PaymentProviderConfiguration`, `PaymentIntent`, `PaymentProviderEvent`, `PaymentSettlement`, `ExternalRefund`, `ExternalPayout`, `ExternalReconciliationRun`, and `ExternalReconciliationFinding`.
+- **Sandbox Mock vs Production Stubs**: `SANDBOX_MOCK` executes deterministic mocked payments. Production adapters (`MOYASAR`, `CHECKOUT_COM`, `STRIPE`, `REGIONAL_BANK_GATEWAY`) are implemented as disabled-by-default stubs (`isExecutionSupported = false`).
+- **Single Financial Source of Truth**: External payment confirmations never generate parallel financial entries; confirmed intents atomically post into `Payment`, increment `Invoice.netPaidMinor`, and append to the immutable hash-chained `FinancialAuditEvent` ledger.
+- **Zero Cardholder Data Storage**: No cardholder PAN, CVV, or track data is processed or stored.
+- **Encrypted Provider Credentials**: API keys and webhook signing secrets are encrypted at rest with AES-256-GCM and HKDF-SHA256 key derivation.
+- **Webhook Ingestion**: Verified via HMAC-SHA256 with 300-second replay window and PostgreSQL `FOR UPDATE` intent locking.
+- **Jurisdiction-Aware Regulatory Models**: `ClinicRegulatoryProfile` models e-invoicing for `SA_ZATCA`, `AE_FTA`, and `GENERIC_TAX_INVOICE` with mock transmission boundaries (`MOCK_SUBMITTED`).
+
+## 12. Step 5.6: Phase 5 Security Hardening, RLS Normalization & Final Acceptance Architecture
+
+### RLS Normalization & Elimination of Custom GUC Bypass
+- **Vulnerability Remediated**: Identified and eliminated `lamssa.internal_security_lookup` session GUC bypass flag across all RLS policies in `PaymentIntent`, `PaymentProviderConfiguration`, `Invoice`, `Payment`, and `FinancialAuditEvent`.
+- **Standardized `maintenance_owner` Policy**: Applied standard table-owner bypass (`FOR ALL TO owner_name USING (true) WITH CHECK (true)`) across all 15 integration tables (93 tables total under `FORCE ROW LEVEL SECURITY`).
+- **Caller-Verified `post_webhook_payment`**: Hardened `SECURITY DEFINER` function requiring authenticated clinic session, matching webhook intent session, active clinic status, payable intent status, and an authentic, fresh (<5 min) `PaymentProviderEvent` in `RECEIVED` status. Transitions event to `PROCESSED` atomically, preventing replay.
+- **Negative SQL Regression Verification**: Verified under restricted runtime database role (`lamssa_runtime`) that setting custom GUCs or attempting unauthenticated payment postings yields zero rows or immediate SQL rejection.
+- **Acceptance Scope**: All 5 Phase 5 sub-systems independently verified. Branch `phase/5-patient-enterprise` marked **READY FOR CODE MERGE** into `main`. Production deployment remains gated on formal clinical and tax authority prerequisites.

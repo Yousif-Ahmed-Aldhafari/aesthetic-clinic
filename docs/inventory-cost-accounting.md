@@ -186,3 +186,13 @@ The web workspace (`CostingWorkspace.tsx`) integrates into the inventory suite w
    Audit ledger of consumption, waste write-offs, transfers, and opening balance entries.
 5. **الأرصدة الافتتاحية والتسويات (Opening Balances & Adjustments)**:
    Segregated workflow for backfilling legacy inventory costs and approving pending revaluation requests.
+
+---
+
+## 11. Final Security & Financial Audit (Step 5.6)
+
+In Step 5.6 final acceptance:
+- FIFO landed costing math and minor-unit rounding remainders attribution were audited and verified.
+- Separation of physical lot dispensing (FEFO) from financial cost attribution (FIFO) was confirmed preserved.
+- Browser smoke test coverage was added in `scripts/patients-browser-smoke.mjs` verifying the FIFO costing and valuation workspace rendering.
+- See [docs/phase-5-final-acceptance.md](phase-5-final-acceptance.md).

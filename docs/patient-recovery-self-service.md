@@ -109,3 +109,13 @@ The implementation is verified by:
 - **Database Integration Tests**: 274 passed, 1 intentional restore skip (`npm run test:db`).
 - **Browser Smoke Suite**: 39 browser checks passed with 0 runtime errors (`npm run test:browser`).
 - **Architectural Boundary Enforcement**: `scripts/check-database-boundaries.mjs` and `scripts/check-deployment.mjs` passed.
+
+---
+
+## 6. Clinical Safety & Acceptance Review (Step 5.6)
+
+During the Phase 5 final acceptance audit:
+- Intra-clinic patient isolation was re-verified with positive and negative SQL tests under `lamssa_security.patient_row_allows`.
+- Severe pain escalation thresholds (VAS $\ge 8$) and red-flag symptoms are documented as **unapproved clinical rules** pending formal medical director approval prior to live production use.
+- Patient-facing guidance prominently states that recovery check-ins are not an emergency monitoring service.
+- See [docs/phase-5-final-acceptance.md](phase-5-final-acceptance.md).

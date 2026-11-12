@@ -163,3 +163,13 @@ In Step 5.4, inter-branch inventory transfers (`InterBranchTransfer`) are fully 
 - **Receipt**: Generates a new `InventoryCostLayer` at the destination branch (`TRANSFER_IN`) at the exact unit landed cost of the dispatched goods.
 - **Cancellation Restitution**: If a transfer is cancelled before receipt, the stock and cost layers are restored to the origin branch at the exact acquisition value.
 See [inventory-cost-accounting.md](inventory-cost-accounting.md) for full accounting specifications.
+
+---
+
+## 8. Final Security Acceptance (Step 5.6)
+
+In Step 5.6 final acceptance:
+- Multi-branch authorization and `selectedBranchId` session scoping were re-verified.
+- GiST exclusion constraints preventing practitioner double-booking across branches were verified under concurrency.
+- Browser smoke test coverage was added in `scripts/patients-browser-smoke.mjs` verifying multi-branch workspace rendering and default branch display.
+- See [docs/phase-5-final-acceptance.md](phase-5-final-acceptance.md).

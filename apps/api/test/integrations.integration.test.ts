@@ -320,12 +320,9 @@ describe('Phase 5 Step 5.5: Payment Gateway, Banking & Regulatory Integrations',
     assert.ok(!JSON.stringify(config).includes(apiKeyA));
     assert.ok(!JSON.stringify(config).includes(webhookSecretA));
 
-    const [dbRow] = await owner.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT set_config('lamssa.internal_security_lookup', '1', true)`;
-      return tx.$queryRaw<{ encryptedApiKey: string | null; encryptedWebhookSecret: string | null }[]>`
-        SELECT "encryptedApiKey", "encryptedWebhookSecret" FROM public."PaymentProviderConfiguration" WHERE id = ${config.id}::uuid
-      `;
-    });
+    const [dbRow] = await owner.$queryRaw<{ encryptedApiKey: string | null; encryptedWebhookSecret: string | null }[]>`
+      SELECT "encryptedApiKey", "encryptedWebhookSecret" FROM public."PaymentProviderConfiguration" WHERE id = ${config.id}::uuid
+    `;
     assert.ok(dbRow.encryptedApiKey?.startsWith('v1:'));
     assert.ok(dbRow.encryptedWebhookSecret?.startsWith('v1:'));
     assert.ok(!dbRow.encryptedWebhookSecret?.includes(webhookSecretA));
@@ -528,14 +525,48 @@ describe('Phase 5 Step 5.5: Payment Gateway, Banking & Regulatory Integrations',
 
     const client = await pool.connect();
     try {
-      await client.query('BEGIN');
-      await client.query(`SELECT set_config('lamssa.clinic_id', $1, true), set_config('lamssa.webhook_intent_id', $2, true)`, [
+      await client.query(`SELECT set_config('lamssa.clinic_id', $1, false), set_config('lamssa.webhook_intent_id', $2, false)`, [
         clinicAId,
         randomUUID(),
       ]);
       const rows = await client.query('SELECT id FROM public."PaymentIntent"');
       assert.equal(rows.rows.length, 0);
-      await client.query('ROLLBACK');
+
+      // Negative test 1: Setting arbitrary internal lookup flag yields zero rows for runtime user
+      await client.query(`SET lamssa.internal_security_lookup = '1'`);
+      const piRows = await client.query('SELECT count(*) FROM public."PaymentIntent"');
+      assert.equal(Number(piRows.rows[0].count), 0);
+      const ppcRows = await client.query('SELECT count(*) FROM public."PaymentProviderConfiguration"');
+      assert.equal(Number(ppcRows.rows[0].count), 0);
+
+      // Negative test 2: Direct runtime caller cannot forge webhook payment posting without valid event
+      const fakeEventId = randomUUID();
+      const fakeIntentId = randomUUID();
+      await assert.rejects(
+        () => client.query('SELECT * FROM lamssa_security.post_webhook_payment($1, $2, $3)', [
+          clinicAId,
+          fakeIntentId,
+          fakeEventId,
+        ]),
+        (err: Error) => err.message.includes('Unauthorized webhook payment context') || err.message.includes('Invalid or stale webhook event')
+      );
+
+      // Negative test 3: Even with matching GUCs, lack of valid PaymentProviderEvent fails closed
+      await client.query(`SELECT set_config('lamssa.clinic_id', $1, false), set_config('lamssa.webhook_intent_id', $2, false)`, [
+        clinicAId,
+        fakeIntentId,
+      ]);
+      await assert.rejects(
+        () => client.query('SELECT * FROM lamssa_security.post_webhook_payment($1, $2, $3)', [
+          clinicAId,
+          fakeIntentId,
+          fakeEventId,
+        ]),
+        (err: Error) => err.message.includes('Invalid or stale webhook event')
+      );
+
+      // Reset GUCs
+      await client.query(`SELECT set_config('lamssa.clinic_id', '', false), set_config('lamssa.webhook_intent_id', '', false), set_config('lamssa.internal_security_lookup', '', false)`);
     } finally {
       client.release();
     }
