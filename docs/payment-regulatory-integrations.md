@@ -36,10 +36,10 @@ API responses and audit logs return only `hasApiKey`, `hasWebhookSecret`, and a 
 `CREATED` → `REQUIRES_ACTION` / `PROCESSING` → `SUCCEEDED` | `FAILED` | `CANCELLED` (terminal). Out-of-order regressions (e.g., `SUCCEEDED` → `PROCESSING`) are safely recorded as `IGNORED_DUPLICATE`.
 
 ### Verified Webhook Boundary (`POST /api/v1/webhooks/payments/:providerCode`)
-1. `lamssa_security.resolve_payment_webhook_target(providerCode, providerIntentId)` (`SECURITY DEFINER`, `SET search_path = pg_catalog, pg_temp`) resolves the target `(clinicId, paymentIntentId, providerConfigId, encryptedWebhookSecret)` only for enabled providers and active clinics.
+1. `lamssa_security.resolve_payment_webhook_target(providerCode, providerIntentId)` (`SECURITY DEFINER`, `SET search_path = pg_catalog, pg_temp`) resolves the target `(clinicId, paymentIntentId, providerConfigId, encryptedWebhookSecret)` only for enabled providers and active clinics. In migration `20261112000200_webhook_security_hardening`, it generates a 64-character cryptographically random ticket, hashes it with SHA-256 on `PaymentIntent`, and returns the plaintext ticket exclusively to the in-memory webhook ingestion handler.
 2. `verifyHmacSha256WebhookSignature` checks `x-lamssa-signature` (`sha256=<hex>` over `${timestamp}.${rawBody}`) using `timingSafeEqual` and enforces a 300-second replay window on `x-lamssa-timestamp`.
-3. `TenantDatabaseService.withWebhookContext(clinicId, paymentIntentId, ...)` binds `lamssa.clinic_id` and `lamssa.webhook_intent_id` transaction-locally, verified by `lamssa_security.context_allows`.
-4. A `SELECT ... FOR UPDATE` row lock on `PaymentIntent` serializes concurrent webhook deliveries.
+3. `TenantDatabaseService.withWebhookContext(clinicId, paymentIntentId, webhookTicket, ...)` provides access to ticketed SECURITY DEFINER helpers (`ingestWebhookEvent`, `updateWebhookEventStatus`, `updateIntentStatus`, `postWebhookPayment`). Session-based `lamssa_security.context_allows` strictly requires active staff/patient sessions; webhook operations run via ticket-verified SECURITY DEFINER functions without GUC privileges.
+4. Direct `INSERT`, `UPDATE`, and `DELETE` on `PaymentProviderEvent` are denied by RLS (`FOR INSERT WITH CHECK (false)`, etc.), preventing runtime SQL users from injecting or spoofing webhook events.
 5. Amount or currency mismatches are quarantined as `DEAD_LETTER` without posting any `Payment`.
 
 ---
@@ -70,17 +70,21 @@ The inventory costing engine (`apps/api/src/prisma/costing.repository.ts` and `i
 
 ---
 
-## 8. Step 5.6 Security Hardening & RLS Normalization
+## 8. Step 5.6 Security Hardening & Webhook Authorization Hardening
 
-### Complete Removal of `lamssa.internal_security_lookup`
+### Complete Removal of `lamssa.internal_security_lookup` & Additive Migration 032
 The temporary session GUC `lamssa.internal_security_lookup` was eliminated from all RLS policies on `PaymentIntent`, `PaymentProviderConfiguration`, `Invoice`, `Payment`, and `FinancialAuditEvent`.
+- Historical migration `20261112000100_payment_regulatory_integrations` was restored to exact commit `9c922a1` content to preserve migration immutability.
+- Additive migration `20261112000200_webhook_security_hardening` encapsulates all ticket-based authorization, SECURITY DEFINER functions, and RLS policy lockdowns.
 - All 15 integration tables now implement the standard `maintenance_owner` policy (`FOR ALL TO lamssa_migration_user USING (true) WITH CHECK (true)`).
-- `SECURITY DEFINER` functions execute queries under table owner privileges without relying on any custom GUC.
+- `PaymentProviderEvent` rejects direct runtime SQL `INSERT`, `UPDATE`, and `DELETE`.
 
-### Hardened `post_webhook_payment` Verification
-`post_webhook_payment` was hardened to prevent unauthorized execution:
-1. Verifies caller session GUCs: `lamssa.clinic_id` matches `p_clinic_id` and `lamssa.webhook_intent_id` matches `p_payment_intent_id`.
-2. Validates clinic is `ACTIVE` and `PaymentIntent` is in payable status (`CREATED`, `REQUIRES_ACTION`, `PROCESSING`).
-3. Verifies an authentic, fresh (<5 min) `PaymentProviderEvent` exists in `RECEIVED` status matching `(p_clinic_id, p_payment_intent_id, p_event_id)`.
-4. Transitions the event to `PROCESSED` atomically, preventing replay attacks.
-5. Backed by negative SQL tests in `apps/api/test/integrations.integration.test.ts`.
+### Ticketed `post_webhook_payment` Verification
+`post_webhook_payment` strictly prevents unauthorized execution:
+1. Validates caller supplies the authentic 64-character webhook ticket matching `PaymentIntent.webhookTicketHash` (SHA-256) within expiration.
+2. Atomically wipes `webhookTicketHash` on use, guaranteeing single-use idempotency.
+3. Validates clinic is `ACTIVE` and `PaymentIntent` is in payable status (`CREATED`, `REQUIRES_ACTION`, `PROCESSING`) with `postedPaymentId IS NULL`.
+4. Verifies an authentic, fresh (<5 min) `PaymentProviderEvent` exists in `RECEIVED` status matching `(p_clinic_id, p_payment_intent_id, p_event_id)` with verified signature.
+5. Transitions the event to `PROCESSED` atomically, preventing replay attacks.
+6. Public execution is revoked (`REVOKE ALL ON FUNCTION ... FROM PUBLIC`), with execute privileges granted only to the restricted runtime application role.
+7. Backed by negative SQL tests in `apps/api/test/integrations.integration.test.ts`.

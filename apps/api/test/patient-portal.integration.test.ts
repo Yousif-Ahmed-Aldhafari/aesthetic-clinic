@@ -281,6 +281,14 @@ live('staff issues portal invitation and patient activates account with birthdat
   const failPhone = await patientClient.activate(clinicSlugs[0], inviteData.activationToken, '+967799999999', p.dob, 'Pass123456');
   assert.equal(failPhone.status, 400);
 
+  // Failed activation: valid phone + valid DOB but forged/guessed activation token (demographic knowledge alone fails)
+  const failForgedToken = await patientClient.activate(clinicSlugs[0], 'forged-fake-activation-token-1234567890', p.phone, p.dob, 'Pass123456');
+  assert.equal(failForgedToken.status, 400);
+
+  // Failed activation: cross-clinic slug mismatch
+  const failWrongClinic = await patientClient.activate(clinicSlugs[1], inviteData.activationToken, p.phone, p.dob, 'Pass123456');
+  assert.equal(failWrongClinic.status, 400);
+
   // Successful activation
   const success = await patientClient.activate(clinicSlugs[0], inviteData.activationToken, p.phone, p.dob, 'SecurePatient123!');
   assert.equal(success.status, 200);

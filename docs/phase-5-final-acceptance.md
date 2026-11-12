@@ -1,11 +1,11 @@
 # Lamssa — Phase 5 Final Security, Privacy, Financial Integrity & Acceptance Report
 
-**Date:** 2026-11-12  
-**Branch:** `phase/5-patient-enterprise`  
-**Base Commit (Start of Step 5.6):** `9c922a1a64ffa5eff7538055541666b98cf85406`  
-**Target Integration Branch:** `main`  
-**Language:** English (Technical Documentation) | Arabic RTL (Application UI)  
-**System Classification:** Multi-Tenant Aesthetic Healthcare SaaS  
+**Date:** 2026-11-12
+**Branch:** `phase/5-patient-enterprise`
+**Base Commit (Start of Step 5.6):** `9c922a1a64ffa5eff7538055541666b98cf85406`
+**Target Integration Branch:** `main`
+**Language:** English (Technical Documentation) | Arabic RTL (Application UI)
+**System Classification:** Multi-Tenant Aesthetic Healthcare SaaS
 
 ---
 
@@ -19,7 +19,7 @@ Step 5.6 conducted a comprehensive, independent security, privacy, and financial
 
 | Scope | Verdict | Rationale & Status |
 | :--- | :--- | :--- |
-| **Code Integration (`main`)** | **READY FOR CODE MERGE** | All automated tests pass (186 unit, 306 database integration, 43 browser smoke). Zero boundary violations. Migration sequence 001–031 validated on PostgreSQL 16. Working tree clean. Zero git whitespace defects. |
+| **Code Integration (`main`)** | **READY FOR CODE MERGE** | All automated tests pass (186 unit, 306 database integration, 43 browser smoke). Zero boundary violations. Migration sequence 001–032 validated on PostgreSQL 16. Working tree clean. Zero git whitespace defects. |
 | **Production Deployment** | **NOT READY FOR PRODUCTION** | Gated on mandatory production prerequisites: formal clinical safety board sign-off on VAS thresholds, jurisdictional tax authority onboarding (ZATCA phase 2 / FTA), bank merchant acquirer underwriting, HSM/KMS external credential storage, and live disaster recovery restoration drills with elevated credentials. |
 
 ---
@@ -118,44 +118,50 @@ The Phase 5 implementation sequence was independently verified against the repos
 
 ---
 
-## 3. Deep-Dive: Elimination of Custom GUC Bypass & RLS Normalization
+## 3. Deep-Dive: Elimination of Custom GUC Bypass, Ticketed Webhook Authorization & RLS Hardening
 
-### 3.1 Vulnerability Analysis: `lamssa.internal_security_lookup`
+### 3.1 Vulnerability Analysis: Webhook GUC Manipulation & Unauthorized Posting
 
-In Step 5.5, a custom PostgreSQL session variable (`lamssa.internal_security_lookup`) was introduced into RLS policies for `PaymentIntent` and `PaymentProviderConfiguration` to facilitate background webhook processing.
+During the Step 5.6 security acceptance review, a rigorous threat model audit evaluated whether a restricted database caller (`lamssa_app` / `lamssa_runtime`) could forge payment events, manipulate session variables, or invoke `post_webhook_payment` without authentic webhook verification:
 
-#### Structural Defects Identified
-1. **GUC Privilege Escalation Risk**: Any SQL session operating under the runtime database role (`lamssa_runtime`) could issue:
-   ```sql
-   SELECT set_config('lamssa.internal_security_lookup', '1', true);
-   ```
-   If set, the policy evaluated to `true`, potentially granting visibility across tenant boundaries for payment intents and configurations.
-2. **Violation of RLS Standards**: All other 78 tables in Lamssa used standard PostgreSQL table-owner bypass (`maintenance_owner` policy: `FOR ALL TO <owner> USING (true) WITH CHECK (true)`). The 15 integration tables lacked this policy, forcing the use of the custom GUC.
-3. **`post_webhook_payment` Verification Gap**: The `SECURITY DEFINER` function `post_webhook_payment` did not assert that the caller possessed an authentic, fresh, and pending webhook event before executing payment postings.
+#### Structural Defects Identified & Exploit Proof of Concept
+1. **Webhook Intent Session Variable Forgery**: Previously, `lamssa_security.context_allows` allowed access when `target_clinic = lamssa.clinic_id AND webhook_intent_allows(lamssa.webhook_intent_id)`. Because PostgreSQL session variables can be set arbitrarily by any SQL session via `set_config('lamssa.webhook_intent_id', ...)`, a runtime attacker could set arbitrary intent UUIDs.
+2. **Exposure of Payment Provider Configurations**: When `webhook_intent_allows` evaluated to true, `PaymentProviderConfiguration` records became selectable, exposing encrypted credentials and webhook signing secrets.
+3. **Unauthorized Event Creation & Posting**: The runtime role had direct `INSERT` and `UPDATE` privileges on `PaymentProviderEvent`. A restricted database connection could insert a fake `RECEIVED` event with `signatureVerified = true` and call `post_webhook_payment` directly, crediting an invoice without any authentic webhook signature from the external provider.
+4. **Migration History Modification Risk**: Modifying previously applied migration files in-place violates migration immutability. Historical migration `20261112000100_payment_regulatory_integrations` needed restoration to its exact commit `9c922a1` state, with all hardening isolated in an additive migration.
 
 ### 3.2 Implemented Remediation
 
-1. **Standardized `maintenance_owner` Policy**:
-   All 15 integration tables were updated in migration `20261112000100_payment_regulatory_integrations` to implement the standard 5-policy pattern:
-   ```sql
-   CREATE POLICY maintenance_owner ON "PaymentIntent"
-     FOR ALL TO lamssa_migration_user USING (true) WITH CHECK (true);
-   ```
-   This allows `SECURITY DEFINER` functions running under table owner privileges to query and update records natively without setting or evaluating any GUC.
-2. **Complete Removal of Custom GUC**:
-   `lamssa.internal_security_lookup` was entirely purged from all RLS policies on `PaymentIntent`, `PaymentProviderConfiguration`, `Invoice`, `Payment`, and `FinancialAuditEvent`.
-3. **Hardened `post_webhook_payment` Function**:
-   The function now strictly verifies:
-   - Authenticated clinic context: `current_setting('lamssa.clinic_id', true) = p_clinic_id::text`
-   - Matching session intent: `current_setting('lamssa.webhook_intent_id', true) = p_payment_intent_id::text`
-   - Active clinic status: `Clinic.status = 'ACTIVE'`
-   - Payable intent status: `PaymentIntent.status IN ('CREATED', 'REQUIRES_ACTION', 'PROCESSING')`
-   - Authoritative, fresh webhook event: An existing `PaymentProviderEvent` record matching `(p_clinic_id, p_payment_intent_id, p_event_id)` with `processingStatus = 'RECEIVED'` created within the last 5 minutes.
-   - Upon successful posting, the event is immediately transitioned to `PROCESSED`, permanently preventing replay execution.
-4. **Negative SQL Regression Verification**:
-   Negative SQL tests were added to `apps/api/test/integrations.integration.test.ts`:
-   - Demonstrating that executing `SELECT set_config('lamssa.internal_security_lookup', '1', true)` under runtime credentials returns **zero rows** for payment intents or provider configurations belonging to other clinics.
-   - Demonstrating that invoking `post_webhook_payment` without an authentic, fresh webhook event raises an immediate SQL exception (`Invalid or stale webhook event for payment posting`).
+1. **Restoration of Migration 031**:
+   Historical migration `apps/api/prisma/migrations/20261112000100_payment_regulatory_integrations/migration.sql` was restored to exact byte-for-byte fidelity with git commit `9c922a1`.
+2. **Additive Migration 032 (`20261112000200_webhook_security_hardening`)**:
+   Created a clean, forward-only migration containing all security enhancements:
+   - Added `"webhookTicketHash"` (VARCHAR(64)) and `"webhookTicketExpiresAt"` (TIMESTAMPTZ) to `PaymentIntent`.
+   - Purged `webhook_intent_allows` from `lamssa_security.context_allows`, strictly requiring an active user or patient session for context establishment.
+   - Introduced a cryptographically secure, single-use ticket model via `lamssa_security.resolve_payment_webhook_target`: generates 64 characters of random hex entropy, commits the SHA-256 hash to `PaymentIntent`, sets a 60-second expiration, and returns the plaintext ticket exclusively to the in-memory webhook ingestion handler.
+   - Implemented dedicated, atomic `SECURITY DEFINER` routines: `ingest_payment_webhook_event`, `update_payment_webhook_event_status`, and `update_payment_intent_webhook_status`.
+   - Hardened `lamssa_security.post_webhook_payment`: verifies the single-use ticket hash, checks validity window, checks that `postedPaymentId` is null and status is payable, atomically wipes `webhookTicketHash` to prevent replays, verifies a fresh (<5 min) authentic event with verified signature, records the `Payment`, updates `Invoice`, appends to `FinancialAuditEvent`, and sets the event to `PROCESSED`.
+   - Denied direct write access on `PaymentProviderEvent`: added `FOR INSERT WITH CHECK (false)`, `FOR UPDATE USING (false)`, `FOR DELETE USING (false)`, restricting mutations exclusively to `maintenance_owner` (via security-definer routines).
+   - Revoked `PUBLIC` execution rights on all webhook security functions (`REVOKE ALL ON FUNCTION ... FROM PUBLIC`).
+3. **Negative SQL Regression Verification**:
+   Negative SQL tests in `apps/api/test/integrations.integration.test.ts` prove:
+   - Setting forged `lamssa.clinic_id`, `lamssa.webhook_intent_id`, or `lamssa.internal_security_lookup` yields **zero rows**.
+   - Direct `INSERT` into `PaymentProviderEvent` by runtime SQL is rejected by RLS (code `42501`).
+   - Direct `UPDATE` on `PaymentProviderEvent` by runtime SQL is rejected by RLS (code `42501`).
+   - Calling `post_webhook_payment` without a ticket or with an invalid/forged ticket is rejected immediately.
+   - Calling `ingest_payment_webhook_event` with a fake ticket is rejected immediately.
+
+### 3.3 Patient Account Activation Trust Boundaries (Task 3)
+
+1. **Digital vs Demographic Knowledge**: Demographic matching (matching phone number + date of birth) serves as a secondary possession-confirmation layer, **never** an authentication factor alone. An attacker possessing a patient's phone and DOB cannot claim an account without holding the genuine cryptographic activation token.
+2. **Token Generation & Delivery**: Activation tokens are generated via cryptographic CSPRNG (`secret()`), SHA-256 hashed at rest, delivered out-of-band directly to the patient's verified contact channel, and expire within a strict operational window.
+3. **Anti-Brute-Force & Rate Limiting**: The activation endpoint enforces per-phone and per-IP rate limits (`checkPortalRateLimit`). Token lookups run via `lamssa_security.portal_activation_lookup(tokenHash)`, single-use consumption (`usedAt` timestamp) prevents token replay, and negative tests verify that forged tokens are rejected with HTTP 400.
+
+### 3.4 Clinical Consent & Emergency Safeguards (Task 4)
+
+1. **Clinician Counter-Verification Invariant**: `ConsentEligibilityService` enforces fail-closed logic: self-signed patient consents remain non-authorizing until counter-verified and approved by a licensed clinician (`consent.verifiedAt` and `consent.verifiedByMembershipId` required). Any attempt to schedule or execute a procedure without clinician-verified consent fails closed.
+2. **Clinical Recovery Escalation Rules**: Recovery check-in heuristics (pain score $\ge 8$, red flag symptoms including fever, severe bleeding, vision loss) are explicitly flagged in code and documentation as provisional, non-diagnostic prioritization triggers awaiting medical director review.
+3. **Decoupled Emergency Guidance Banner**: When severe pain or red flag symptoms are reported, an emergency warning banner is immediately presented to the patient in Arabic, directing them to urgent care/emergency services independently of clinician response latency.
 
 ---
 
@@ -180,7 +186,7 @@ In Step 5.5, a custom PostgreSQL session variable (`lamssa.internal_security_loo
 | :--- | :--- | :--- | :--- | :--- |
 | **Boundary Checker** | Architectural imports & DB isolation | Monorepo | Clean | **PASSED** |
 | **Prisma Validation** | Schema integrity & models | `prisma/schema.prisma` | Valid | **PASSED** |
-| **Migration Status** | Applied migrations | `lamssa_dev` & `lamssa_test` | 31 migrations applied | **PASSED** |
+| **Migration Status** | Applied migrations | `lamssa_dev` & `lamssa_test` | 32 migrations applied | **PASSED** |
 | **TypeScript Build** | Clean compilation | Web & API workspaces | 0 errors | **PASSED** |
 | **Unit Tests** | Policies, crypto, math, controllers | `npm test` | **186 passed**, 0 failed | **PASSED** |
 | **Database Tests** | PostgreSQL RLS, GiST, transactions | `npm run test:db` | **306 passed**, 1 skip* | **PASSED** |
@@ -192,9 +198,9 @@ In Step 5.5, a custom PostgreSQL session variable (`lamssa.internal_security_loo
 
 ### 5.2 Database Security & Schema Statistics
 
-- **Total PostgreSQL Migrations**: 31 applied migrations (`20261024000100` through `20261112000100`).
+- **Total PostgreSQL Migrations**: 32 applied migrations (`20261024000100` through `20261112000200`).
 - **Total Tables with FORCE ROW LEVEL SECURITY**: **93 tables** (100% of tenant-accessible tables).
-- **Security Definer Functions**: Audited with fixed `SET search_path = pg_catalog, pg_temp` and caller verification.
+- **Security Definer Functions**: 84 functions audited with fixed `SET search_path = pg_catalog, pg_temp` and no `PUBLIC` execute grants.
 - **GiST Exclusion Constraints**: Active on `Appointment` (`no_practitioner_overlap`, `no_room_overlap`) across branch resources.
 
 ---

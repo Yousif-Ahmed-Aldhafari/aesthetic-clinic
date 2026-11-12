@@ -18,6 +18,7 @@ import type {
   ReconciliationFindingSeverity,
   ReconciliationFindingType,
   ReconciliationScope,
+  WebhookProcessingStatus,
 } from '../generated/prisma/client.js';
 import type { VerifiedPrincipal } from './verified-sessions.js';
 import type { PatientPrincipal } from '../portal/patient-principal.js';
@@ -469,106 +470,65 @@ export class IntegrationsRepository {
     const rawPayloadHash = sha256Hex(rawBody);
     const eventTimestamp = timestampHeader ? new Date(Number(timestampHeader) * 1000) : null;
 
-    return this.database.withWebhookContext(target.clinicId, target.paymentIntentId, async (tx, postWebhookPayment) => {
-      const existingEvent = await tx.paymentProviderEvent.findUnique({
-        where: {
-          clinicId_providerCode_providerEventId: {
-            clinicId: target.clinicId,
-            providerCode,
-            providerEventId: payload.eventId,
-          },
-        },
+    return this.database.withWebhookContext(target.clinicId, target.paymentIntentId, target.webhookTicket, async (_tx, helpers) => {
+      const eventRes = await helpers.ingestWebhookEvent({
+        providerCode,
+        providerEventId: payload.eventId,
+        eventType: payload.eventType,
+        rawPayloadHash,
+        sanitizedPayload: JSON.parse(rawBody) as Prisma.InputJsonValue,
+        eventTimestamp,
+        signatureVerified: true,
       });
-      if (existingEvent) {
-        if (existingEvent.rawPayloadHash !== rawPayloadHash) {
-          throw new ConflictException('WEBHOOK_EVENT_PAYLOAD_MISMATCH');
-        }
+
+      if (eventRes.duplicate) {
         return {
           duplicate: true,
-          eventId: existingEvent.id,
-          processingStatus: existingEvent.processingStatus,
+          eventId: eventRes.eventId,
+          processingStatus: eventRes.processingStatus as WebhookProcessingStatus,
         };
       }
 
-      const intent = await tx.paymentIntent.findUniqueOrThrow({
-        where: { clinicId_id: { clinicId: target.clinicId, id: target.paymentIntentId } },
-      });
-
-      const event = await tx.paymentProviderEvent.create({
-        data: {
-          clinicId: target.clinicId,
-          providerConfigId: target.providerConfigId,
-          paymentIntentId: intent.id,
-          providerCode,
-          providerEventId: payload.eventId,
-          eventType: payload.eventType,
-          processingStatus: 'RECEIVED',
-          signatureVerified: true,
-          eventTimestamp,
-          rawPayloadHash,
-          sanitizedPayload: JSON.parse(rawBody) as Prisma.InputJsonValue,
-        },
-      });
-
-      if (payload.amountMinor !== undefined && BigInt(payload.amountMinor) !== intent.amountMinor) {
-        await tx.paymentProviderEvent.update({
-          where: { clinicId_id: { clinicId: target.clinicId, id: event.id } },
-          data: {
-            processingStatus: 'DEAD_LETTER',
-            retryCount: { increment: 1 },
-            errorMessage: `AMOUNT_MISMATCH: expected ${intent.amountMinor.toString()}, got ${payload.amountMinor}`,
-          },
-        });
-        return { duplicate: false, eventId: event.id, processingStatus: 'DEAD_LETTER', reason: 'AMOUNT_MISMATCH' };
+      if (payload.amountMinor !== undefined && BigInt(payload.amountMinor) !== target.amountMinor) {
+        await helpers.updateWebhookEventStatus(
+          eventRes.eventId,
+          'DEAD_LETTER',
+          `AMOUNT_MISMATCH: expected ${target.amountMinor.toString()}, got ${payload.amountMinor}`,
+        );
+        return { duplicate: false, eventId: eventRes.eventId, processingStatus: 'DEAD_LETTER', reason: 'AMOUNT_MISMATCH' };
       }
 
-      if (payload.currency !== undefined && payload.currency !== intent.currency) {
-        await tx.paymentProviderEvent.update({
-          where: { clinicId_id: { clinicId: target.clinicId, id: event.id } },
-          data: {
-            processingStatus: 'DEAD_LETTER',
-            retryCount: { increment: 1 },
-            errorMessage: `CURRENCY_MISMATCH: expected ${intent.currency}, got ${payload.currency}`,
-          },
-        });
-        return { duplicate: false, eventId: event.id, processingStatus: 'DEAD_LETTER', reason: 'CURRENCY_MISMATCH' };
+      if (payload.currency !== undefined && payload.currency !== target.currency) {
+        await helpers.updateWebhookEventStatus(
+          eventRes.eventId,
+          'DEAD_LETTER',
+          `CURRENCY_MISMATCH: expected ${target.currency}, got ${payload.currency}`,
+        );
+        return { duplicate: false, eventId: eventRes.eventId, processingStatus: 'DEAD_LETTER', reason: 'CURRENCY_MISMATCH' };
       }
 
       const nextStatus = this.mapWebhookEventToIntentStatus(payload.eventType);
       if (!nextStatus) {
-        await tx.paymentProviderEvent.update({
-          where: { clinicId_id: { clinicId: target.clinicId, id: event.id } },
-          data: { processingStatus: 'IGNORED_DUPLICATE', processedAt: new Date() },
-        });
-        return { duplicate: false, eventId: event.id, processingStatus: 'IGNORED_DUPLICATE' };
+        await helpers.updateWebhookEventStatus(eventRes.eventId, 'IGNORED_DUPLICATE');
+        return { duplicate: false, eventId: eventRes.eventId, processingStatus: 'IGNORED_DUPLICATE' };
       }
 
-      if (!canTransitionPaymentIntent(intent.status, nextStatus)) {
-        await tx.paymentProviderEvent.update({
-          where: { clinicId_id: { clinicId: target.clinicId, id: event.id } },
-          data: {
-            processingStatus: 'IGNORED_DUPLICATE',
-            processedAt: new Date(),
-            errorMessage: `OUT_OF_ORDER_TRANSITION:${intent.status}->${nextStatus}`,
-          },
-        });
-        return { duplicate: false, eventId: event.id, processingStatus: 'IGNORED_DUPLICATE' };
+      if (!canTransitionPaymentIntent(target.status, nextStatus)) {
+        await helpers.updateWebhookEventStatus(
+          eventRes.eventId,
+          'IGNORED_DUPLICATE',
+          `OUT_OF_ORDER_TRANSITION:${target.status}->${nextStatus}`,
+        );
+        return { duplicate: false, eventId: eventRes.eventId, processingStatus: 'IGNORED_DUPLICATE' };
       }
 
-      if (nextStatus === 'SUCCEEDED' && !intent.postedPaymentId) {
-        const postRes = await postWebhookPayment(event.id);
+      if (nextStatus === 'SUCCEEDED' && !target.postedPaymentId) {
+        const postRes = await helpers.postWebhookPayment(eventRes.eventId);
 
         if (!postRes?.posted || !postRes.paymentId) {
           const reason = postRes?.reason ?? 'WEBHOOK_PAYMENT_POST_FAILED';
-          await tx.paymentProviderEvent.update({
-            where: { clinicId_id: { clinicId: target.clinicId, id: event.id } },
-            data: {
-              processingStatus: 'DEAD_LETTER',
-              retryCount: { increment: 1 },
-              errorMessage: reason,
-            },
-          });
-          return { duplicate: false, eventId: event.id, processingStatus: 'DEAD_LETTER', reason };
+          await helpers.updateWebhookEventStatus(eventRes.eventId, 'DEAD_LETTER', reason);
+          return { duplicate: false, eventId: eventRes.eventId, processingStatus: 'DEAD_LETTER', reason };
         }
 
         await this.audit.record(
@@ -581,34 +541,32 @@ export class IntegrationsRepository {
             targetId: postRes.paymentId,
             outcome: 'SUCCESS',
             metadata: {
-              invoiceId: intent.invoiceId,
-              paymentIntentId: intent.id,
-              amountMinor: intent.amountMinor.toString(),
-              viaWebhookEventId: event.id,
+              invoiceId: target.invoiceId,
+              paymentIntentId: target.paymentIntentId,
+              amountMinor: target.amountMinor.toString(),
+              viaWebhookEventId: eventRes.eventId,
             },
           },
-          tx,
         );
-      } else if (intent.status !== nextStatus) {
-        await tx.paymentIntent.update({
-          where: { clinicId_id: { clinicId: target.clinicId, id: intent.id } },
-          data: {
-            status: nextStatus,
-            failureCode: nextStatus === 'FAILED' ? String(payload.data?.failureCode ?? 'PROVIDER_FAILED') : undefined,
-            failureMessage: nextStatus === 'FAILED' ? String(payload.data?.failureMessage ?? 'Provider reported failure') : undefined,
-            version: { increment: 1 },
-          },
-        });
+
+        return {
+          duplicate: false,
+          eventId: eventRes.eventId,
+          processingStatus: 'PROCESSED',
+          intentStatus: nextStatus,
+        };
+      } else if (target.status !== nextStatus) {
+        await helpers.updateIntentStatus(
+          nextStatus,
+          nextStatus === 'FAILED' ? String(payload.data?.failureCode ?? 'PROVIDER_FAILED') : undefined,
+          nextStatus === 'FAILED' ? String(payload.data?.failureMessage ?? 'Provider reported failure') : undefined,
+        );
       }
 
-      await tx.paymentProviderEvent.update({
-        where: { clinicId_id: { clinicId: target.clinicId, id: event.id } },
-        data: { processingStatus: 'PROCESSED', processedAt: new Date() },
-      });
-
+      await helpers.updateWebhookEventStatus(eventRes.eventId, 'PROCESSED');
       return {
         duplicate: false,
-        eventId: event.id,
+        eventId: eventRes.eventId,
         processingStatus: 'PROCESSED',
         intentStatus: nextStatus,
       };

@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isUUID } from 'class-validator';
-import type { Prisma, ClinicRole, PaymentProviderCode } from '../generated/prisma/client.js';
+import type { Prisma, ClinicRole, PaymentProviderCode, PaymentIntentStatus } from '../generated/prisma/client.js';
 import type { Environment } from '../config/environment.js';
 import { authorizationHash, equal } from '../auth/crypto.js';
 import { AuthError } from '../auth/auth-error.js';
@@ -55,6 +55,12 @@ export class TenantDatabaseService {
         encryptedWebhookSecret: string | null;
         mode: 'SANDBOX' | 'LIVE';
         isEnabled: boolean;
+        webhookTicket: string;
+        amountMinor: bigint;
+        currency: string;
+        status: PaymentIntentStatus;
+        postedPaymentId: string | null;
+        invoiceId: string;
       }[]>`SELECT * FROM lamssa_security.resolve_payment_webhook_target(${providerCode}::"PaymentProviderCode", ${providerIntentId})`;
       return rows;
     }, { maxWait: 5000, timeout: 10000 });
@@ -63,20 +69,40 @@ export class TenantDatabaseService {
   async withWebhookContext<T>(
     clinicId: string,
     paymentIntentId: string,
+    webhookTicket: string,
     work: (
       tx: TenantTransaction,
-      postWebhookPayment: (
-        eventId: string,
-      ) => Promise<{ posted: boolean; paymentId: string | null; reason: string | null }>,
+      helpers: {
+        ingestWebhookEvent: (params: {
+          providerCode: PaymentProviderCode;
+          providerEventId: string;
+          eventType: string;
+          rawPayloadHash: string;
+          sanitizedPayload: Prisma.InputJsonValue;
+          eventTimestamp: Date | null;
+          signatureVerified: boolean;
+        }) => Promise<{ eventId: string; processingStatus: string; duplicate: boolean }>;
+        updateWebhookEventStatus: (
+          eventId: string,
+          newStatus: string,
+          errorMessage?: string | null,
+        ) => Promise<void>;
+        updateIntentStatus: (
+          newStatus: PaymentIntentStatus,
+          failureCode?: string | null,
+          failureMessage?: string | null,
+        ) => Promise<void>;
+        postWebhookPayment: (
+          eventId: string,
+        ) => Promise<{ posted: boolean; paymentId: string | null; reason: string | null }>;
+      },
     ) => Promise<T>,
   ): Promise<T> {
     if (!isUUID(clinicId) || !isUUID(paymentIntentId)) throw new ForbiddenException();
     return this.prisma.$transaction(async tx => {
       await this.prisma.assertRuntimeRole(tx);
-      await tx.$queryRaw`SELECT set_config('lamssa.clinic_id', ${clinicId}, true),
-        set_config('lamssa.webhook_intent_id', ${paymentIntentId}, true)`;
+      await tx.$queryRaw`SELECT set_config('lamssa.clinic_id', ${clinicId}, true)`;
       await tx.$queryRaw`SELECT pg_advisory_xact_lock_shared(hashtextextended(${'clinic-identity:' + clinicId}, 0))::text`;
-      await tx.$queryRaw`SELECT id FROM public."PaymentIntent" WHERE "clinicId" = ${clinicId}::uuid AND id = ${paymentIntentId}::uuid FOR UPDATE`;
       return work({
         clinic: tx.clinic, clinicBranding: tx.clinicBranding, clinicDomain: tx.clinicDomain,
         clinicMembership: tx.clinicMembership, patient: tx.patient, patientCounter: tx.patientCounter,
@@ -152,12 +178,59 @@ export class TenantDatabaseService {
           if (!flags) throw new ForbiddenException();
           return flags;
         },
-      }, async (eventId: string) => {
-        if (!isUUID(eventId)) throw new ForbiddenException();
-        const [res] = await tx.$queryRaw<{ posted: boolean; paymentId: string | null; reason: string | null }[]>`
-          SELECT * FROM lamssa_security.post_webhook_payment(${clinicId}::uuid, ${paymentIntentId}::uuid, ${eventId}::uuid)
-        `;
-        return res ?? { posted: false, paymentId: null, reason: 'WEBHOOK_PAYMENT_POST_FAILED' };
+      }, {
+        ingestWebhookEvent: async params => {
+          const [row] = await tx.$queryRaw<{
+            eventId: string;
+            processingStatus: string;
+            duplicate: boolean;
+          }[]>`SELECT * FROM lamssa_security.ingest_payment_webhook_event(
+            ${clinicId}::uuid,
+            ${paymentIntentId}::uuid,
+            ${webhookTicket},
+            ${params.providerCode}::public."PaymentProviderCode",
+            ${params.providerEventId},
+            ${params.eventType},
+            ${params.rawPayloadHash},
+            ${JSON.stringify(params.sanitizedPayload)}::jsonb,
+            ${params.eventTimestamp},
+            ${params.signatureVerified}
+          )`;
+          if (!row) throw new ForbiddenException('WEBHOOK_INGESTION_FAILED');
+          return row;
+        },
+        updateWebhookEventStatus: async (eventId, newStatus, errorMessage) => {
+          await tx.$queryRaw`SELECT lamssa_security.update_payment_webhook_event_status(
+            ${clinicId}::uuid,
+            ${paymentIntentId}::uuid,
+            ${eventId}::uuid,
+            ${webhookTicket},
+            ${newStatus}::public."WebhookProcessingStatus",
+            ${errorMessage ?? null}
+          )`;
+        },
+        updateIntentStatus: async (newStatus, failureCode, failureMessage) => {
+          await tx.$queryRaw`SELECT lamssa_security.update_payment_intent_webhook_status(
+            ${clinicId}::uuid,
+            ${paymentIntentId}::uuid,
+            ${webhookTicket},
+            ${newStatus}::public."PaymentIntentStatus",
+            ${failureCode ?? null},
+            ${failureMessage ?? null}
+          )`;
+        },
+        postWebhookPayment: async eventId => {
+          if (!isUUID(eventId)) throw new ForbiddenException();
+          const [res] = await tx.$queryRaw<{ posted: boolean; paymentId: string | null; reason: string | null }[]>`
+            SELECT * FROM lamssa_security.post_webhook_payment(
+              ${clinicId}::uuid,
+              ${paymentIntentId}::uuid,
+              ${eventId}::uuid,
+              ${webhookTicket}
+            )
+          `;
+          return res ?? { posted: false, paymentId: null, reason: 'WEBHOOK_PAYMENT_POST_FAILED' };
+        },
       });
     }, { maxWait: 5000, timeout: 10000 });
   }

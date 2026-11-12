@@ -538,31 +538,64 @@ describe('Phase 5 Step 5.5: Payment Gateway, Banking & Regulatory Integrations',
       assert.equal(Number(piRows.rows[0].count), 0);
       const ppcRows = await client.query('SELECT count(*) FROM public."PaymentProviderConfiguration"');
       assert.equal(Number(ppcRows.rows[0].count), 0);
+      const patientRows = await client.query('SELECT count(*) FROM public."Patient"');
+      assert.equal(Number(patientRows.rows[0].count), 0);
 
-      // Negative test 2: Direct runtime caller cannot forge webhook payment posting without valid event
+      // Negative test 2: Direct runtime caller cannot insert into PaymentProviderEvent via SQL (RLS blocked)
       const fakeEventId = randomUUID();
       const fakeIntentId = randomUUID();
       await assert.rejects(
-        () => client.query('SELECT * FROM lamssa_security.post_webhook_payment($1, $2, $3)', [
-          clinicAId,
-          fakeIntentId,
-          fakeEventId,
-        ]),
-        (err: Error) => err.message.includes('Unauthorized webhook payment context') || err.message.includes('Invalid or stale webhook event')
+        () => client.query(`
+          INSERT INTO public."PaymentProviderEvent" (
+            id, "clinicId", "paymentIntentId", "providerCode", "providerEventId",
+            "eventType", "signatureVerified", "rawPayloadHash", "sanitizedPayload", "processingStatus"
+          ) VALUES (
+            $1, $2, $3, 'SANDBOX_MOCK', 'spoofed-id', 'payment.succeeded', true, 'dummy-hash', '{}'::jsonb, 'RECEIVED'
+          )
+        `, [fakeEventId, clinicAId, fakeIntentId]),
+        (err: Error) => (err as { code?: string }).code === '42501' || err.message.includes('row-level security')
       );
 
-      // Negative test 3: Even with matching GUCs, lack of valid PaymentProviderEvent fails closed
-      await client.query(`SELECT set_config('lamssa.clinic_id', $1, false), set_config('lamssa.webhook_intent_id', $2, false)`, [
-        clinicAId,
-        fakeIntentId,
-      ]);
+      // Negative test 3: Direct runtime caller cannot update PaymentProviderEvent via SQL (RLS blocked)
       await assert.rejects(
-        () => client.query('SELECT * FROM lamssa_security.post_webhook_payment($1, $2, $3)', [
+        () => client.query(`
+          UPDATE public."PaymentProviderEvent"
+          SET "processingStatus" = 'RECEIVED'
+          WHERE "clinicId" = $1
+        `, [clinicAId]),
+        (err: Error) => (err as { code?: string }).code === '42501' || err.message.includes('row-level security')
+      );
+
+      // Negative test 4: Calling post_webhook_payment without valid ticket fails closed
+      await assert.rejects(
+        () => client.query('SELECT * FROM lamssa_security.post_webhook_payment($1, $2, $3, $4)', [
           clinicAId,
           fakeIntentId,
           fakeEventId,
+          'invalid-ticket-too-short',
         ]),
-        (err: Error) => err.message.includes('Invalid or stale webhook event')
+        (err: Error) => err.message.includes('Missing or invalid webhook authorization ticket')
+      );
+
+      // Negative test 5: Calling post_webhook_payment with 32-char fake ticket fails closed (ticket not found on intent)
+      await assert.rejects(
+        () => client.query('SELECT * FROM lamssa_security.post_webhook_payment($1, $2, $3, $4)', [
+          clinicAId,
+          fakeIntentId,
+          fakeEventId,
+          '0123456789abcdef0123456789abcdef',
+        ]),
+        (err: Error) => err.message.includes('PaymentIntent not found') || err.message.includes('Invalid or expired webhook authorization ticket')
+      );
+
+      // Negative test 6: Ingesting event with fake ticket fails closed
+      await assert.rejects(
+        () => client.query(`
+          SELECT * FROM lamssa_security.ingest_payment_webhook_event(
+            $1, $2, $3, 'SANDBOX_MOCK', 'spoofed-evt', 'payment.succeeded', 'dummy', '{}'::jsonb, now(), true
+          )
+        `, [clinicAId, fakeIntentId, '0123456789abcdef0123456789abcdef']),
+        (err: Error) => err.message.includes('PaymentIntent not found') || err.message.includes('Invalid or expired webhook authorization ticket')
       );
 
       // Reset GUCs

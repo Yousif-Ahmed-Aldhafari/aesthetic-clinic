@@ -3758,6 +3758,8 @@ model PaymentIntent {
   createdAt                   DateTime                     @default(now()) @db.Timestamptz(3)
   updatedAt                   DateTime                     @updatedAt @db.Timestamptz(3)
   expiresAt                   DateTime?                    @db.Timestamptz(3)
+  webhookTicketHash           String?                      @db.VarChar(64)
+  webhookTicketExpiresAt      DateTime?                    @db.Timestamptz(3)
 
   clinic                      Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   branch                      ClinicBranch?                @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)

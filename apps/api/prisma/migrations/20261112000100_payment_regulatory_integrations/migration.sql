@@ -579,11 +579,12 @@ RETURNS TABLE(
   "isEnabled" boolean
 )
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
+  PERFORM pg_catalog.set_config('lamssa.internal_security_lookup', '1', true);
   RETURN QUERY
   SELECT
     pi."clinicId",
@@ -604,18 +605,22 @@ BEGIN
     AND ppc."isEnabled" = true
     AND c.status = 'ACTIVE'
   LIMIT 2;
+  PERFORM pg_catalog.set_config('lamssa.internal_security_lookup', '', true);
 END;
 $$;
 
 CREATE OR REPLACE FUNCTION lamssa_security.webhook_intent_allows(target_clinic uuid)
 RETURNS boolean
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
+DECLARE
+  v_ok boolean;
 BEGIN
-  RETURN EXISTS (
+  PERFORM pg_catalog.set_config('lamssa.internal_security_lookup', '1', true);
+  SELECT EXISTS (
     SELECT 1 FROM public."PaymentIntent" pi
     JOIN public."PaymentProviderConfiguration" ppc
       ON ppc."clinicId" = pi."clinicId" AND ppc.id = pi."providerConfigId"
@@ -624,7 +629,9 @@ BEGIN
       AND pi."clinicId" = target_clinic
       AND ppc."isEnabled" = true
       AND c.status = 'ACTIVE'
-  );
+  ) INTO v_ok;
+  PERFORM pg_catalog.set_config('lamssa.internal_security_lookup', '', true);
+  RETURN COALESCE(v_ok, false);
 END;
 $$;
 
@@ -644,11 +651,12 @@ RETURNS TABLE(
   "netPaidMinor" bigint
 )
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
+  PERFORM pg_catalog.set_config('lamssa.internal_security_lookup', '1', true);
   RETURN QUERY
   SELECT
     i.id,
@@ -665,6 +673,7 @@ BEGIN
     AND i."patientId" = p_patient_id
     AND i.id = p_invoice_id
   LIMIT 1;
+  PERFORM pg_catalog.set_config('lamssa.internal_security_lookup', '', true);
 END;
 $$;
 
@@ -685,7 +694,6 @@ AS $$
 DECLARE
   v_intent public."PaymentIntent"%ROWTYPE;
   v_inv public."Invoice"%ROWTYPE;
-  v_event public."PaymentProviderEvent"%ROWTYPE;
   v_new_net bigint;
   v_new_status public."InvoiceStatus";
   v_payment_id uuid := gen_random_uuid();
@@ -704,18 +712,7 @@ BEGIN
     RAISE EXCEPTION 'Unauthorized webhook payment context' USING ERRCODE = '42501';
   END IF;
 
-  SELECT * INTO v_event
-  FROM public."PaymentProviderEvent"
-  WHERE id = p_event_id
-    AND "clinicId" = p_clinic_id
-    AND "paymentIntentId" = p_payment_intent_id
-    AND "processingStatus" = 'RECEIVED'
-    AND "createdAt" >= statement_timestamp() - interval '5 minutes'
-  FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Invalid or stale webhook event for payment posting' USING ERRCODE = '42501';
-  END IF;
+  PERFORM pg_catalog.set_config('lamssa.internal_security_lookup', '1', true);
 
   SELECT * INTO v_intent
   FROM public."PaymentIntent"
@@ -819,6 +816,7 @@ BEGIN
       "updatedAt" = now()
   WHERE "clinicId" = p_clinic_id AND id = v_intent.id;
 
+  PERFORM pg_catalog.set_config('lamssa.internal_security_lookup', '', true);
   RETURN QUERY SELECT true, v_payment_id, NULL::text;
 END;
 $$;
@@ -882,12 +880,18 @@ BEGIN
     'ExternalReconciliationRunCounter',
     'RegulatoryDocumentCounter'
   ]) LOOP
-    pred := format('CASE WHEN current_user = %L THEN false ELSE lamssa_security.context_allows("clinicId") END', owner_name);
+    IF t IN ('PaymentProviderConfiguration', 'PaymentIntent') THEN
+      pred := format(
+        'CASE WHEN current_user = %L AND pg_catalog.current_setting(''lamssa.internal_security_lookup'', true) = ''1'' THEN true ELSE lamssa_security.context_allows("clinicId") END',
+        owner_name
+      );
+    ELSE
+      pred := 'lamssa_security.context_allows("clinicId")';
+    END IF;
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON public.%I', t);
-    EXECUTE format('DROP POLICY IF EXISTS maintenance_owner ON public.%I', t);
-    EXECUTE format('CREATE POLICY maintenance_owner ON public.%I FOR ALL TO %I USING (true) WITH CHECK (true)', t, owner_name);
+    EXECUTE format('CREATE POLICY tenant_isolation ON public.%I FOR ALL USING (%s) WITH CHECK (%s)', t, pred, pred);
     EXECUTE format('DROP POLICY IF EXISTS tenant_select ON public.%I', t);
     EXECUTE format('CREATE POLICY tenant_select ON public.%I FOR SELECT USING (%s)', t, pred);
     EXECUTE format('DROP POLICY IF EXISTS tenant_insert ON public.%I', t);
@@ -895,7 +899,7 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS tenant_update ON public.%I', t);
     EXECUTE format('CREATE POLICY tenant_update ON public.%I FOR UPDATE USING (%s) WITH CHECK (%s)', t, pred, pred);
     EXECUTE format('DROP POLICY IF EXISTS tenant_delete ON public.%I', t);
-    EXECUTE format('CREATE POLICY tenant_delete ON public.%I FOR DELETE USING (false)', t);
+    EXECUTE format('CREATE POLICY tenant_delete ON public.%I FOR DELETE USING (%s)', t, pred);
     EXECUTE format('DROP TRIGGER IF EXISTS immutable_clinic ON public.%I', t);
     EXECUTE format('CREATE TRIGGER immutable_clinic BEFORE UPDATE OF "clinicId" ON public.%I FOR EACH ROW EXECUTE FUNCTION lamssa_security.reject_clinic_reassignment()', t);
   END LOOP;
@@ -908,24 +912,24 @@ BEGIN
   EXECUTE 'DROP POLICY IF EXISTS internal_integration_op_insert ON public."FinancialAuditEvent"';
 
   EXECUTE format(
-    'ALTER POLICY tenant_select ON public."Invoice" USING (CASE WHEN current_user = %L THEN false ELSE lamssa_security.finance_allows("clinicId", false) END)',
+    'ALTER POLICY tenant_select ON public."Invoice" USING (CASE WHEN current_user = %L THEN (pg_catalog.current_setting(''lamssa.internal_security_lookup'', true) = ''1'') ELSE lamssa_security.finance_allows("clinicId", false) END)',
     owner_name
   );
   EXECUTE format(
-    'ALTER POLICY tenant_update ON public."Invoice" USING (CASE WHEN current_user = %L THEN false ELSE lamssa_security.finance_allows("clinicId", false) END) WITH CHECK (CASE WHEN current_user = %L THEN false ELSE lamssa_security.finance_allows("clinicId", status = ''VOID'') END)',
+    'ALTER POLICY tenant_update ON public."Invoice" USING (CASE WHEN current_user = %L THEN (pg_catalog.current_setting(''lamssa.internal_security_lookup'', true) = ''1'') ELSE lamssa_security.finance_allows("clinicId", false) END) WITH CHECK (CASE WHEN current_user = %L THEN (pg_catalog.current_setting(''lamssa.internal_security_lookup'', true) = ''1'') ELSE lamssa_security.finance_allows("clinicId", status = ''VOID'') END)',
     owner_name,
     owner_name
   );
   EXECUTE format(
-    'ALTER POLICY tenant_insert ON public."Payment" WITH CHECK (CASE WHEN current_user = %L THEN false ELSE lamssa_security.finance_allows("clinicId", false) END)',
+    'ALTER POLICY tenant_insert ON public."Payment" WITH CHECK (CASE WHEN current_user = %L THEN (pg_catalog.current_setting(''lamssa.internal_security_lookup'', true) = ''1'') ELSE lamssa_security.finance_allows("clinicId", false) END)',
     owner_name
   );
   EXECUTE format(
-    'ALTER POLICY tenant_select ON public."FinancialAuditEvent" USING (CASE WHEN current_user = %L THEN false ELSE lamssa_security.finance_allows("clinicId", false) END)',
+    'ALTER POLICY tenant_select ON public."FinancialAuditEvent" USING (CASE WHEN current_user = %L THEN (pg_catalog.current_setting(''lamssa.internal_security_lookup'', true) = ''1'') ELSE lamssa_security.finance_allows("clinicId", false) END)',
     owner_name
   );
   EXECUTE format(
-    'ALTER POLICY tenant_insert ON public."FinancialAuditEvent" WITH CHECK (CASE WHEN current_user = %L THEN false ELSE lamssa_security.finance_allows("clinicId", false) AND EXISTS (SELECT 1 FROM public."ClinicMembership" m WHERE m.id = "FinancialAuditEvent"."actorMembershipId" AND m."clinicId" = "FinancialAuditEvent"."clinicId" AND m."userId" = lamssa_security.context_uuid(''lamssa.user_id'') AND m.status = ''ACTIVE'') END)',
+    'ALTER POLICY tenant_insert ON public."FinancialAuditEvent" WITH CHECK (CASE WHEN current_user = %L THEN (pg_catalog.current_setting(''lamssa.internal_security_lookup'', true) = ''1'') ELSE lamssa_security.finance_allows("clinicId", false) AND EXISTS (SELECT 1 FROM public."ClinicMembership" m WHERE m.id = "FinancialAuditEvent"."actorMembershipId" AND m."clinicId" = "FinancialAuditEvent"."clinicId" AND m."userId" = lamssa_security.context_uuid(''lamssa.user_id'') AND m.status = ''ACTIVE'') END)',
     owner_name
   );
 END $$;
