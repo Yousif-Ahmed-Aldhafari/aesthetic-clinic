@@ -1,5 +1,14 @@
 # Development setup
 
+## Phase 6.2 medical specialty registry, practitioner qualifications & clinical privilege engine
+
+Apply `20261113000100_medical_specialty_registry_privileges` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All specialty catalog, clinic specialty configuration, practitioner profiles, qualifications, and privileging endpoints reside under `/api/v1/clinics/:clinicId/specialties`.
+- Migration: `apps/api/prisma/migrations/20261113000100_medical_specialty_registry_privileges/migration.sql` creates 6 models: `MedicalSpecialty`, `ClinicSpecialty`, `BranchSpecialty`, `PractitionerProfile`, `PractitionerSpecialty`, and `PractitionerClinicalPrivilege` with `FORCE ROW LEVEL SECURITY` on tenant tables, global catalog RLS on `MedicalSpecialty`, composite unique constraints, immutability triggers, and automatic idempotent backfill of `AESTHETICS` on all existing clinics and branches.
+- Unit and policy tests: `apps/api/test/specialty-policy.test.ts`.
+- Database integration tests: `apps/api/test/specialty.integration.test.ts` (covers global reference catalog immutability, clinic and branch enablement and cascade disable, tenant isolation, practitioner profile creation and license management, Medical Director designation, qualification verification with anti-self-approval enforcement, clinical privilege approval requiring verified qualifications, runtime privilege evaluation engine with aesthetic backward-compatibility policy, and database protection against hard deletion under restricted runtime role).
+- Frontend workspace: Arabic RTL specialty administration panel under Clinic Settings (`/clinics/:clinicId/settings` -> `التخصصات والاعتماد`).
+- Core invariants: Medical Director credentialing authority is excluded from default administrative role ceilings. Anti-self-approval prevents credentialing officials from verifying their own qualifications or approving their own privileges. Clinic owners and administrators are isolated from clinical charts without an active clinical role. Existing aesthetic clinics retain full operational status without manual intervention.
+
 ## Phase 4.5 practitioner commissions, financial reconciliation & operational reporting
 
 Apply `20261101000500_commissions_reconciliation_reporting` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All commission, reconciliation, and operational reporting endpoints reside under `/api/v1/clinics/:clinicId/billing`.

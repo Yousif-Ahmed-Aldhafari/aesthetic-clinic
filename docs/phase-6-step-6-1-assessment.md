@@ -25,9 +25,9 @@ All deliverables confirm that Lamssa can expand cleanly into a general medical p
 An exhaustive audit of the Phase 5 codebase baseline (`fe87e2b`) was conducted to evaluate existing domain boundaries, security invariants, and database models:
 
 ### 2.1 Database Schema & Tenancy Metrics
-- **Total Prisma Models:** 104 distinct database models defined in `apps/api/prisma/schema.prisma`.
-- **PostgreSQL Tables with `FORCE ROW LEVEL SECURITY`:** 93 tenant-isolated operational and financial tables.
-- **Applied Production Migrations:** 32 sequential, immutable migrations (`20261026000000_init_identity_schema` through `20261112000200_webhook_caller_hardening`).
+- **Total Prisma Models:** 132 distinct database models defined in `apps/api/prisma/schema.prisma` at Phase 5 baseline (`fe87e2b`), expanding to 138 models in Step 6.2.
+- **PostgreSQL Tables with `FORCE ROW LEVEL SECURITY`:** 122 tenant-isolated operational and financial tables at Phase 5 baseline, expanding to 127 tables in Step 6.2 (plus 1 global catalog table `MedicalSpecialty` with catalog RLS, totaling 128 tables with RLS enabled).
+- **Applied Production Migrations:** 32 sequential, immutable migrations (`20261026000000_init_identity_schema` through `20261112000200_webhook_caller_hardening`) at Phase 5 baseline, expanding to 33 migrations in Step 6.2 (`20261113000100_medical_specialty_registry_privileges`).
 - **PostgreSQL Database Extensions:** `uuid-ossp`, `pgcrypto`, `btree_gist` (enforcing temporal and resource GiST exclusion constraints).
 - **Session Tenancy Pattern:** Session variable `lamssa.clinic_id` evaluated inside `lamssa_security.context_allows` with dual-session tenant/patient isolation.
 
@@ -157,7 +157,7 @@ To support outpatient medical expansion while safeguarding aesthetic operations,
 
 ### Assessment Checklist:
 - [x] Baseline Git state inspected and verified on `phase/6-general-medical` at `fe87e2b`.
-- [x] 104 Prisma models and 93 RLS tables thoroughly audited.
+- [x] 132 baseline (138 post-Step 6.2) Prisma models and 122 baseline (127 post-Step 6.2) FORCE RLS tables thoroughly audited and verified.
 - [x] Zero-data-loss additive migration strategy formulated and documented.
 - [x] Three-layer architectural model defined with full domain boundary specifications.
 - [x] Minimal general medicine workflow decoupled from aesthetic catalog validated.

@@ -184,7 +184,7 @@ live('public branding function exposes only approved fields without tenant GUCs'
 live('migrations remain applied and maintenance seed stays idempotent under FORCE RLS',async()=>{
   // Roll back the seed exercise so the test DB retains no extra seed records.
   const {owner:ownerUrl}=testUrls();const setup=new Pool({connectionString:ownerUrl,max:1});
-  try{const rows=(await setup.query('SELECT migration_name FROM public._prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name')).rows;assert.equal(rows.length,32);}finally{await setup.end();}
+  try{const rows=(await setup.query('SELECT migration_name FROM public._prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name')).rows;assert.equal(rows.length,33);}finally{await setup.end();}
   const before=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true}});
   await seedDemoClinics(owner);const once=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true},orderBy:{slug:'asc'}});
   await seedDemoClinics(owner);const twice=await owner.clinic.findMany({where:{slug:{in:['ward-demo','nour-demo']}},include:{branding:true,domains:true},orderBy:{slug:'asc'}});assert.deepEqual(twice,once);assert.notEqual(twice[0].branding!.primaryColor,twice[1].branding!.primaryColor);

@@ -92,8 +92,8 @@ sequenceDiagram
 
 ---
 
-### Milestone 1: Specialty Registry & Practitioner Privileging (Migration `033`)
-**Target File:** `apps/api/prisma/migrations/20261113000100_specialty_registry_privileges/migration.sql`
+### Milestone 1: Specialty Registry & Practitioner Privileging (Migration `033` — Implemented)
+**Target File:** `apps/api/prisma/migrations/20261113000100_medical_specialty_registry_privileges/migration.sql`
 
 #### Tables Introduced:
 1. `MedicalSpecialty`: System master catalog of specialties.

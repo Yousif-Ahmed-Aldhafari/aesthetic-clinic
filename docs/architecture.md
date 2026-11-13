@@ -1469,3 +1469,17 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Caller-Verified `post_webhook_payment`**: Hardened `SECURITY DEFINER` function requiring authenticated clinic session, matching webhook intent session, active clinic status, payable intent status, and an authentic, fresh (<5 min) `PaymentProviderEvent` in `RECEIVED` status. Transitions event to `PROCESSED` atomically, preventing replay.
 - **Negative SQL Regression Verification**: Verified under restricted runtime database role (`lamssa_runtime`) that setting custom GUCs or attempting unauthenticated payment postings yields zero rows or immediate SQL rejection.
 - **Acceptance Scope**: All 5 Phase 5 sub-systems independently verified. Branch `phase/5-patient-enterprise` marked **READY FOR CODE MERGE** into `main`. Production deployment remains gated on formal clinical and tax authority prerequisites.
+
+## 13. Phase 6: General Medical Platform & Multi-Specialty Architecture
+
+### Step 6.1 — Specialty-Neutral Architecture Contracts & Migration Blueprint
+- **Three-Layer Architecture**: Structured separation between Layer A (Operational Core: Tenant Identity, Multi-Branch, Scheduling, Billing, Inventory Costing), Layer B (Shared Clinical Foundation: Longitudinal History, Vitals, Diagnoses, Allergies, Prescriptions, Orders), and Layer C (Specialty Workspaces: Aesthetics, Dentistry, Pediatrics, Ob/Gyn, Ophthalmology, Orthopedics, ENT, Physiotherapy).
+- **Dual-Track Coexistence (Approach B)**: Preserves existing aesthetic tables (`AestheticProcedureCatalog`, `TreatmentPlan`, `ProcedureExecution`, `ConsentTemplate`, `PatientConsent`, `InventoryClinicalConsumption`, `PractitionerCommissionRule`) without destructive schema migrations, zero downtime, and zero data loss.
+
+### Step 6.2 — Specialty Registry, Practitioner Qualifications & Clinical Privilege Engine
+- **Medical Specialty Reference Catalog**: Standard global reference table `MedicalSpecialty` seeded with 10 reference specialties, global catalog RLS (public SELECT, restricted mutations).
+- **Facility Specialty Enablement**: Tenant-scoped `ClinicSpecialty` and `BranchSpecialty` tables with composite keys, PostgreSQL `FORCE ROW LEVEL SECURITY`, and immutability triggers.
+- **Practitioner Profiles & Qualifications**: Structured tracking of professional licenses, regulatory jurisdiction, and verified qualifications via `PractitionerProfile` and `PractitionerSpecialty`.
+- **Multi-Tier Clinical Privilege Engine**: `PractitionerClinicalPrivilege` with multi-tier authorization checks evaluating facility specialty, verified qualifications, active privileges, and treating team scope.
+- **Medical Director Governance**: Strict anti-self-approval enforcement preventing credentialing officials from verifying their own qualifications or approving their own privileges; approval permissions excluded from default administrative role ceilings.
+- **Aesthetic Backward Compatibility**: Non-destructive backfill of `AESTHETICS` on all existing clinics and branches; compatibility evaluation engine allowing existing aesthetic procedures to execute without interruption. See [docs/medical-specialty-authorization.md](medical-specialty-authorization.md).

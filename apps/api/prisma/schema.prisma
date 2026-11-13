@@ -203,6 +203,11 @@ model Clinic {
   externalPayoutCounter ExternalPayoutCounter?
   externalReconciliationRunCounter ExternalReconciliationRunCounter?
   regulatoryDocumentCounter RegulatoryDocumentCounter?
+  clinicSpecialties ClinicSpecialty[]
+  branchSpecialties BranchSpecialty[]
+  practitionerProfiles PractitionerProfile[]
+  practitionerSpecialties PractitionerSpecialty[]
+  practitionerClinicalPrivileges PractitionerClinicalPrivilege[]
 
   @@index([status, createdAt])
 }
@@ -238,6 +243,8 @@ model ClinicBranch {
   costLayers InventoryCostLayer[]
   valuationSnapshots InventoryValuationSnapshot[]
   paymentIntents PaymentIntent[]
+  branchSpecialties BranchSpecialty[]
+  branchClinicalPrivileges PractitionerClinicalPrivilege[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, code])
@@ -449,6 +456,10 @@ model ClinicMembership {
   executedReconciliationRuns ExternalReconciliationRun[] @relation("ReconciliationRunner")
   createdRegulatoryDocuments RegulatoryDocument[] @relation("RegulatoryDocCreator")
   submittedRegulatorySubmissions RegulatorySubmission[] @relation("RegulatorySubmitter")
+  practitionerProfile PractitionerProfile? @relation("PractitionerMembership")
+  verifiedPractitionerProfiles PractitionerProfile[] @relation("PractitionerProfileVerifier")
+  verifiedPractitionerSpecialties PractitionerSpecialty[] @relation("PractitionerSpecialtyVerifier")
+  approvedClinicalPrivileges PractitionerClinicalPrivilege[] @relation("ClinicalPrivilegeApprover")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -4054,4 +4065,210 @@ model RegulatoryDocumentCounter {
   lastNumber Int    @default(0)
 
   clinic     Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+// ============================================================================
+// PHASE 6: MEDICAL SPECIALTY REGISTRY & CLINICAL PRIVILEGING (STEP 6.2)
+// ============================================================================
+
+enum SpecialtyConfigurationStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CredentialVerificationStatus {
+  SELF_REPORTED
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+  EXPIRED
+  SUSPENDED
+}
+
+enum ClinicalPrivilegeCode {
+  CLINICAL_ENCOUNTER_DOCUMENT
+  CLINICAL_NOTE_SIGN
+  CLINICAL_DIAGNOSIS_RECORD
+  MEDICATION_PRESCRIBE
+  DIAGNOSTIC_LAB_ORDER
+  DIAGNOSTIC_IMAGING_ORDER
+  CLINICAL_PROCEDURE_PERFORM
+  MEDICATION_ADMINISTER
+  SEDATION_ADMINISTER
+}
+
+enum PrivilegeScope {
+  CLINIC_WIDE
+  BRANCH_SCOPED
+}
+
+enum PrivilegeStatus {
+  REQUESTED
+  APPROVED
+  SUSPENDED
+  REVOKED
+  EXPIRED
+}
+
+// Global medical specialty reference catalog (unrestricted read for tenants; write restricted to platform maintenance)
+model MedicalSpecialty {
+  id              String            @id @default(uuid()) @db.Uuid
+  code            String            @unique @db.VarChar(64)
+  arabicName      String            @db.VarChar(128)
+  englishName     String            @db.VarChar(128)
+  description     String?           @db.Text
+  classification  String            @default("MEDICAL") @db.VarChar(64)
+  isActive        Boolean           @default(true)
+  version         Int               @default(1)
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(3)
+
+  clinicSpecialties ClinicSpecialty[]
+  branchSpecialties BranchSpecialty[]
+  practitionerSpecialties PractitionerSpecialty[]
+  clinicalPrivileges PractitionerClinicalPrivilege[]
+
+  @@index([isActive, classification])
+}
+
+// Tenant-enabled medical specialty configuration
+model ClinicSpecialty {
+  id              String                       @id @default(uuid()) @db.Uuid
+  clinicId        String                       @db.Uuid
+  specialtyId     String                       @db.Uuid
+  status          SpecialtyConfigurationStatus @default(ACTIVE)
+  isCompatibility Boolean                      @default(false)
+  enabledAt       DateTime                     @default(now()) @db.Timestamptz(3)
+  disabledAt      DateTime?                    @db.Timestamptz(3)
+  version         Int                          @default(1)
+  createdAt       DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                     @updatedAt @db.Timestamptz(3)
+
+  clinic          Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  specialty       MedicalSpecialty             @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branchSpecialties BranchSpecialty[]
+
+  @@unique([clinicId, specialtyId])
+  @@unique([clinicId, id])
+  @@index([clinicId, status])
+}
+
+// Branch-level medical specialty availability (must be subset of ClinicSpecialty)
+model BranchSpecialty {
+  id              String                       @id @default(uuid()) @db.Uuid
+  clinicId        String                       @db.Uuid
+  branchId        String                       @db.Uuid
+  specialtyId     String                       @db.Uuid
+  status          SpecialtyConfigurationStatus @default(ACTIVE)
+  isCompatibility Boolean                      @default(false)
+  enabledAt       DateTime                     @default(now()) @db.Timestamptz(3)
+  disabledAt      DateTime?                    @db.Timestamptz(3)
+  version         Int                          @default(1)
+  createdAt       DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                     @updatedAt @db.Timestamptz(3)
+
+  clinic          Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch          ClinicBranch                 @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  specialty       MedicalSpecialty             @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  clinicSpecialty ClinicSpecialty             @relation(fields: [clinicId, specialtyId], references: [clinicId, specialtyId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([branchId, specialtyId])
+  @@unique([clinicId, id])
+  @@index([clinicId, branchId, status])
+}
+
+// Practitioner professional identity within clinic tenant
+model PractitionerProfile {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  clinicId              String                       @db.Uuid
+  membershipId          String                       @unique @db.Uuid
+  professionalTitleAr   String                       @db.VarChar(128)
+  professionalTitleEn   String                       @db.VarChar(128)
+  licenseNumber         String?                      @db.VarChar(64)
+  licensingAuthority    String?                      @db.VarChar(128)
+  licensingJurisdiction String?                      @db.VarChar(64)
+  licenseEffectiveDate  DateTime?                    @db.Timestamptz(3)
+  licenseExpirationDate DateTime?                    @db.Timestamptz(3)
+  verificationStatus    CredentialVerificationStatus @default(SELF_REPORTED)
+  verifiedByMembershipId String?                     @db.Uuid
+  verifiedAt            DateTime?                    @db.Timestamptz(3)
+  rejectionReason       String?                      @db.Text
+  evidenceReference     String?                      @db.VarChar(255)
+  isMedicalDirector     Boolean                      @default(false)
+  version               Int                          @default(1)
+  createdAt             DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                     @updatedAt @db.Timestamptz(3)
+
+  clinic                Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  membership            ClinicMembership             @relation("PractitionerMembership", fields: [clinicId, membershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  verifiedBy            ClinicMembership?            @relation("PractitionerProfileVerifier", fields: [clinicId, verifiedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  qualifications        PractitionerSpecialty[]
+  clinicalPrivileges    PractitionerClinicalPrivilege[]
+
+  @@unique([clinicId, membershipId])
+  @@unique([clinicId, id])
+  @@index([clinicId, verificationStatus])
+}
+
+// Practitioner verified qualification in a specific medical specialty
+model PractitionerSpecialty {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  clinicId              String                       @db.Uuid
+  practitionerProfileId String                       @db.Uuid
+  specialtyId           String                       @db.Uuid
+  qualificationTitle    String                       @db.VarChar(128)
+  qualificationLevel    String                       @default("SPECIALIST") @db.VarChar(64)
+  status                CredentialVerificationStatus @default(SELF_REPORTED)
+  effectiveDate         DateTime?                    @db.Timestamptz(3)
+  expirationDate        DateTime?                    @db.Timestamptz(3)
+  verifiedByMembershipId String?                     @db.Uuid
+  verifiedAt            DateTime?                    @db.Timestamptz(3)
+  rejectionReason       String?                      @db.Text
+  version               Int                          @default(1)
+  createdAt             DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                     @updatedAt @db.Timestamptz(3)
+
+  clinic                Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  practitionerProfile   PractitionerProfile          @relation(fields: [clinicId, practitionerProfileId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict)
+  specialty             MedicalSpecialty             @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  verifiedBy            ClinicMembership?            @relation("PractitionerSpecialtyVerifier", fields: [clinicId, verifiedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  clinicalPrivileges    PractitionerClinicalPrivilege[]
+
+  @@unique([practitionerProfileId, specialtyId])
+  @@unique([clinicId, id])
+  @@index([clinicId, status])
+}
+
+// Controlled clinical action privilege granted to a practitioner
+model PractitionerClinicalPrivilege {
+  id                      String                @id @default(uuid()) @db.Uuid
+  clinicId                String                @db.Uuid
+  branchId                String?               @db.Uuid
+  practitionerProfileId   String                @db.Uuid
+  specialtyId             String                @db.Uuid
+  practitionerSpecialtyId String?               @db.Uuid
+  privilegeCode           ClinicalPrivilegeCode
+  scope                   PrivilegeScope        @default(CLINIC_WIDE)
+  status                  PrivilegeStatus       @default(REQUESTED)
+  approvedByMembershipId  String?               @db.Uuid
+  approvedAt              DateTime?             @db.Timestamptz(3)
+  rejectionReason         String?               @db.Text
+  effectiveDate           DateTime              @default(now()) @db.Timestamptz(3)
+  expirationDate          DateTime?             @db.Timestamptz(3)
+  isCompatibility         Boolean               @default(false)
+  version                 Int                   @default(1)
+  createdAt               DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime              @updatedAt @db.Timestamptz(3)
+
+  clinic                  Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch                  ClinicBranch?         @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  practitionerProfile     PractitionerProfile   @relation(fields: [clinicId, practitionerProfileId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict)
+  specialty               MedicalSpecialty      @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  practitionerSpecialty   PractitionerSpecialty? @relation(fields: [clinicId, practitionerSpecialtyId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy              ClinicMembership?     @relation("ClinicalPrivilegeApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([practitionerProfileId, specialtyId, privilegeCode, branchId])
+  @@unique([clinicId, id])
+  @@index([clinicId, practitionerProfileId, status])
+  @@index([clinicId, specialtyId, privilegeCode, status])
 }

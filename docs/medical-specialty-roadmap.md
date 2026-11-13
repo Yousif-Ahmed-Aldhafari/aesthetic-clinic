@@ -53,16 +53,17 @@ timeline
 
 ---
 
-### Step 6.2 — Specialty Registry, Practitioner Qualifications & Clinical Privilege Engine
+### Step 6.2 — Specialty Registry, Practitioner Qualifications & Clinical Privilege Engine (Implemented)
 - **Objective:** Implement tenant-configurable specialty enablement and multi-tier clinical authorization.
 - **Key Deliverables:**
-  - Additive Migration `033`: `MedicalSpecialty`, `ClinicSpecialty`, `BranchSpecialty`, `PractitionerProfile`, `PractitionerSpecialty`, `PractitionerClinicalPrivilege`.
-  - Default backfill: Automatically enable `'AESTHETICS'` for existing clinics and branches without downtime.
-  - NestJS Module: `SpecialtyModule` with `SpecialtyService`, `PractitionerProfileService`, and `PrivilegeService`.
-  - Access Control Guards: `@RequireSpecialty(code)` and `@RequireClinicalPrivilege(action)`.
-  - Frontend Workspace: Clinic Settings ➔ Specialty Enablement & Medical Staff Credentialing.
-- **Technical Risks:** Enforcing that `CLINIC_OWNER` without clinical credentials cannot bypass medical record restrictions.
-- **Acceptance Criteria:**
+  - Additive Migration `20261113000100_medical_specialty_registry_privileges`: `MedicalSpecialty`, `ClinicSpecialty`, `BranchSpecialty`, `PractitionerProfile`, `PractitionerSpecialty`, `PractitionerClinicalPrivilege`.
+  - Default backfill: Automatically enabled `'AESTHETICS'` for existing clinics and branches without downtime.
+  - NestJS Module: `SpecialtyModule` with `SpecialtyRepository`, `SpecialtyController`, and `SpecialtyPrivilegeGuard`.
+  - Access Control Guards: `@RequireSpecialty(code)` and `@RequireClinicalPrivilege(code)` evaluating server-side and database state.
+  - Medical Director governance: Anti-self-approval enforcement, independent audit logging, and ceiling exclusion.
+  - Frontend Workspace: Clinic Settings ➔ Specialty Enablement & Medical Staff Credentialing (`SpecialtyAdministrationPanel.tsx`).
+- **Technical Invariants Verified:**
+  - `CLINIC_OWNER` and `CLINIC_ADMIN` cannot access confidential clinical records without an explicit practitioner role.
   - Automated tests prove that enabling a specialty activates corresponding workflows.
   - Tests prove that administrative roles cannot perform medical actions.
   - Tests verify that existing aesthetic clinics retain active operational status without manual reconfiguration.

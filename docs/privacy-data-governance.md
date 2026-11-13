@@ -32,6 +32,14 @@ Aesthetic treatment packages, prepaid session entitlements, redemptions, install
 - All 11 package and installment tables enforce `FORCE ROW LEVEL SECURITY` and restricted runtime database grants.
 - Statutory retention applies as with core financial invoices and ledger entries (minimum 10 years in Saudi Arabia / GCC equivalent); automated deletion is strictly prohibited (`dryRunOnly = TRUE`).
 
+## Phase 6.2 medical specialty & clinical credential governance addendum
+
+Medical practitioner profiles, qualifications, and clinical privilege records are classified as `PROFESSIONAL_CREDENTIALS` (Tier 2/3):
+- Practitioner profiles and licenses are managed by clinic administrators and authenticated doctors, but clinical verification and privilege approval are strictly reserved for verified Medical Directors.
+- Credentialing authority enforces anti-self-approval: Medical Directors cannot approve their own qualifications or clinical privileges.
+- Least Privilege Administrative Isolation: Clinic owners and administrators govern facility and branch specialty enablement, but cannot access confidential clinical notes or encounters without holding an explicit treating practitioner role.
+- All 5 tenant tables (`ClinicSpecialty`, `BranchSpecialty`, `PractitionerProfile`, `PractitionerSpecialty`, `PractitionerClinicalPrivilege`) enforce `FORCE ROW LEVEL SECURITY`, tenant isolation via `lamssa_security.context_allows("clinicId")`, and database triggers preventing clinic reassignment and hard deletion.
+
 ## Phase 4.5 practitioner commissions & financial reconciliation addendum
 
 Practitioner commission plans, rules, assignments, accruals, adjustments, and settlements are classified as `FINANCIAL` (Tier 2).
