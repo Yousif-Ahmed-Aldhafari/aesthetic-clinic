@@ -181,3 +181,12 @@ The specialty administration panel is integrated into Clinic Settings under the 
 | `POST` | `/api/v1/clinics/:clinicId/privileges/:privilegeId/approve` | `privileges.read` (MD only) | Approve clinical privilege (requires verified qualification) |
 | `POST` | `/api/v1/clinics/:clinicId/privileges/:privilegeId/revoke` | `privileges.read` (MD only) | Revoke clinical privilege with reason |
 | `GET` | `/api/v1/clinics/:clinicId/privileges/approval-queue` | `privileges.read` (MD only) | List pending approval queue |
+
+---
+
+## 9. Integration with Shared Clinical Foundation (Step 6.3)
+
+In Step 6.3, the Clinical Privilege Engine connects directly to runtime clinical operations:
+- **Prescription Issuance:** When a clinician signs an outpatient prescription (`POST /clinical/prescriptions/:id/sign`), `ClinicalFoundationRepository` invokes `evaluatePrivilege(membershipId, 'MEDICATION_PRESCRIBE')`.
+- **Privilege Enforcement:** If the clinician does not possess an active, approved `MEDICATION_PRESCRIBE` privilege, the transaction immediately fails closed with `403 Forbidden: Active clinical privilege 'MEDICATION_PRESCRIBE' required to sign prescriptions`.
+- **Specialty Context:** When prescribed in a specialized department, the privilege can be scoped to the specific specialty or branch.

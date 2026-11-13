@@ -208,6 +208,13 @@ model Clinic {
   practitionerProfiles PractitionerProfile[]
   practitionerSpecialties PractitionerSpecialty[]
   practitionerClinicalPrivileges PractitionerClinicalPrivilege[]
+  clinicalObservations ClinicalObservation[]
+  encounterDiagnoses EncounterDiagnosis[]
+  patientAllergies PatientAllergy[]
+  medicationRecords MedicationRecord[]
+  medicationPrescriptions MedicationPrescription[]
+  medicationPrescriptionItems MedicationPrescriptionItem[]
+  clinicPrescriptionCounter ClinicPrescriptionCounter?
 
   @@index([status, createdAt])
 }
@@ -460,6 +467,16 @@ model ClinicMembership {
   verifiedPractitionerProfiles PractitionerProfile[] @relation("PractitionerProfileVerifier")
   verifiedPractitionerSpecialties PractitionerSpecialty[] @relation("PractitionerSpecialtyVerifier")
   approvedClinicalPrivileges PractitionerClinicalPrivilege[] @relation("ClinicalPrivilegeApprover")
+  authoredObservations ClinicalObservation[] @relation("ObservationAuthor")
+  authoredDiagnoses EncounterDiagnosis[] @relation("DiagnosisAuthor")
+  confirmedDiagnoses EncounterDiagnosis[] @relation("DiagnosisConfirmer")
+  recordedAllergies PatientAllergy[] @relation("AllergyRecorder")
+  verifiedAllergies PatientAllergy[] @relation("AllergyVerifier")
+  recordedMedications MedicationRecord[] @relation("MedicationRecorder")
+  verifiedMedications MedicationRecord[] @relation("MedicationVerifier")
+  reconciledMedications MedicationRecord[] @relation("MedicationReconciler")
+  prescriptions MedicationPrescription[] @relation("PrescriptionPrescriber")
+  signedPrescriptions MedicationPrescription[] @relation("PrescriptionSigner")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -610,6 +627,11 @@ model Patient {
   recoveryCheckIns PatientRecoveryCheckIn[]
   patientReportedOutcomes PatientReportedOutcome[]
   paymentIntents PaymentIntent[]
+  clinicalObservations ClinicalObservation[]
+  encounterDiagnoses EncounterDiagnosis[]
+  allergies PatientAllergy[]
+  medicationRecords MedicationRecord[]
+  prescriptions MedicationPrescription[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -664,6 +686,11 @@ model ClinicalEncounter {
   procedureExecutions ProcedureExecution[]
   photoSessions ClinicalPhotoSession[]
   followUps ClinicalFollowUp[]
+  observations ClinicalObservation[]
+  diagnoses EncounterDiagnosis[]
+  allergies PatientAllergy[]
+  medicationRecords MedicationRecord[]
+  prescriptions MedicationPrescription[]
   @@unique([clinicId,id])
   @@unique([clinicId,visitId])
   @@index([clinicId,patientId,createdAt,id])
@@ -4266,9 +4293,344 @@ model PractitionerClinicalPrivilege {
   specialty               MedicalSpecialty      @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   practitionerSpecialty   PractitionerSpecialty? @relation(fields: [clinicId, practitionerSpecialtyId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   approvedBy              ClinicMembership?     @relation("ClinicalPrivilegeApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  prescriptions           MedicationPrescription[]
 
   @@unique([practitionerProfileId, specialtyId, privilegeCode, branchId])
   @@unique([clinicId, id])
   @@index([clinicId, practitionerProfileId, status])
   @@index([clinicId, specialtyId, privilegeCode, status])
+}
+
+// ============================================================================
+// Phase 6.3: Shared Clinical Data Foundation
+// ============================================================================
+
+enum ObservationType {
+  BLOOD_PRESSURE_SYSTOLIC
+  BLOOD_PRESSURE_DIASTOLIC
+  HEART_RATE
+  RESPIRATORY_RATE
+  BODY_TEMPERATURE
+  OXYGEN_SATURATION
+  WEIGHT
+  HEIGHT
+  BODY_MASS_INDEX
+  GENERAL_OBSERVATION
+}
+
+enum ObservationStatus {
+  RECORDED
+  VERIFIED
+  AMENDED
+  ENTERED_IN_ERROR
+}
+
+enum ClinicalProvenance {
+  CLINICIAN_MEASURED
+  PATIENT_REPORTED
+  DEVICE_RECORDED
+  HISTORICAL_TRANSCRIPTION
+}
+
+enum DiagnosisRole {
+  PRIMARY
+  SECONDARY
+  DIFFERENTIAL
+  ADMISSION
+  DISCHARGE
+}
+
+enum DiagnosisClinicalStatus {
+  PROVISIONAL
+  CONFIRMED
+  RESOLVED
+  REFUTED
+  ENTERED_IN_ERROR
+}
+
+enum DiagnosisVerificationStatus {
+  SUSPECTED
+  PROBABLE
+  CONFIRMED
+  REFUTED
+}
+
+enum ProblemListStatus {
+  ACTIVE
+  INACTIVE
+  RESOLVED
+  REMITTED
+}
+
+enum AllergyStatusType {
+  ALLERGY_PRESENT
+  NO_KNOWN_ALLERGIES
+  STATUS_UNCONFIRMED_UNKNOWN
+}
+
+enum AllergenCategory {
+  MEDICATION
+  FOOD
+  ENVIRONMENTAL
+  BIOLOGICAL
+  LATEX
+  OTHER
+}
+
+enum AllergySeverity {
+  MILD
+  MODERATE
+  SEVERE
+  LIFE_THREATENING
+  UNKNOWN
+}
+
+enum AllergyClinicalStatus {
+  ACTIVE
+  INACTIVE
+  RESOLVED
+  ENTERED_IN_ERROR
+}
+
+enum AllergyVerificationStatus {
+  SUSPECTED
+  PATIENT_REPORTED
+  CLINICIAN_CONFIRMED
+  REFUTED
+}
+
+enum MedicationRecordStatus {
+  ACTIVE
+  PAUSED
+  DISCONTINUED
+  COMPLETED
+  ENTERED_IN_ERROR
+}
+
+enum PrescriptionStatus {
+  DRAFT
+  PENDING_REVIEW
+  SIGNED
+  CANCELLED
+  SUPERSEDED
+}
+
+model ClinicalObservation {
+  id                 String             @id @default(uuid()) @db.Uuid
+  clinicId           String             @db.Uuid
+  patientId          String             @db.Uuid
+  encounterId        String?            @db.Uuid
+  authorMembershipId String             @db.Uuid
+  observationType    ObservationType
+  numericValue       Decimal?           @db.Decimal(10, 4)
+  textValue          String?            @db.Text
+  unit               String             @db.VarChar(32)
+  measuredAt         DateTime           @db.Timestamptz(3)
+  status             ObservationStatus  @default(RECORDED)
+  provenance         ClinicalProvenance @default(CLINICIAN_MEASURED)
+  bodySite           String?            @db.VarChar(100)
+  method             String?            @db.VarChar(100)
+  interpretation     String?            @db.VarChar(255)
+  amendmentReason    String?            @db.Text
+  supersededById     String?            @db.Uuid
+  version            Int                @default(1)
+  createdAt          DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @db.Timestamptz(3)
+
+  clinic             Clinic             @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient            Patient            @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter          ClinicalEncounter? @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  author             ClinicMembership   @relation("ObservationAuthor", fields: [clinicId, authorMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, measuredAt, observationType])
+  @@index([clinicId, encounterId])
+}
+
+model EncounterDiagnosis {
+  id                      String                      @id @default(uuid()) @db.Uuid
+  clinicId                String                      @db.Uuid
+  patientId               String                      @db.Uuid
+  encounterId             String                      @db.Uuid
+  authorMembershipId      String                      @db.Uuid
+  confirmedByMembershipId String?                     @db.Uuid
+  diagnosisRole           DiagnosisRole               @default(PRIMARY)
+  clinicalStatus          DiagnosisClinicalStatus     @default(PROVISIONAL)
+  verificationStatus      DiagnosisVerificationStatus  @default(SUSPECTED)
+  isProblem               Boolean                     @default(false)
+  problemStatus           ProblemListStatus?
+  codingSystem            String                      @db.VarChar(64)
+  codingSystemVersion     String?                     @db.VarChar(32)
+  code                    String                      @db.VarChar(64)
+  displayAr               String                      @db.VarChar(255)
+  displayEn               String?                     @db.VarChar(255)
+  clinicalNarrative       String?                     @db.Text
+  onsetDate               DateTime?                   @db.Timestamptz(3)
+  resolutionDate          DateTime?                   @db.Timestamptz(3)
+  amendmentReason         String?                     @db.Text
+  version                 Int                         @default(1)
+  createdAt               DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                    @updatedAt @db.Timestamptz(3)
+
+  clinic                  Clinic                      @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                 Patient                     @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter               ClinicalEncounter           @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  author                  ClinicMembership            @relation("DiagnosisAuthor", fields: [clinicId, authorMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  confirmedBy             ClinicMembership?           @relation("DiagnosisConfirmer", fields: [clinicId, confirmedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, isProblem, problemStatus])
+  @@index([clinicId, encounterId, diagnosisRole])
+  @@index([clinicId, code])
+}
+
+model PatientAllergy {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  clinicId               String                     @db.Uuid
+  patientId              String                     @db.Uuid
+  encounterId            String?                    @db.Uuid
+  recordedByMembershipId String                     @db.Uuid
+  verifiedByMembershipId String?                    @db.Uuid
+  allergyStatusType      AllergyStatusType          @default(ALLERGY_PRESENT)
+  category               AllergenCategory           @default(MEDICATION)
+  substance              String                     @db.VarChar(255)
+  substanceCode          String?                    @db.VarChar(64)
+  codingSystem           String?                    @db.VarChar(64)
+  reaction               String?                    @db.VarChar(500)
+  severity               AllergySeverity            @default(UNKNOWN)
+  clinicalStatus         AllergyClinicalStatus      @default(ACTIVE)
+  verificationStatus     AllergyVerificationStatus  @default(PATIENT_REPORTED)
+  onsetDate              DateTime?                  @db.Timestamptz(3)
+  recordedAt             DateTime                   @default(now()) @db.Timestamptz(3)
+  verifiedAt             DateTime?                  @db.Timestamptz(3)
+  notes                  String?                    @db.Text
+  version                Int                        @default(1)
+  createdAt              DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                   @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                Patient                    @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter              ClinicalEncounter?         @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  recordedBy             ClinicMembership           @relation("AllergyRecorder", fields: [clinicId, recordedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  verifiedBy             ClinicMembership?          @relation("AllergyVerifier", fields: [clinicId, verifiedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, clinicalStatus])
+  @@index([clinicId, patientId, allergyStatusType])
+}
+
+model MedicationRecord {
+  id                       String                  @id @default(uuid()) @db.Uuid
+  clinicId                 String                  @db.Uuid
+  patientId                String                  @db.Uuid
+  encounterId              String?                 @db.Uuid
+  recordedByMembershipId   String                  @db.Uuid
+  verifiedByMembershipId   String?                 @db.Uuid
+  reconciledByMembershipId String?                 @db.Uuid
+  medicationName           String                  @db.VarChar(255)
+  genericName              String?                 @db.VarChar(255)
+  brandName                String?                 @db.VarChar(255)
+  atcCode                  String?                 @db.VarChar(32)
+  dosage                   String                  @db.VarChar(100)
+  dosageAmount             Decimal?                @db.Decimal(10, 4)
+  dosageUnit               String?                 @db.VarChar(32)
+  route                    String                  @db.VarChar(64)
+  frequency                String                  @db.VarChar(100)
+  instructions             String?                 @db.Text
+  indication               String?                 @db.VarChar(255)
+  status                   MedicationRecordStatus  @default(ACTIVE)
+  provenance               ClinicalProvenance      @default(PATIENT_REPORTED)
+  isReconciled             Boolean                 @default(false)
+  reconciledAt             DateTime?               @db.Timestamptz(3)
+  startDate                DateTime?               @db.Timestamptz(3)
+  endDate                  DateTime?               @db.Timestamptz(3)
+  discontinuationReason    String?                 @db.Text
+  version                  Int                     @default(1)
+  createdAt                DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                @updatedAt @db.Timestamptz(3)
+
+  clinic                   Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                  Patient                 @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                ClinicalEncounter?      @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  recordedBy               ClinicMembership        @relation("MedicationRecorder", fields: [clinicId, recordedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  verifiedBy               ClinicMembership?       @relation("MedicationVerifier", fields: [clinicId, verifiedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  reconciledBy             ClinicMembership?       @relation("MedicationReconciler", fields: [clinicId, reconciledByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, status])
+  @@index([clinicId, patientId, isReconciled])
+}
+
+model MedicationPrescription {
+  id                              String                          @id @default(uuid()) @db.Uuid
+  clinicId                        String                          @db.Uuid
+  patientId                       String                          @db.Uuid
+  encounterId                     String                          @db.Uuid
+  prescriberMembershipId          String                          @db.Uuid
+  practitionerClinicalPrivilegeId String?                         @db.Uuid
+  prescriptionNumber              String                          @db.VarChar(64)
+  status                          PrescriptionStatus              @default(DRAFT)
+  notes                           String?                         @db.Text
+  signedAt                        DateTime?                       @db.Timestamptz(3)
+  signedByMembershipId            String?                         @db.Uuid
+  signatureDigest                 String?                         @db.VarChar(64)
+  cancellationReason              String?                         @db.Text
+  cancelledAt                     DateTime?                       @db.Timestamptz(3)
+  supersededById                  String?                         @db.Uuid
+  safetyReviewAcknowledged        Boolean                         @default(false)
+  allergyCheckWarning             String?                         @db.Text
+  version                         Int                             @default(1)
+  createdAt                       DateTime                        @default(now()) @db.Timestamptz(3)
+  updatedAt                       DateTime                        @updatedAt @db.Timestamptz(3)
+
+  clinic                          Clinic                          @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                         Patient                         @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                       ClinicalEncounter               @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  prescriber                      ClinicMembership                @relation("PrescriptionPrescriber", fields: [clinicId, prescriberMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  signedBy                        ClinicMembership?               @relation("PrescriptionSigner", fields: [clinicId, signedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  privilege                       PractitionerClinicalPrivilege?  @relation(fields: [clinicId, practitionerClinicalPrivilegeId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  items                           MedicationPrescriptionItem[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, prescriptionNumber])
+  @@index([clinicId, patientId, status])
+  @@index([clinicId, encounterId])
+  @@index([clinicId, prescriberMembershipId])
+}
+
+model MedicationPrescriptionItem {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  clinicId            String                 @db.Uuid
+  prescriptionId      String                 @db.Uuid
+  medicationName      String                 @db.VarChar(255)
+  genericName         String?                @db.VarChar(255)
+  strength            String                 @db.VarChar(64)
+  dosageForm          String                 @db.VarChar(64)
+  route               String                 @db.VarChar(64)
+  frequency           String                 @db.VarChar(100)
+  duration            String                 @db.VarChar(64)
+  durationDays        Int?
+  quantity            Int
+  unit                String                 @db.VarChar(32)
+  refillsAllowed      Int                    @default(0)
+  substitutionAllowed Boolean                @default(false)
+  instructions        String                 @db.Text
+  indication          String?                @db.VarChar(255)
+  itemOrder           Int                    @default(1)
+  createdAt           DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic              Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  prescription        MedicationPrescription @relation(fields: [clinicId, prescriptionId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, prescriptionId, itemOrder])
+}
+
+model ClinicPrescriptionCounter {
+  clinicId  String   @id @db.Uuid
+  nextValue Int      @default(1)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }

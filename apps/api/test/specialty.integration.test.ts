@@ -304,8 +304,8 @@ describe('Medical Specialty Registry, Qualifications & Clinical Privilege Engine
       licenseExpirationDate: '2028-06-01T00:00:00.000Z',
     });
 
-    // Owner designates Doctor A1 as Medical Director
-    const directorProfile = await specialtyRepo.designateMedicalDirector(proofOwnerA, clinicAId, membershipDoctorA1Id);
+    // Owner designates Doctor A1 as Medical Director with verified evidence reference
+    const directorProfile = await specialtyRepo.designateMedicalDirector(proofOwnerA, clinicAId, membershipDoctorA1Id, 'SCFHS-DIR-VERIF-001');
     assert.equal(directorProfile.isMedicalDirector, true);
     assert.equal(directorProfile.verificationStatus, 'VERIFIED');
   });

@@ -443,6 +443,7 @@ export class SpecialtyRepository {
     proof: VerifiedPrincipal,
     clinicId: string,
     membershipId: string,
+    verificationEvidenceReference?: string,
   ) {
     // Medical Director appointment requires CLINIC_OWNER authority
     return this.tenantDb.withClinicContext(proof, clinicId, ['staff.manage'], async (tx, ctx) => {
@@ -461,13 +462,20 @@ export class SpecialtyRepository {
         throw new BadRequestException('Medical Director must have documented professional license credentials');
       }
 
+      // Section 3.A: Owner appointment assigns administrative Medical Director role.
+      // Verified credential status requires independent verification evidence reference.
+      const hasVerifiedEvidence = Boolean(verificationEvidenceReference && verificationEvidenceReference.trim().length >= 5);
+      const isAlreadyVerified = profile.verificationStatus === 'VERIFIED';
+      const targetVerificationStatus = (hasVerifiedEvidence || isAlreadyVerified) ? 'VERIFIED' : 'PENDING_VERIFICATION';
+
       const updated = await tx.practitionerProfile.update({
         where: { clinicId_id: { clinicId, id: profile.id } },
         data: {
           isMedicalDirector: true,
-          verificationStatus: 'VERIFIED',
-          verifiedByMembershipId: ctx.membershipId,
-          verifiedAt: new Date(),
+          verificationStatus: targetVerificationStatus,
+          verifiedByMembershipId: (hasVerifiedEvidence || isAlreadyVerified) ? ctx.membershipId : profile.verifiedByMembershipId,
+          verifiedAt: (hasVerifiedEvidence || isAlreadyVerified) ? new Date() : profile.verifiedAt,
+          evidenceReference: verificationEvidenceReference ? verificationEvidenceReference.trim() : profile.evidenceReference,
           version: { increment: 1 },
         },
       });
@@ -480,7 +488,7 @@ export class SpecialtyRepository {
         targetType: 'PractitionerProfile',
         targetId: updated.id,
         outcome: 'SUCCESS',
-        metadata: { membershipId, designatedBy: ctx.membershipId },
+        metadata: { membershipId, designatedBy: ctx.membershipId, verified: targetVerificationStatus === 'VERIFIED' },
       }, tx);
 
       return updated;
@@ -929,8 +937,22 @@ export class SpecialtyRepository {
         }
       }
 
-      // Step 4: Backward Compatibility Policy for Aesthetic Clinics (Section 5)
-      // If performing aesthetic procedures or documenting aesthetic consultations under existing workflows:
+      // Step 4: Professional Identity, License Expiry & Sanction Checks (Evaluated before any compatibility grant)
+      const profile = await tx.practitionerProfile.findUnique({
+        where: { clinicId_membershipId: { clinicId, membershipId: params.practitionerMembershipId } },
+      });
+
+      if (profile) {
+        if (profile.verificationStatus === 'SUSPENDED' || profile.verificationStatus === 'REJECTED') {
+          return { allowed: false, reason: 'Practitioner profile not active or rejected' };
+        }
+        if (profile.licenseExpirationDate && profile.licenseExpirationDate <= now) {
+          return { allowed: false, reason: 'Practitioner medical license has expired' };
+        }
+      }
+
+      // Step 5: Backward Compatibility Policy for Aesthetic Clinics (Strictly limited to aesthetic procedures/documentation)
+      // Aesthetic compatibility CANNOT authorize prescribing, diagnoses, labs, imaging, or sedation
       if (
         params.specialtyCode === 'AESTHETICS' &&
         params.isAestheticExecution &&
@@ -939,16 +961,9 @@ export class SpecialtyRepository {
         return { allowed: true, isCompatibility: true, reason: 'AESTHETIC_BACKWARD_COMPATIBILITY' };
       }
 
-      // Step 5: Professional Identity & Qualifications
-      const profile = await tx.practitionerProfile.findUnique({
-        where: { clinicId_membershipId: { clinicId, membershipId: params.practitionerMembershipId } },
-      });
-      if (!profile || profile.verificationStatus === 'SUSPENDED' || profile.verificationStatus === 'REJECTED') {
-        return { allowed: false, reason: 'Practitioner profile not active or rejected' };
-      }
-
-      if (profile.licenseExpirationDate && profile.licenseExpirationDate <= now) {
-        return { allowed: false, reason: 'Practitioner medical license has expired' };
+      // Non-compatibility clinical operations strictly require an active practitioner profile
+      if (!profile) {
+        return { allowed: false, reason: 'Practitioner profile required for general clinical operations' };
       }
 
       // Step 6: Verified Specialty Qualification

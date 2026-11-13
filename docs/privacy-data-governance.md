@@ -242,3 +242,21 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Secret Encryption at Rest**: External payment provider keys and webhook secrets are encrypted at rest with AES-256-GCM + HKDF-SHA256 key derivation.
 - **Elimination of Custom GUC Bypass**: Custom session bypass flags (`lamssa.internal_security_lookup`) were eliminated from all RLS policies and replaced with standard PostgreSQL `maintenance_owner` policies across all 15 integration tables (93 tables total under `FORCE ROW LEVEL SECURITY`).
 - **Authenticated Webhook Call Validation**: The `SECURITY DEFINER` function `post_webhook_payment` requires matching session context, active clinic status, payable intent status, and an authentic, fresh (<5 min) `PaymentProviderEvent` in `RECEIVED` status. Replay attacks are permanently blocked by transitioning the event to `PROCESSED`.
+
+---
+
+## 11. Phase 6 Clinical Data Governance, Multi-Specialty Privileges & Medical Records Privacy (Step 6.3)
+
+### 11.1 Least Privilege Clinical Data Protection
+- **Medical Director & Practitioner Separation**: Administrative roles (`CLINIC_OWNER`, `CLINIC_ADMIN`, `ACCOUNTANT`, `RECEPTIONIST`) are strictly barred from clinical action endpoints (vital signs recording, diagnosis entry, allergy verification, medication reconciliation, prescription signing).
+- **Clinical Privilege Governance**: Clinical actions require active, verified practitioner qualifications and approved clinical privileges (`PractitionerClinicalPrivilege`).
+- **Anti-Self-Approval Enforcement**: Database triggers `practitioner_credential_guard`, `practitioner_qualification_guard`, and `practitioner_privilege_guard` strictly prohibit self-verification of credentials and self-approval of clinical privileges.
+
+### 11.2 Medical Immutability & Tamper Resistance
+- **Signed Outpatient Prescriptions**: Once transitioned to `SIGNED`, prescriptions and their individual items are rendered permanently immutable by database triggers (`prescription_immutability_guard` and `prescription_item_guard`). Updates to dosage, quantity, or patient identifiers are rejected with SQL exceptions (`42501`).
+- **Cryptographic Signature Digest**: Prescriptions carry a deterministic SHA-256 digital signature digest calculated across canonical JSON serialization of the prescription and its items.
+- **Verified Clinical Observations**: Once marked `VERIFIED`, observations cannot have their numerical or textual values altered directly (`clinical_observation_guard`); clinical corrections mandate formal amendment records (`AMENDED` or `ENTERED_IN_ERROR`).
+
+### 11.3 Patient Safety & Allergy Warnings
+- **Pre-Flight Allergy Checking**: Active allergies are queried before prescription signing to prevent accidental adverse drug events. Overriding a clinical warning requires explicit practitioner acknowledgment and recorded justification.
+- **Tenancy and Multi-Tenant Isolation**: All 7 clinical foundation entities (`ClinicalObservation`, `EncounterDiagnosis`, `PatientAllergy`, `MedicationRecord`, `MedicationPrescription`, `MedicationPrescriptionItem`, `ClinicPrescriptionCounter`) enforce PostgreSQL `FORCE ROW LEVEL SECURITY` with composite keys `(clinicId, id)` and immutable tenant IDs. Cross-clinic data leakage is strictly blocked at the database engine layer.

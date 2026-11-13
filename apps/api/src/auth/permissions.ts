@@ -53,6 +53,11 @@ export const permissions = [
   'practitioners.profiles.read', 'practitioners.profiles.manage',
   'credentials.verify',
   'privileges.request', 'privileges.approve', 'privileges.read',
+  'clinical.observations.read', 'clinical.observations.create', 'clinical.observations.update', 'clinical.observations.verify',
+  'clinical.diagnoses.read', 'clinical.diagnoses.create', 'clinical.diagnoses.update', 'clinical.diagnoses.confirm',
+  'clinical.allergies.read', 'clinical.allergies.create', 'clinical.allergies.update', 'clinical.allergies.verify',
+  'clinical.medications.read', 'clinical.medications.create', 'clinical.medications.update', 'clinical.medications.reconcile',
+  'clinical.prescriptions.read', 'clinical.prescriptions.draft', 'clinical.prescriptions.sign', 'clinical.prescriptions.cancel',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -127,7 +132,12 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'commissions.accruals.read-own',
     'specialties.read',
     'practitioners.profiles.read', 'practitioners.profiles.manage',
-    'privileges.read', 'privileges.request'],
+    'privileges.read', 'privileges.request',
+    'clinical.observations.read', 'clinical.observations.create', 'clinical.observations.update', 'clinical.observations.verify',
+    'clinical.diagnoses.read', 'clinical.diagnoses.create', 'clinical.diagnoses.update', 'clinical.diagnoses.confirm',
+    'clinical.allergies.read', 'clinical.allergies.create', 'clinical.allergies.update', 'clinical.allergies.verify',
+    'clinical.medications.read', 'clinical.medications.create', 'clinical.medications.update', 'clinical.medications.reconcile',
+    'clinical.prescriptions.read', 'clinical.prescriptions.draft', 'clinical.prescriptions.sign', 'clinical.prescriptions.cancel'],
   RECEPTIONIST: ['clinic.branding.read', 'branches.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record',
     'packages.catalog.read', 'packages.purchases.read', 'packages.purchases.create',
     'packages.redemptions.read', 'packages.redemptions.record', 'installments.read', 'refunds.request',

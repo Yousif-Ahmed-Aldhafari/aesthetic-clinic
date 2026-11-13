@@ -211,3 +211,13 @@ Before any Phase 6 code is considered ready for local merge into `main`:
 3. **Aesthetic Regression Test:** Execute the full aesthetic treatment, clinical photo, and package redemption test suite (`test/treatment.integration.test.ts`, `test/clinical-photo.integration.test.ts`) to prove zero regressions.
 4. **General Medicine End-to-End Test:** Execute a complete general medical consultation workflow (patient intake ➔ vitals observation ➔ ICD-10 diagnosis ➔ prescription issuance ➔ checkout billing) proving independence from aesthetic catalogs.
 5. **Full Regression Execution:** 100% pass rate across unit tests, database tests, and browser smoke checks.
+
+---
+
+## 7. Migration Execution Log
+
+| Milestone | Target Migration | Applied Status | Entities / Features Delivered |
+| :--- | :--- | :--- | :--- |
+| **Step 6.1** | Architecture Blueprint | Completed | Specification, catalog taxonomy, data model contracts |
+| **Step 6.2** | `20261113000100_medical_specialty_registry_privileges` | Applied (Migration 33) | `MedicalSpecialty`, `ClinicSpecialty`, `BranchSpecialty`, `PractitionerProfile`, `PractitionerSpecialty`, `PractitionerClinicalPrivilege` |
+| **Step 6.3** | `20261113000200_shared_clinical_foundation` | Applied (Migration 34) | `ClinicalObservation`, `EncounterDiagnosis`, `PatientAllergy`, `MedicationRecord`, `MedicationPrescription`, `MedicationPrescriptionItem`, `ClinicPrescriptionCounter` |

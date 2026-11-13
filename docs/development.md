@@ -1794,3 +1794,20 @@ actual database-backed branding and live SQL constraint tests were unverified at
 that point. These database checks are now completed in Step 1.2.1 above. Optional
 Compose parsing/runtime remains unverified without Docker. No real patient records, reset/force-push commands,
 commits or pushes were part of Step 1.2.
+
+## Phase 6 Step 6.3 verification record (2026-11-13)
+
+| Command / Check | Actual Result |
+| :--- | :--- |
+| `npm run check:boundaries` | Exit 0; strict database boundary validation passed |
+| `npm run db:validate` | Exit 0; schema valid |
+| `npm run db:generate` | Exit 0; Prisma Client (7.10.1) generated |
+| `npm run db:status` | Exit 0; 34 migrations found on `lamssa_dev`, schema up to date |
+| `npm run db:status:test` | Exit 0; 34 migrations found on `lamssa_test`, schema up to date |
+| `npm run db:grant` | Exit 0; restricted runtime privileges applied, 105 FORCE RLS tables, 90 locked functions |
+| `npm test` | Exit 0; 204 unit tests passed (178 API policy/unit tests + 26 web unit tests, 0 failed) |
+| `npm run test:db` | Exit 0; 325 database integration tests passed (1 intentional CREATEDB skip, 0 failed) |
+| `npm run build` | Exit 0; `@lamssa/web` (Vite) and `@lamssa/api` (TypeScript) compiled cleanly |
+| `npm run test:browser` | Exit 0; 43 checks passed in real headless Chrome, 0 runtime errors |
+| `npm run check:deployment` | Exit 0; deployment configuration invariants verified |
+| `git diff --check` | Exit 0; clean whitespace across all tracked and modified files |

@@ -70,21 +70,22 @@ timeline
 
 ---
 
-### Step 6.3 — Shared Clinical Data Foundation: Observations, Diagnoses, Allergies & Prescriptions
+### Step 6.3 — Shared Clinical Data Foundation: Observations, Diagnoses, Allergies & Prescriptions (Implemented)
 - **Objective:** Implement the core clinical entities required for any outpatient patient consultation.
 - **Key Deliverables:**
-  - Additive Migration `034`: `ClinicalObservation`, `EncounterDiagnosis`, `PatientAllergy`, `MedicationRecord`, `MedicationPrescription`, `MedicationPrescriptionItem`.
-  - NestJS Module: `ClinicalFoundationModule` with dedicated repositories enforcing composite `(clinicId, id)` keys and `FORCE ROW LEVEL SECURITY`.
-  - Business Logic Services:
-    - `ObservationService`: Scalar and textual vital signs capture, automatic BMI calculation, abnormal flag detection against reference ranges.
-    - `DiagnosisService`: ICD-10 coded and narrative diagnosis recording, chronic problem list promotion.
-    - `AllergyService`: Critical allergy tracking, severe reaction flags, active patient safety banner.
-    - `PrescriptionService`: Outpatient prescription drafting, item dosing, digital signature hashing (SHA-256), immutable finalization.
-  - Frontend Workspace: Patient EHR ➔ Unified Medical Summary (Vitals, Diagnoses, Allergies, Active Medications).
-- **Technical Risks:** Preserving patient chart confidentiality while ensuring allergy warnings are immediately visible across all clinician screens.
-- **Acceptance Criteria:**
-  - Integration tests verify that observations and diagnoses cannot be accessed cross-tenant or cross-patient.
-  - Prescription finalization computes an immutable SHA-256 digest that detects tampering.
+  - Additive Migration `20261113000200_shared_clinical_foundation`: `ClinicalObservation`, `EncounterDiagnosis`, `PatientAllergy`, `MedicationRecord`, `MedicationPrescription`, `MedicationPrescriptionItem`, `ClinicPrescriptionCounter`.
+  - NestJS Module: `ClinicalFoundationModule` with `ClinicalFoundationRepository`, `ClinicalFoundationController`, and comprehensive DTOs enforcing composite `(clinicId, id)` keys and `FORCE ROW LEVEL SECURITY`.
+  - Business Logic Services & Engine:
+    - Observations: Scalar and textual vital signs capture, automatic deterministic BMI calculation, physiological validation against standard reference ranges, immutability guard trigger.
+    - Diagnoses: ICD-10 coded and narrative diagnosis recording, strict primary vs. secondary designation per encounter, chronic problem list promotion.
+    - Allergies: Critical allergy tracking, severity classification, clinician verification status, NKA declaration, active pre-flight prescription conflict detection.
+    - Prescriptions: Controlled outpatient prescription drafting, sequential numbering (`RX-000001`), `MEDICATION_PRESCRIBE` privilege check, digital signature digest sealing (SHA-256), immutable finalization enforcers.
+    - Decoupled Medication Reconciliation: Chronic and acute regimens tracked without automated inventory consumption.
+  - Frontend Workspace: Patient EHR ➔ Unified Medical Summary (Vitals observation panel, ICD-10 diagnosis picker, allergy conflict badges, medication reconciliation tables, prescription signing dialog).
+- **Technical Invariants Verified:**
+  - 105 FORCE RLS tables and 90 locked `lamssa_security` functions.
+  - Unit policy tests (12 tests) and integration tests (7 tests) pass with 100% success.
+  - Prescription finalization computes an immutable SHA-256 digest; tampering rejected at database level.
   - Existing aesthetic treatment plans continue to operate with zero regressions.
 
 ---
