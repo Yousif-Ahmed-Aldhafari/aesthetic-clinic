@@ -262,6 +262,29 @@ production use remains gated on authentication, isolation and operational contro
     and database guard triggers blocking deletions and modifications.
     See [clinical-follow-ups.md](clinical-follow-ups.md).
 
+21. **6.1 — Multi-Specialty Architectural Blueprint & Migration Strategy (implemented).**
+    Comprehensive three-layer architectural contract (Operational Core, Clinical Foundation, Specialty Workspaces)
+    enabling transition from pure aesthetic SaaS to multi-specialty medical platform.
+    See [general-medical-platform-architecture.md](general-medical-platform-architecture.md).
+
+22. **6.2 — Medical Specialty Registry, Qualifications & Clinical Privilege Engine (implemented).**
+    Registry catalog, specialty enablement per clinic/branch, practitioner profiles, qualification verification,
+    and granular multi-tier clinical privileges (`MEDICATION_PRESCRIBE`, etc.).
+
+23. **6.3 — Shared Clinical Data Foundation (implemented).**
+    Specialty-neutral vital signs with unit validation and BMI auto-calculation, encounter diagnoses (ICD-10 primary/secondary),
+    longitudinal problem lists, allergy register with pre-flight prescription conflict detection, medication reconciliation,
+    and tamper-evident SHA-256 outpatient prescriptions.
+    See [shared-clinical-foundation.md](shared-clinical-foundation.md).
+
+24. **6.4 — General Clinical Services, Diagnostic Orders, Results & Secure Documents (implemented).**
+    General outpatient medical service catalog (`GeneralClinicalService`), sequential diagnostic orders (`ORD-XXXXXX`),
+    structured results with critical values acknowledgment protocols, client-side AES-256-GCM encrypted document repository
+    with HKDF key derivation, magic byte validation, SHA-256 integrity checks, and legal hold immutability. Conclusive proof
+    of zero aesthetic record generation during general medical consultations.
+    See [general-clinical-services-orders.md](general-clinical-services-orders.md).
+
+
 ## Migration discipline
 
 - Preserve root development commands and the browser origin used for demo storage.

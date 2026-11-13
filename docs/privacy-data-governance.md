@@ -260,3 +260,10 @@ All automated verification gates for Step 2.3 passed cleanly:
 ### 11.3 Patient Safety & Allergy Warnings
 - **Pre-Flight Allergy Checking**: Active allergies are queried before prescription signing to prevent accidental adverse drug events. Overriding a clinical warning requires explicit practitioner acknowledgment and recorded justification.
 - **Tenancy and Multi-Tenant Isolation**: All 7 clinical foundation entities (`ClinicalObservation`, `EncounterDiagnosis`, `PatientAllergy`, `MedicationRecord`, `MedicationPrescription`, `MedicationPrescriptionItem`, `ClinicPrescriptionCounter`) enforce PostgreSQL `FORCE ROW LEVEL SECURITY` with composite keys `(clinicId, id)` and immutable tenant IDs. Cross-clinic data leakage is strictly blocked at the database engine layer.
+
+### 11.4 Encrypted Clinical Documents & Diagnostic Results Governance (Step 6.4)
+- **Zero-Plaintext Encrypted Document Storage**: All medical documents, lab attachments, and diagnostic scans are encrypted at rest with AES-256-GCM. Keys are derived per tenant using HKDF-SHA256 (`lamssa-clinical-document-encryption-v1`). Plaintext payloads are never written to disk or logged.
+- **Payload Magic Byte Verification**: Uploaded documents are verified at the byte level against trusted format headers (PDF, JPEG, PNG, WebP, DICOM, JSON, Text), blocking malware and executable attachments.
+- **Legal Hold Immutability**: Documents marked under legal hold (`isLegalHold = true`) are strictly protected against deletion or metadata alteration via PostgreSQL database triggers (`clinical_document_guard`).
+- **Critical Diagnostic Result Workflow**: Diagnostic results marked `isCritical = true` require explicit, mandatory clinical acknowledgment (`criticalAcknowledgedAt`, `criticalAcknowledgedBy`) before release to the patient portal, preventing unreviewed critical results from reaching patients.
+- **Segregation of Duties in Billing**: Doctors place diagnostic orders and medical consultations without accessing billing functions; administrative staff generates draft invoices via `invoices.create` without possessing `clinical.*` privileges.

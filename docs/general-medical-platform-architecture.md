@@ -475,6 +475,7 @@ Every future step of Phase 6 must adhere to the rigorous verification standard e
 - **Step 6.1 (Architecture & Migration Blueprint):** Completed. Baseline contracts, specialty catalog taxonomy, data model, and migration strategy approved.
 - **Step 6.2 (Specialty Registry & Clinical Privilege Engine):** Completed via migration `20261113000100_medical_specialty_registry_privileges`. Global specialty catalog, clinic/branch specialty enablement, practitioner profiles, qualification verification, and multi-tier clinical privileges implemented and verified.
 - **Step 6.3 (Shared Clinical Data Foundation):** Completed via migration `20261113000200_shared_clinical_foundation`. Specialty-neutral vital signs with unit validation and BMI auto-calculation, primary/secondary encounter diagnoses, longitudinal problem lists, patient allergy registry with pre-flight prescription conflict detection, medication reconciliation, and tamper-evident SHA-256 outpatient prescriptions fully implemented and verified.
+- **Step 6.4 (General Clinical Services, Diagnostic Orders, Results & Secure Documents):** Completed via migration `20261113000300_general_clinical_services_orders`. Outpatient medical service catalog, sequential diagnostic orders (`ORD-XXXXXX`), component-level diagnostic result verification, critical value acknowledgment workflows, and client-side AES-256-GCM encrypted medical document storage with legal hold protection fully implemented and verified. Demonstrates complete zero-aesthetic-record consultation execution.
 
 ---
 

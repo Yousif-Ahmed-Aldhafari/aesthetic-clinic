@@ -5,6 +5,8 @@ import { AllergyRegisterPanel } from '../clinical-foundation/AllergyRegisterPane
 import { MedicationReconciliationPanel } from '../clinical-foundation/MedicationReconciliationPanel';
 import { PrescriptionManagementPanel } from '../clinical-foundation/PrescriptionManagementPanel';
 import { ClinicalSummaryView } from '../clinical-foundation/ClinicalSummaryView';
+import { ClinicalOrdersPanel } from '../clinical-orders/ClinicalOrdersPanel';
+import { ClinicalDocumentsPanel } from '../clinical-orders/ClinicalDocumentsPanel';
 import '../clinical-foundation/clinical-foundation.css';
 
 export interface ClinicalEncounterWorkspaceProps {
@@ -21,7 +23,9 @@ export type ClinicalWorkspaceTab =
   | 'diagnoses'
   | 'allergies'
   | 'medications'
-  | 'prescriptions';
+  | 'prescriptions'
+  | 'orders'
+  | 'documents';
 
 export const ClinicalEncounterWorkspace: React.FC<ClinicalEncounterWorkspaceProps> = ({
   clinicId,
@@ -81,6 +85,20 @@ export const ClinicalEncounterWorkspace: React.FC<ClinicalEncounterWorkspaceProp
           onClick={() => setActiveTab('prescriptions')}
         >
           📝 الوصفات الطبية المعتمدة
+        </button>
+        <button
+          type="button"
+          className={`cf-tab-button ${activeTab === 'orders' ? 'active' : ''}`}
+          onClick={() => setActiveTab('orders')}
+        >
+          🔬 الفحوصات والأوامر الطبية
+        </button>
+        <button
+          type="button"
+          className={`cf-tab-button ${activeTab === 'documents' ? 'active' : ''}`}
+          onClick={() => setActiveTab('documents')}
+        >
+          🔒 المستندات والتقارير المشفرة
         </button>
       </nav>
 
@@ -142,6 +160,24 @@ export const ClinicalEncounterWorkspace: React.FC<ClinicalEncounterWorkspaceProp
           encounterId={encounterId || '00000000-0000-0000-0000-000000000000'}
           csrfToken={csrfToken}
           onRefreshSummary={handleRefreshSummary}
+        />
+      )}
+
+      {activeTab === 'orders' && (
+        <ClinicalOrdersPanel
+          clinicId={clinicId}
+          patientId={patientId}
+          encounterId={encounterId}
+          csrfToken={csrfToken}
+        />
+      )}
+
+      {activeTab === 'documents' && (
+        <ClinicalDocumentsPanel
+          clinicId={clinicId}
+          patientId={patientId}
+          encounterId={encounterId}
+          csrfToken={csrfToken}
         />
       )}
     </div>

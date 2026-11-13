@@ -218,3 +218,14 @@ The clinical data foundation implementation has been verified across all testing
 | **Row-Level Security** | 19 tests | **PASS (100%)** | 105 FORCE RLS tables, 90 locked `lamssa_security` functions (`search_path = pg_catalog, pg_temp`), cross-clinic denial. |
 | **Browser Smoke Tests** | 43 checks | **PASS (100%)** | RTL patient directory, booking, queue management, billing, clinical workspace, and inventory valuation. |
 | **Architectural Boundaries**| Automated script | **PASS** | Strict module boundary checks and schema verification. |
+
+---
+
+## 10. Step 6.4 Extension: General Clinical Services, Diagnostic Orders & Documents
+
+As part of Phase 6 Step 6.4 (migration `20261113000300_general_clinical_services_orders`), the clinical foundation expands to include:
+- **General Clinical Service Catalog (`GeneralClinicalService`):** Outpatient medical services separated from aesthetic treatment plans.
+- **Diagnostic Orders Engine (`ClinicalOrder`):** Atomic order numbering (`ORD-XXXXXX`), lifecycle states (`DRAFT` → `ORDERED` → `IN_PROGRESS` → `COMPLETED` / `CANCELLED`), priority tracking.
+- **Structured Diagnostic Results (`ClinicalOrderResult`):** Component-level lab/imaging results, critical value acknowledgments, and portal release workflows.
+- **Encrypted Medical Document Storage (`ClinicalDocument`):** Zero-plaintext AES-256-GCM encrypted document archiving at rest with legal hold protection.
+- Complete documentation available in `docs/general-clinical-services-orders.md`.

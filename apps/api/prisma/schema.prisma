@@ -215,6 +215,11 @@ model Clinic {
   medicationPrescriptions MedicationPrescription[]
   medicationPrescriptionItems MedicationPrescriptionItem[]
   clinicPrescriptionCounter ClinicPrescriptionCounter?
+  generalClinicalServices GeneralClinicalService[]
+  clinicOrderCounter ClinicOrderCounter?
+  clinicalOrders ClinicalOrder[]
+  clinicalOrderResults ClinicalOrderResult[]
+  clinicalDocuments ClinicalDocument[]
 
   @@index([status, createdAt])
 }
@@ -252,6 +257,8 @@ model ClinicBranch {
   paymentIntents PaymentIntent[]
   branchSpecialties BranchSpecialty[]
   branchClinicalPrivileges PractitionerClinicalPrivilege[]
+  generalClinicalServices GeneralClinicalService[]
+  clinicalOrders ClinicalOrder[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, code])
@@ -477,6 +484,10 @@ model ClinicMembership {
   reconciledMedications MedicationRecord[] @relation("MedicationReconciler")
   prescriptions MedicationPrescription[] @relation("PrescriptionPrescriber")
   signedPrescriptions MedicationPrescription[] @relation("PrescriptionSigner")
+  orderedClinicalOrders ClinicalOrder[] @relation("OrderingDoctor")
+  recordedClinicalResults ClinicalOrderResult[] @relation("ResultRecorder")
+  verifiedClinicalResults ClinicalOrderResult[] @relation("ResultVerifier")
+  uploadedClinicalDocuments ClinicalDocument[] @relation("DocumentUploader")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -632,6 +643,9 @@ model Patient {
   allergies PatientAllergy[]
   medicationRecords MedicationRecord[]
   prescriptions MedicationPrescription[]
+  clinicalOrders ClinicalOrder[]
+  clinicalOrderResults ClinicalOrderResult[]
+  clinicalDocuments ClinicalDocument[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -691,6 +705,8 @@ model ClinicalEncounter {
   allergies PatientAllergy[]
   medicationRecords MedicationRecord[]
   prescriptions MedicationPrescription[]
+  clinicalOrders ClinicalOrder[]
+  clinicalDocuments ClinicalDocument[]
   @@unique([clinicId,id])
   @@unique([clinicId,visitId])
   @@index([clinicId,patientId,createdAt,id])
@@ -1123,6 +1139,7 @@ model ClinicService {
   clinic Clinic @relation(fields:[clinicId],references:[id],onDelete:Restrict,onUpdate:Restrict)
   appointments Appointment[]
   procedureCatalog AestheticProcedureCatalog[]
+  generalClinicalServices GeneralClinicalService[]
   @@unique([clinicId,id])
   @@index([clinicId,active,id])
 }
@@ -4154,6 +4171,8 @@ model MedicalSpecialty {
   branchSpecialties BranchSpecialty[]
   practitionerSpecialties PractitionerSpecialty[]
   clinicalPrivileges PractitionerClinicalPrivilege[]
+  generalClinicalServices GeneralClinicalService[]
+  clinicalOrders ClinicalOrder[]
 
   @@index([isActive, classification])
 }
@@ -4633,4 +4652,222 @@ model ClinicPrescriptionCounter {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+// =========================================================================
+// PHASE 6 STEP 6.4: GENERAL CLINICAL SERVICES, ORDERS, RESULTS & DOCUMENTS
+// =========================================================================
+
+enum ClinicalServiceCategory {
+  GENERAL_CONSULTATION
+  SPECIALIST_CONSULTATION
+  FOLLOW_UP_CONSULTATION
+  LABORATORY_TEST
+  DIAGNOSTIC_IMAGING
+  REFERRAL
+  MINOR_PROCEDURE
+  OTHER_OUTPATIENT_SERVICE
+}
+
+enum ClinicalOrderType {
+  LABORATORY
+  IMAGING
+  REFERRAL
+  OTHER_DIAGNOSTIC
+}
+
+enum ClinicalOrderStatus {
+  DRAFT
+  REQUESTED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  REVIEWED
+  CANCELLED
+}
+
+enum OrderPriority {
+  ROUTINE
+  URGENT
+  STAT
+}
+
+enum DiagnosticResultStatus {
+  DRAFT
+  PRELIMINARY
+  FINAL
+  CORRECTED
+  CANCELLED
+  ENTERED_IN_ERROR
+}
+
+enum ClinicalDocumentType {
+  LAB_REPORT
+  IMAGING_REPORT
+  REFERRAL_LETTER
+  EXTERNAL_RECORD
+  DISCHARGE_SUMMARY
+  OTHER_CLINICAL
+}
+
+model GeneralClinicalService {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  clinicId               String                  @db.Uuid
+  serviceCode            String                  @db.VarChar(64)
+  nameAr                 String                  @db.VarChar(150)
+  nameEn                 String?                 @db.VarChar(150)
+  description            String?                 @db.VarChar(2000)
+  category               ClinicalServiceCategory
+  specialtyId            String?                 @db.Uuid
+  branchId               String?                 @db.Uuid
+  defaultDurationMinutes Int                     @default(30)
+  requiredPrivilege      String?                 @db.VarChar(64)
+  basePriceMinor         BigInt                  @default(0)
+  clinicServiceId        String?                 @db.Uuid
+  isActive               Boolean                 @default(true)
+  version                Int                     @default(1)
+  createdAt              DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                @updatedAt @db.Timestamptz(3)
+
+  clinic        Clinic            @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  specialty     MedicalSpecialty? @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch        ClinicBranch?     @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  clinicService ClinicService?    @relation(fields: [clinicId, clinicServiceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  orders        ClinicalOrder[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, serviceCode])
+  @@index([clinicId, isActive, category])
+  @@index([clinicId, specialtyId])
+}
+
+model ClinicOrderCounter {
+  clinicId  String   @id @db.Uuid
+  nextValue Int      @default(1)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+model ClinicalOrder {
+  id                         String              @id @default(uuid()) @db.Uuid
+  clinicId                   String              @db.Uuid
+  orderNumber                String              @db.VarChar(32)
+  patientId                  String              @db.Uuid
+  encounterId                String?             @db.Uuid
+  orderingDoctorMembershipId String              @db.Uuid
+  specialtyId                String?             @db.Uuid
+  branchId                   String?             @db.Uuid
+  orderType                  ClinicalOrderType
+  generalClinicalServiceId   String?             @db.Uuid
+  clinicalIndication         String?             @db.VarChar(2000)
+  priority                   OrderPriority       @default(ROUTINE)
+  status                     ClinicalOrderStatus @default(REQUESTED)
+  notes                      String?             @db.VarChar(2000)
+  cancellationReason         String?             @db.VarChar(500)
+  cancelledByMembershipId    String?             @db.Uuid
+  cancelledAt                DateTime?           @db.Timestamptz(3)
+  completedAt                DateTime?           @db.Timestamptz(3)
+  reviewedByMembershipId     String?             @db.Uuid
+  reviewedAt                 DateTime?           @db.Timestamptz(3)
+  version                    Int                 @default(1)
+  createdAt                  DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime            @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                Patient                 @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter              ClinicalEncounter?      @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  orderingDoctor         ClinicMembership        @relation("OrderingDoctor", fields: [clinicId, orderingDoctorMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  specialty              MedicalSpecialty?       @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch                 ClinicBranch?           @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  generalClinicalService GeneralClinicalService? @relation(fields: [clinicId, generalClinicalServiceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  results                ClinicalOrderResult[]
+  documents              ClinicalDocument[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, orderNumber])
+  @@index([clinicId, patientId, status])
+  @@index([clinicId, orderType, status])
+  @@index([clinicId, encounterId])
+}
+
+model ClinicalOrderResult {
+  id                                 String                 @id @default(uuid()) @db.Uuid
+  clinicId                           String                 @db.Uuid
+  orderId                            String                 @db.Uuid
+  patientId                          String                 @db.Uuid
+  resultType                         ClinicalOrderType
+  status                             DiagnosticResultStatus @default(FINAL)
+  sourceOrganization                 String?                @db.VarChar(150)
+  performedAt                        DateTime?              @db.Timestamptz(3)
+  issuedAt                           DateTime               @default(now()) @db.Timestamptz(3)
+  recordedByMembershipId             String                 @db.Uuid
+  verifiedByMembershipId             String?                @db.Uuid
+  verifiedAt                         DateTime?              @db.Timestamptz(3)
+  narrativeFindings                  String?                @db.Text
+  impression                         String?                @db.Text
+  structuredData                     Json?                  @db.JsonB
+  isCritical                         Boolean                @default(false)
+  criticalNotes                      String?                @db.VarChar(1000)
+  criticalAcknowledgedByMembershipId String?                @db.Uuid
+  criticalAcknowledgedAt             DateTime?              @db.Timestamptz(3)
+  correctionReason                   String?                @db.VarChar(500)
+  correctedResultId                  String?                @db.Uuid
+  isReleasedToPatient                Boolean                @default(false)
+  releasedAt                         DateTime?              @db.Timestamptz(3)
+  releasedByMembershipId             String?                @db.Uuid
+  version                            Int                    @default(1)
+  createdAt                          DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                          DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic     Clinic            @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  order      ClinicalOrder     @relation(fields: [clinicId, orderId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  patient    Patient           @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  recordedBy ClinicMembership  @relation("ResultRecorder", fields: [clinicId, recordedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  verifiedBy ClinicMembership? @relation("ResultVerifier", fields: [clinicId, verifiedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  documents  ClinicalDocument[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, orderId])
+  @@index([clinicId, patientId, status])
+  @@index([clinicId, isCritical, criticalAcknowledgedAt])
+}
+
+model ClinicalDocument {
+  id                     String               @id @default(uuid()) @db.Uuid
+  clinicId               String               @db.Uuid
+  patientId              String               @db.Uuid
+  encounterId            String?              @db.Uuid
+  orderId                String?              @db.Uuid
+  resultId               String?              @db.Uuid
+  documentType           ClinicalDocumentType
+  title                  String               @db.VarChar(200)
+  fileName               String               @db.VarChar(255)
+  mimeType               String               @db.VarChar(100)
+  fileSizeBytes          BigInt
+  storageKey             String               @db.VarChar(500)
+  contentSha256          String               @db.VarChar(64)
+  encryptionIv           String               @db.VarChar(32)
+  encryptionTag          String               @db.VarChar(32)
+  isQuarantined          Boolean              @default(false)
+  quarantineReason       String?              @db.VarChar(500)
+  uploadedByMembershipId String               @db.Uuid
+  isConfidential         Boolean              @default(false)
+  isLegalHold            Boolean              @default(false)
+  legalHoldReason        String?              @db.VarChar(500)
+  version                Int                  @default(1)
+  createdAt              DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime             @updatedAt @db.Timestamptz(3)
+
+  clinic     Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient    Patient              @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter  ClinicalEncounter?   @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  order      ClinicalOrder?       @relation(fields: [clinicId, orderId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  result     ClinicalOrderResult? @relation(fields: [clinicId, resultId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  uploadedBy ClinicMembership     @relation("DocumentUploader", fields: [clinicId, uploadedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, documentType])
+  @@index([clinicId, orderId])
+  @@index([clinicId, resultId])
 }
