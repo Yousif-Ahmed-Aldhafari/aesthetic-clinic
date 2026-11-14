@@ -172,6 +172,6 @@ Lamssa enforces strict doctor-only clinical isolation:
 | `npm run check:boundaries` | Architectural boundary enforcement | ✅ Passed |
 | `npm run check:deployment` | Production deployment invariant validation | ✅ Passed |
 
-## Step 6.4 verification during Step 6.5
+## Step 6.4 verification during Step 6.5 & Step 6.6
 
-Document ciphertext created after Step 6.5 binds its storage key through AES-GCM AAD; legacy ciphertext remains readable for rotation compatibility. Failed metadata transactions remove newly created files. Audit metadata and download headers were hardened. Critical results remain visible and require explicit acknowledgment before patient release. DICOM signature recognition is not diagnostic validation or PACS support, and malware scanning remains pending.
+Document ciphertext created after Step 6.5 binds its storage key through AES-GCM AAD (`clinicId:documentId`); legacy ciphertext remains readable for rotation compatibility. Failed metadata transactions remove newly created files. Audit metadata and download headers were hardened. Critical results remain visible and require explicit acknowledgment before patient release. DICOM signature recognition is not diagnostic validation or PACS support, and malware scanning remains pending. Verified across all 336 passing database integration tests and 47 browser smoke tests. See [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).

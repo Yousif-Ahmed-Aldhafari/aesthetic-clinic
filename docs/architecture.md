@@ -1492,6 +1492,19 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Controlled Outpatient Prescriptions**: Atomic sequential numbering (`RX-000001`) via `ClinicPrescriptionCounter`, formal state machine lifecycle (`DRAFT` → `PENDING_REVIEW` → `SIGNED` → `CANCELLED` / `SUPERSEDED`), mandatory `MEDICATION_PRESCRIBE` clinical privilege check, cryptographic SHA-256 tamper-evident digest sealing, and database immutability triggers (`prescription_immutability_guard()`, `prescription_item_guard()`, `clinical_observation_guard()`).
 - **Relational & Security Invariants**: 105 total tables under PostgreSQL `FORCE ROW LEVEL SECURITY`, 90 locked `lamssa_security` functions (`search_path = pg_catalog, pg_temp`), composite unique keys `(clinicId, id)`, immutable `clinicId` triggers, and zero cross-tenant leakage. See [docs/shared-clinical-foundation.md](shared-clinical-foundation.md).
 
-## Phase 6.5 clinical forms boundary
+### Step 6.4 — General Clinical Services, Diagnostic Orders, Results & Secure Documents
+- **Outpatient Medical Catalog**: `GeneralClinicalService` introduces general consultations, specialist visits, routine lab panels, and diagnostic imaging decoupled from aesthetic treatment plans.
+- **Diagnostic Orders Engine**: Tenant-scoped sequential order numbering (`ORD-XXXXXX`) via atomic `ClinicOrderCounter`, priority levels (`ROUTINE`, `URGENT`, `STAT`), and sealed terminal states (`COMPLETED`, `CANCELLED`).
+- **Structured Diagnostic Results**: Component-level results (`ClinicalOrderResult`), mandatory critical result acknowledgment workflow, and physician-controlled portal release gating.
+- **Encrypted Medical Documents**: AES-256-GCM authenticated encryption at rest with HKDF-SHA256 key derivation and AAD bound to `clinicId:documentId`, magic byte format validation, SHA-256 integrity digests, and legal hold immutability protection.
+- **Financial Integration**: Invoicing through shared `BillingRepository` without aesthetic `TreatmentPlan` or `ProcedureExecution` dependencies. See [docs/general-clinical-services-orders.md](general-clinical-services-orders.md).
 
-`ClinicalFormsModule` is the only HTTP/domain entry point for versioned specialty forms. `ClinicalFormsRepository` uses `TenantDatabaseService`; schema validation is isolated in `ClinicalFormValidationService`. Four FORCE RLS tables preserve exact form versions and append-only amendments. Administrative template permissions do not grant clinical response access. See [structured-clinical-forms.md](structured-clinical-forms.md).
+### Step 6.5 — Structured Clinical Forms, Dynamic Templates & Specialty Workspaces
+- **Versioned Clinical Forms**: `ClinicalFormDefinition` and `ClinicalFormDefinitionVersion` with strict JSON Schema 2020-12 validation and immutable published schemas.
+- **Sealed Responses & Amendments**: `ClinicalFormResponse` transitions through `DRAFT` to `FINALIZED` with SHA-256 integrity digests; database trigger `clinical_form_response_guard` blocks direct mutation; corrections create `ClinicalFormResponseAmendment` audit records.
+- **Arabic-First Dynamic Form Renderer**: `DynamicClinicalForm` and `SpecialtyFormsPanel` providing accessible RTL inputs, keyboard navigation, and dynamic specialty terminology (`useTerminology()`). See [docs/structured-clinical-forms.md](structured-clinical-forms.md).
+
+### Step 6.6 — Comprehensive Medical Security, Compatibility Audit & Final Acceptance
+- **Comprehensive Security Audit**: 114 core tenant tables under `FORCE ROW LEVEL SECURITY` (143 total tables in public schema), 96 locked `lamssa_security` functions, zero custom GUC bypasses, and doctor-only clinical record isolation.
+- **Verification Matrix**: 233 passing unit tests, 336 passing database integration tests (1 intentional restore drill skip), 47 browser checks, 36 migrations.
+- **Acceptance Verdicts**: Code integration readiness: **READY FOR CODE MERGE**; Production clinical deployment: **NOT READY FOR PRODUCTION** (gated on real-world medical director sign-off, external licensing integrations, and KMS custody). See [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).

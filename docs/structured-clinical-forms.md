@@ -72,3 +72,11 @@ General services and diagnostic orders continue through the shared invoice syste
 Clinical form definitions are confidential operational configuration; responses and amendments are `SENSITIVE_PERSONAL`. Audit events record IDs, lifecycle actions, versions, and digests, never response text or patient identifiers in general metadata. Existing administrative exports do not silently include forms. Retention and legal-hold inventory includes the new tables, but automatic clinical deletion remains disabled pending jurisdiction and clinical governance decisions.
 
 PostgreSQL backups cover the four tables. Restore verification checks the migration inventory and FORCE RLS. Template clinical validity, specialty governance, authorship policies beyond assigned encounters, electronic-signature law, retention periods, localization review, and jurisdiction-specific compliance require approved clinical/legal review. Advanced specialty modules remain future work.
+
+## Step 6.6 final acceptance
+
+In Step 6.6, the clinical form engine was audited under adversarial conditions:
+- Enforced JSON Schema 2020-12 dialect, depth/size bounds, closed root schemas, and forbidden executable expressions.
+- Confirmed published version immutability and finalized response tamper resistance via PostgreSQL triggers.
+- Verified administrative lockout from clinical form responses across unit and integration tests.
+- Audited across 233 passing unit tests, 336 passing database integration tests, and 47 browser checks. See [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).

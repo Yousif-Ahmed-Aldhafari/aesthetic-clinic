@@ -233,3 +233,13 @@ As part of Phase 6 Step 6.4 (migration `20261113000300_general_clinical_services
 ## Structured form evidence
 
 Form responses are versioned authored evidence and never become a parallel authoritative source for allergies, diagnoses, observations, medication histories, or prescriptions. A later explicit clinical workflow may promote a reported fact after independent authorization and verification.
+
+---
+
+## 11. Step 6.6 Final Acceptance & Invariant Verification
+
+The shared clinical data foundation was audited during Phase 6 Step 6.6:
+- Total unit tests covering clinical policies: 233 passed.
+- Database integration tests across clinical modules: 336 passed (1 intentional CREATEDB restore skip).
+- Immutability database triggers confirmed active across signed prescriptions, verified observations, finalized orders, and encrypted documents.
+- Full details documented in [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).

@@ -129,12 +129,13 @@ timeline
 ### Step 6.6 — Comprehensive Security Audit, Migration Verification & Final Acceptance
 - **Objective:** Execute exhaustive security, regression, and migration compatibility verification across all Phase 6 deliverables.
 - **Key Deliverables:**
-  - Additive Migration `037`: Final security hardening, search path locking, and runtime role grant synchronization.
-  - Verification Evidence: Full test execution across all unit tests, database integration tests, browser smoke tests, and deployment checks.
-  - End-to-End General Medicine Journey: Proven complete consultation journey without touching aesthetic catalog models.
+  - Security & RLS Audit: 114 core tenant tables under `FORCE RLS` (143 total tables in public schema) and 96 `lamssa_security` functions.
+  - Verification Evidence: Full test execution across 233 unit tests, 336 database integration tests (1 intentional restore drill skip), 47 browser smoke tests, and deployment checks.
+  - End-to-End General Medicine Journey: Proven complete consultation journey without touching aesthetic catalog models (`TreatmentPlan`, `ProcedureExecution`).
   - Documentation Deliverables: `docs/phase-6-final-acceptance.md`.
   - Readiness Determination: Authorize local merge into `main`.
-- **Acceptance Gate:** 100% test pass rate, 0 boundary violations, 0 regression in existing aesthetic operations.
+- **Status:** Completed & Verified. See [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).
+
 
 ---
 

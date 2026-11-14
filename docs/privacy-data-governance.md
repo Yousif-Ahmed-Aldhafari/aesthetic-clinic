@@ -268,6 +268,7 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Critical Diagnostic Result Workflow**: Diagnostic results marked `isCritical = true` require explicit, mandatory clinical acknowledgment (`criticalAcknowledgedAt`, `criticalAcknowledgedBy`) before release to the patient portal, preventing unreviewed critical results from reaching patients.
 - **Segregation of Duties in Billing**: Doctors place diagnostic orders and medical consultations without accessing billing functions; administrative staff generates draft invoices via `invoices.create` without possessing `clinical.*` privileges.
 
-## Structured clinical forms
-
-`ClinicalFormResponse` and `ClinicalFormResponseAmendment` are classified `SENSITIVE_PERSONAL`; definitions and versions are confidential clinic configuration. Existing administrative exports do not include this data. Audit metadata contains lifecycle identifiers and digests only. Retention/legal-hold policy design includes these resources, while automated destruction remains disabled.
+### 11.5 Structured Clinical Forms & Final Phase 6 Privacy Acceptance (Step 6.5 & 6.6)
+- **Data Classification**: `ClinicalFormResponse` and `ClinicalFormResponseAmendment` are classified as `SENSITIVE_PERSONAL`; definitions and versions are confidential clinic configuration. Administrative patient data exports strictly exclude unconsented clinical form responses.
+- **Audit Metadata Sanitization**: Audit logs record lifecycle state transitions (`DRAFT`, `FINALIZED`, `AMENDED`) and SHA-256 payload digests; raw clinical responses are never logged in audit metadata.
+- **Final Acceptance Verification**: Phase 6 Step 6.6 independently confirmed zero cross-tenant and zero cross-patient clinical data leakage across all 114 core tenant tables under `FORCE ROW LEVEL SECURITY`. Administrative roles remain strictly locked out from clinical records. Complete findings detailed in [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).

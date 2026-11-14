@@ -194,3 +194,11 @@ In Step 6.3, the Clinical Privilege Engine connects directly to runtime clinical
 ## Clinical form authorization
 
 Clinic template management is separate from response access. Owners and clinic administrators can manage templates but cannot read responses by virtue of administration. Only the assigned doctor with an active branch membership, verified qualification, active clinic/branch specialty, and approved unexpired encounter-documentation privilege can access or finalize a response. Platform administration has no implicit clinical access.
+
+## 10. Phase 6 Step 6.6 Authorization Acceptance Verification
+
+During the Step 6.6 security audit, the clinical authorization matrix was verified across both API guards and restricted PostgreSQL runtime roles:
+- **Anti-Self-Approval Verification:** Attempting to self-verify qualifications or self-approve privileges is rejected at the database engine level via `practitioner_qualification_guard` and `practitioner_privilege_guard`.
+- **Administrative Lockout:** Clinic owners, administrators, receptionists, and accountants are strictly denied access to clinical form responses, diagnoses, vitals, prescriptions, and orders.
+- **Revoked Privilege Enforcement:** Revoking a clinical privilege immediately blocks subsequent signing or finalization attempts.
+- Complete audit evidence detailed in [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).
