@@ -221,3 +221,7 @@ Before any Phase 6 code is considered ready for local merge into `main`:
 | **Step 6.1** | Architecture Blueprint | Completed | Specification, catalog taxonomy, data model contracts |
 | **Step 6.2** | `20261113000100_medical_specialty_registry_privileges` | Applied (Migration 33) | `MedicalSpecialty`, `ClinicSpecialty`, `BranchSpecialty`, `PractitionerProfile`, `PractitionerSpecialty`, `PractitionerClinicalPrivilege` |
 | **Step 6.3** | `20261113000200_shared_clinical_foundation` | Applied (Migration 34) | `ClinicalObservation`, `EncounterDiagnosis`, `PatientAllergy`, `MedicationRecord`, `MedicationPrescription`, `MedicationPrescriptionItem`, `ClinicPrescriptionCounter` |
+
+## Migration 036 implemented
+
+`20261113000400_structured_clinical_forms` is a single additive migration. It adds four FORCE RLS tables, restricted grants, immutable publication/finalization triggers, same-clinic foreign keys, response provenance, and bounded JSON constraints. Migrations 001–035 are unchanged. Rollback is restore-based because finalized clinical evidence must not be destructively removed.

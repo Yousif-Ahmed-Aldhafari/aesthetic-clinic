@@ -25,6 +25,7 @@ import {
   type ApprovalQueueResponse,
 } from './specialty-api';
 import { listBranches, type ClinicBranchItem } from '../branches/branch-api';
+import { ClinicalFormTemplateAdmin } from '../clinical-forms/ClinicalFormTemplateAdmin';
 
 interface Props {
   clinic: ClinicContext;
@@ -54,7 +55,7 @@ const VERIFICATION_STATUS_AR: Record<string, { label: string; className: string 
 };
 
 export function SpecialtyAdministrationPanel({ clinic, csrfToken, onAuthError }: Props) {
-  const [subTab, setSubTab] = useState<'specialties' | 'branches' | 'practitioners' | 'queue'>('specialties');
+  const [subTab, setSubTab] = useState<'specialties' | 'branches' | 'practitioners' | 'queue' | 'forms'>('specialties');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -378,6 +379,9 @@ export function SpecialtyAdministrationPanel({ clinic, csrfToken, onAuthError }:
         >
           الملفات المهنية والممارسون ({practitioners.length})
         </button>
+        <button type="button" className={subTab === 'forms' ? 'selected' : ''} onClick={() => setSubTab('forms')}>
+          قوالب النماذج السريرية
+        </button>
         {approvalQueue && (
           <button
             type="button"
@@ -390,6 +394,8 @@ export function SpecialtyAdministrationPanel({ clinic, csrfToken, onAuthError }:
           </button>
         )}
       </nav>
+
+      {subTab === 'forms' && <ClinicalFormTemplateAdmin clinicId={clinic.clinicId} csrfToken={csrfToken ?? ''} />}
 
       {/* 1. Medical Specialties Catalog & Clinic Configuration */}
       {subTab === 'specialties' && (

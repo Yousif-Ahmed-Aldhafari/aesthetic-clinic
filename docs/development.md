@@ -1811,3 +1811,7 @@ commits or pushes were part of Step 1.2.
 | `npm run test:browser` | Exit 0; 43 checks passed in real headless Chrome, 0 runtime errors |
 | `npm run check:deployment` | Exit 0; deployment configuration invariants verified |
 | `git diff --check` | Exit 0; clean whitespace across all tracked and modified files |
+
+## Structured clinical forms (migration 036)
+
+Run `npm run db:migrate`, `npm run db:migrate:test`, and `npm run db:grant` after pulling Step 6.5. Both databases must report `20261113000400_structured_clinical_forms` applied. Use the clinic specialty settings page to install and publish standard templates. A doctor needs a selected active branch, verified specialty qualification, and approved `CLINICAL_ENCOUNTER_DOCUMENT` privilege to author forms. JSON Schema is limited to the documented 2020-12 subset; external references and pattern evaluation are rejected.

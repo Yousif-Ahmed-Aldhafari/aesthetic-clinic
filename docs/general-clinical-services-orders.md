@@ -171,3 +171,7 @@ Lamssa enforces strict doctor-only clinical isolation:
 | `npm test` | Full repository unit & web test suites (227 tests) | ✅ 227 Passed, 0 Failed |
 | `npm run check:boundaries` | Architectural boundary enforcement | ✅ Passed |
 | `npm run check:deployment` | Production deployment invariant validation | ✅ Passed |
+
+## Step 6.4 verification during Step 6.5
+
+Document ciphertext created after Step 6.5 binds its storage key through AES-GCM AAD; legacy ciphertext remains readable for rotation compatibility. Failed metadata transactions remove newly created files. Audit metadata and download headers were hardened. Critical results remain visible and require explicit acknowledgment before patient release. DICOM signature recognition is not diagnostic validation or PACS support, and malware scanning remains pending.

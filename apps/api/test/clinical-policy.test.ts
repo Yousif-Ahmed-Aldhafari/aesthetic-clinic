@@ -9,7 +9,9 @@ import { sanitizeAuditMetadata } from '../src/audit/audit.types.js';
 
 test('clinical permissions are doctor-only and separate from administrative patient access',()=>{
   assert(permissionsFor('DOCTOR').includes('clinical.encounters.read'));
-  for(const role of ['CLINIC_OWNER','CLINIC_ADMIN','RECEPTIONIST','ACCOUNTANT'] as const)assert(!permissionsFor(role).some(p=>p.startsWith('clinical.')));
+  const confidential=(permission:string)=>permission.startsWith('clinical.')&&!permission.startsWith('clinical.form-templates.');
+  for(const role of ['CLINIC_OWNER','CLINIC_ADMIN','RECEPTIONIST','ACCOUNTANT'] as const)assert(!permissionsFor(role).some(confidential));
+  assert(!permissionsFor('CLINIC_ADMIN').includes('clinical.form-responses.read'));
   assert(permissionsFor('RECEPTIONIST').includes('patients.read'));
 });
 test('clinical DTOs reject mass assignment, oversized content and weak amendment reasons',async()=>{

@@ -132,7 +132,7 @@ export const ClinicalOrdersPanel: React.FC<ClinicalOrdersPanelProps> = ({
         clinicalIndication: newOrderIndication || undefined,
         priority: newOrderPriority,
         notes: newOrderNotes || undefined,
-      });
+      }, csrfToken);
       setSuccessMessage('تم إنشاء الأمر الطبي بنجاح');
       setShowCreateForm(false);
       setNewOrderIndication('');
@@ -149,7 +149,7 @@ export const ClinicalOrdersPanel: React.FC<ClinicalOrdersPanelProps> = ({
     const reason = window.prompt('سبب الإلغاء (Cancellation reason):');
     if (!reason || !reason.trim()) return;
     try {
-      await cancelClinicalOrder(clinicId, orderId, { cancellationReason: reason.trim() });
+      await cancelClinicalOrder(clinicId, orderId, { cancellationReason: reason.trim() }, csrfToken);
       setSuccessMessage('تم إلغاء الأمر');
       await loadOrders();
     } catch (err: unknown) {
@@ -187,7 +187,7 @@ export const ClinicalOrdersPanel: React.FC<ClinicalOrdersPanelProps> = ({
         isCritical: resultIsCritical,
         criticalNotes: resultIsCritical ? resultCriticalNotes : undefined,
         isReleasedToPatient: false,
-      });
+      }, csrfToken);
       setSuccessMessage('تم تسجيل النتيجة بنجاح');
       setShowResultForm(null);
       setResultFindings(''); setResultImpression(''); setResultIsCritical(false); setResultCriticalNotes(''); setResultSource('');
@@ -203,7 +203,7 @@ export const ClinicalOrdersPanel: React.FC<ClinicalOrdersPanelProps> = ({
 
   const handleVerifyResult = async (resultId: string, orderId: string) => {
     try {
-      await verifyOrderResult(clinicId, resultId);
+      await verifyOrderResult(clinicId, resultId, undefined, csrfToken);
       setSuccessMessage('تم التحقق من النتيجة');
       setOrderResults(prev => { const copy = { ...prev }; delete copy[orderId]; return copy; });
       await handleExpandOrder(orderId);
@@ -216,7 +216,7 @@ export const ClinicalOrdersPanel: React.FC<ClinicalOrdersPanelProps> = ({
   const handleAcknowledgeCritical = async (resultId: string, orderId: string) => {
     if (!acknowledgeAction.trim()) { setError('يجب إدخال الإجراء المتخذ'); return; }
     try {
-      await acknowledgeCriticalResult(clinicId, resultId, { actionTaken: acknowledgeAction.trim() });
+      await acknowledgeCriticalResult(clinicId, resultId, { actionTaken: acknowledgeAction.trim() }, csrfToken);
       setSuccessMessage('تم الإقرار بالنتيجة الحرجة');
       setAcknowledgeResultId(null);
       setAcknowledgeAction('');
@@ -229,7 +229,7 @@ export const ClinicalOrdersPanel: React.FC<ClinicalOrdersPanelProps> = ({
 
   const handleRelease = async (resultId: string, orderId: string, release: boolean) => {
     try {
-      await releaseResultToPatient(clinicId, resultId, { isReleasedToPatient: release });
+      await releaseResultToPatient(clinicId, resultId, { isReleasedToPatient: release }, csrfToken);
       setSuccessMessage(release ? 'تم نشر النتيجة للمريض' : 'تم سحب النتيجة');
       setOrderResults(prev => { const copy = { ...prev }; delete copy[orderId]; return copy; });
       await handleExpandOrder(orderId);
@@ -239,7 +239,7 @@ export const ClinicalOrdersPanel: React.FC<ClinicalOrdersPanelProps> = ({
   };
 
   return (
-    <div dir="rtl" style={{ fontFamily: 'Tajawal, sans-serif', padding: '1rem' }}>
+    <div className="clinical-orders-panel" dir="rtl" style={{ fontFamily: 'Tajawal, sans-serif', padding: '1rem' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: '#1e293b' }}>
@@ -338,7 +338,21 @@ export const ClinicalOrdersPanel: React.FC<ClinicalOrdersPanelProps> = ({
             return (
               <div key={order.id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                 {/* Order Header */}
-                <div onClick={() => handleExpandOrder(order.id)} style={{ padding: '0.9rem 1rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  data-order-number={order.orderNumber}
+                  aria-expanded={isExpanded}
+                  aria-label={`فتح الأمر ${order.orderNumber}`}
+                  onClick={() => handleExpandOrder(order.id)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void handleExpandOrder(order.id);
+                    }
+                  }}
+                  style={{ padding: '0.9rem 1rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <span style={{ fontWeight: 700, color: '#6366f1', fontSize: '0.85rem', fontFamily: 'monospace' }}>{order.orderNumber}</span>
                     <span style={{ background: '#ede9fe', color: '#6d28d9', borderRadius: 6, padding: '2px 8px', fontSize: '0.8rem', fontWeight: 600 }}>

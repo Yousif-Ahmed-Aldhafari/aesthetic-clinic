@@ -167,7 +167,9 @@ export class AuthController {
   @Post('clinic') @HttpCode(200) @Authenticated()
   async select(@Req() request: AuthRequest, @Res({ passthrough: true }) response: Response, @Body() body: ClinicBody) {
     const clinic = await this.auth.selectionContext(request.auth!.principal, body.clinicId);
-    return { ...await this.auth.rotate(request, response, body.clinicId), clinic };
+    // A branch from the previous clinic must never cross the clinic boundary.
+    // The user selects an authorized branch explicitly after clinic selection.
+    return { ...await this.auth.rotate(request, response, body.clinicId, null), clinic };
   }
 
   @Post('rotate') @HttpCode(200) @Authenticated()

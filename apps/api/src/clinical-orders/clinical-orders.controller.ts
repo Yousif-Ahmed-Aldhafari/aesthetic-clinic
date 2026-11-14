@@ -285,7 +285,8 @@ export class ClinicalOrdersController {
 
     res.set({
       'Content-Type': doc.mimeType,
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(doc.fileName)}"`,
+      'Content-Disposition': `attachment; filename="clinical-document"; filename*=UTF-8''${encodeURIComponent(doc.fileName)}`,
+      'Content-Security-Policy': "default-src 'none'; sandbox",
       'Cache-Control': 'no-store, private',
       'X-Content-Type-Options': 'nosniff',
       'ETag': `"${doc.contentSha256}"`,

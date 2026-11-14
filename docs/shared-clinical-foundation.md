@@ -229,3 +229,7 @@ As part of Phase 6 Step 6.4 (migration `20261113000300_general_clinical_services
 - **Structured Diagnostic Results (`ClinicalOrderResult`):** Component-level lab/imaging results, critical value acknowledgments, and portal release workflows.
 - **Encrypted Medical Document Storage (`ClinicalDocument`):** Zero-plaintext AES-256-GCM encrypted document archiving at rest with legal hold protection.
 - Complete documentation available in `docs/general-clinical-services-orders.md`.
+
+## Structured form evidence
+
+Form responses are versioned authored evidence and never become a parallel authoritative source for allergies, diagnoses, observations, medication histories, or prescriptions. A later explicit clinical workflow may promote a reported fact after independent authorization and verification.

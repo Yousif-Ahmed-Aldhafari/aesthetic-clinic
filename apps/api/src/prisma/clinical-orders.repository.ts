@@ -355,6 +355,7 @@ export class ClinicalOrdersRepository {
       if (!order) throw new NotFoundException('Clinical order not found');
       if (order.status === 'CANCELLED') throw new BadRequestException('Cannot record results on a cancelled order');
       if (dto.isCritical && !dto.criticalNotes) throw new BadRequestException('criticalNotes required when result is critical');
+      if (dto.isCritical && dto.isReleasedToPatient) throw new ConflictException('CRITICAL_RESULT_ACKNOWLEDGMENT_REQUIRED');
 
       const result = await tx.clinicalOrderResult.create({
         data: { clinicId: c.clinicId, orderId: order.id, patientId: order.patientId, resultType: dto.resultType, status: dto.status ?? 'FINAL', sourceOrganization: dto.sourceOrganization, performedAt: dto.performedAt ? new Date(dto.performedAt) : new Date(), issuedAt: new Date(), recordedByMembershipId: c.membershipId, narrativeFindings: dto.narrativeFindings, impression: dto.impression, structuredData: (dto.structuredData ?? undefined) as any, isCritical: dto.isCritical ?? false, criticalNotes: dto.criticalNotes, isReleasedToPatient: dto.isReleasedToPatient ?? false, ...(dto.isReleasedToPatient ? { releasedAt: new Date(), releasedByMembershipId: c.membershipId } : {}) },
@@ -421,6 +422,7 @@ export class ClinicalOrdersRepository {
     return this.database.withClinicContext(proof, clinicId, ['clinical.results.release'], async (tx, c) => {
       const result = await tx.clinicalOrderResult.findFirst({ where: { clinicId: c.clinicId, id: resultId } });
       if (!result) throw new NotFoundException('Diagnostic result not found');
+      if (dto.isReleasedToPatient && result.isCritical && !result.criticalAcknowledgedAt) throw new ConflictException('CRITICAL_RESULT_ACKNOWLEDGMENT_REQUIRED');
       if (dto.expectedVersion !== undefined && result.version !== dto.expectedVersion) throw new ConflictException(`Version conflict: expected ${dto.expectedVersion}, actual ${result.version}`);
 
       const updated = await tx.clinicalOrderResult.update({ where: { clinicId_id: { clinicId: c.clinicId, id: resultId } }, data: { isReleasedToPatient: dto.isReleasedToPatient, releasedAt: dto.isReleasedToPatient ? new Date() : null, releasedByMembershipId: dto.isReleasedToPatient ? c.membershipId : null, version: { increment: 1 } } });
@@ -462,14 +464,17 @@ export class ClinicalOrdersRepository {
 
       const documentId = randomUUID();
       const encrypted = await this.crypto.storeEncryptedDocument(c.clinicId, documentId, fileBuffer, dto.mimeType);
-
-      const created = await tx.clinicalDocument.create({
-        data: { id: documentId, clinicId: c.clinicId, patientId: dto.patientId, encounterId: dto.encounterId, orderId: dto.orderId, resultId: dto.resultId, documentType: dto.documentType, title: dto.title, fileName: dto.fileName, mimeType: encrypted.detectedMime, fileSizeBytes: encrypted.fileSizeBytes, storageKey: encrypted.storageKey, contentSha256: encrypted.contentSha256, encryptionIv: encrypted.encryptionIv, encryptionTag: encrypted.encryptionTag, isConfidential: dto.isConfidential ?? false, uploadedByMembershipId: c.membershipId },
-        include: { patient: { select: { id: true, fullName: true, patientNumber: true } }, uploadedBy: { select: { id: true, user: { select: { name: true } } } } },
-      });
-
-      await this.audit.record({ clinicId: c.clinicId, actorId: c.userId, action: 'clinical.document.upload', category: 'CLINICAL', targetType: 'ClinicalDocument', targetId: created.id, metadata: { documentType: created.documentType, title: created.title, contentSha256: created.contentSha256 } });
-      return { ...created, fileSizeBytes: Number(created.fileSizeBytes) };
+      try {
+        const created = await tx.clinicalDocument.create({
+          data: { id: documentId, clinicId: c.clinicId, patientId: dto.patientId, encounterId: dto.encounterId, orderId: dto.orderId, resultId: dto.resultId, documentType: dto.documentType, title: dto.title, fileName: dto.fileName, mimeType: encrypted.detectedMime, fileSizeBytes: encrypted.fileSizeBytes, storageKey: encrypted.storageKey, contentSha256: encrypted.contentSha256, encryptionIv: encrypted.encryptionIv, encryptionTag: encrypted.encryptionTag, isConfidential: dto.isConfidential ?? false, uploadedByMembershipId: c.membershipId },
+          include: { patient: { select: { id: true, fullName: true, patientNumber: true } }, uploadedBy: { select: { id: true, user: { select: { name: true } } } } },
+        });
+        await this.audit.record({ clinicId: c.clinicId, actorId: c.userId, action: 'clinical.document.upload', category: 'CLINICAL', targetType: 'ClinicalDocument', targetId: created.id, metadata: { documentType: created.documentType, integrityRecorded: true } });
+        return { ...created, fileSizeBytes: Number(created.fileSizeBytes) };
+      } catch (error) {
+        await this.crypto.removeDocument(encrypted.storageKey).catch(() => undefined);
+        throw error;
+      }
     });
   }
 
@@ -502,7 +507,7 @@ export class ClinicalOrdersRepository {
 
       const buffer = await this.crypto.retrieveEncryptedDocument(doc.storageKey, doc.contentSha256, doc.encryptionIv, doc.encryptionTag);
 
-      await this.audit.record({ clinicId: c.clinicId, actorId: c.userId, action: 'clinical.document.download', category: 'CLINICAL', targetType: 'ClinicalDocument', targetId: doc.id, metadata: { fileName: doc.fileName } });
+      await this.audit.record({ clinicId: c.clinicId, actorId: c.userId, action: 'clinical.document.download', category: 'CLINICAL', targetType: 'ClinicalDocument', targetId: doc.id, metadata: { documentType: doc.documentType } });
       return { buffer, fileName: doc.fileName, mimeType: doc.mimeType, contentSha256: doc.contentSha256 };
     });
   }

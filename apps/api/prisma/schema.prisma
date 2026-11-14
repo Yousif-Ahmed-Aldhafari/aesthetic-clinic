@@ -220,6 +220,10 @@ model Clinic {
   clinicalOrders ClinicalOrder[]
   clinicalOrderResults ClinicalOrderResult[]
   clinicalDocuments ClinicalDocument[]
+  clinicalFormDefinitions ClinicalFormDefinition[]
+  clinicalFormVersions ClinicalFormDefinitionVersion[]
+  clinicalFormResponses ClinicalFormResponse[]
+  clinicalFormAmendments ClinicalFormResponseAmendment[]
 
   @@index([status, createdAt])
 }
@@ -259,6 +263,7 @@ model ClinicBranch {
   branchClinicalPrivileges PractitionerClinicalPrivilege[]
   generalClinicalServices GeneralClinicalService[]
   clinicalOrders ClinicalOrder[]
+  clinicalFormResponses ClinicalFormResponse[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, code])
@@ -488,6 +493,12 @@ model ClinicMembership {
   recordedClinicalResults ClinicalOrderResult[] @relation("ResultRecorder")
   verifiedClinicalResults ClinicalOrderResult[] @relation("ResultVerifier")
   uploadedClinicalDocuments ClinicalDocument[] @relation("DocumentUploader")
+  authoredClinicalFormDefinitions ClinicalFormDefinition[] @relation("ClinicalFormDefinitionAuthor")
+  authoredClinicalFormVersions ClinicalFormDefinitionVersion[] @relation("ClinicalFormVersionAuthor")
+  publishedClinicalFormVersions ClinicalFormDefinitionVersion[] @relation("ClinicalFormVersionPublisher")
+  authoredClinicalFormResponses ClinicalFormResponse[] @relation("ClinicalFormResponseAuthor")
+  finalizedClinicalFormResponses ClinicalFormResponse[] @relation("ClinicalFormResponseFinalizer")
+  authoredClinicalFormAmendments ClinicalFormResponseAmendment[] @relation("ClinicalFormAmendmentAuthor")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -646,6 +657,7 @@ model Patient {
   clinicalOrders ClinicalOrder[]
   clinicalOrderResults ClinicalOrderResult[]
   clinicalDocuments ClinicalDocument[]
+  clinicalFormResponses ClinicalFormResponse[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -707,6 +719,7 @@ model ClinicalEncounter {
   prescriptions MedicationPrescription[]
   clinicalOrders ClinicalOrder[]
   clinicalDocuments ClinicalDocument[]
+  clinicalFormResponses ClinicalFormResponse[]
   @@unique([clinicId,id])
   @@unique([clinicId,visitId])
   @@index([clinicId,patientId,createdAt,id])
@@ -4173,6 +4186,8 @@ model MedicalSpecialty {
   clinicalPrivileges PractitionerClinicalPrivilege[]
   generalClinicalServices GeneralClinicalService[]
   clinicalOrders ClinicalOrder[]
+  clinicalFormDefinitions ClinicalFormDefinition[]
+  clinicalFormResponses ClinicalFormResponse[]
 
   @@index([isActive, classification])
 }
@@ -4734,6 +4749,7 @@ model GeneralClinicalService {
   branch        ClinicBranch?     @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   clinicService ClinicService?    @relation(fields: [clinicId, clinicServiceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   orders        ClinicalOrder[]
+  clinicalFormDefinitions ClinicalFormDefinition[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, serviceCode])
@@ -4870,4 +4886,153 @@ model ClinicalDocument {
   @@index([clinicId, patientId, documentType])
   @@index([clinicId, orderId])
   @@index([clinicId, resultId])
+}
+
+// ============================================================================
+// Phase 6.5: Versioned Structured Clinical Forms
+// ============================================================================
+
+enum ClinicalFormDefinitionStatus {
+  ACTIVE
+  RETIRED
+  ARCHIVED
+}
+
+enum ClinicalFormVersionStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum ClinicalFormCategory {
+  CONSULTATION
+  ASSESSMENT
+  INTAKE
+  FOLLOW_UP
+  OTHER
+}
+
+enum ClinicalFormResponseStatus {
+  DRAFT
+  SUBMITTED
+  FINALIZED
+  AMENDED
+  ENTERED_IN_ERROR
+}
+
+model ClinicalFormDefinition {
+  id                 String                       @id @default(uuid()) @db.Uuid
+  clinicId           String                       @db.Uuid
+  stableKey          String                       @db.VarChar(100)
+  nameAr             String                       @db.VarChar(200)
+  nameEn             String?                      @db.VarChar(200)
+  category           ClinicalFormCategory
+  specialtyId        String                       @db.Uuid
+  serviceId          String?                      @db.Uuid
+  status             ClinicalFormDefinitionStatus @default(ACTIVE)
+  currentVersion     Int                          @default(1)
+  createdByMembershipId String                    @db.Uuid
+  version            Int                          @default(1)
+  createdAt          DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                     @updatedAt @db.Timestamptz(3)
+
+  clinic             Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  specialty          MedicalSpecialty             @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  service            GeneralClinicalService?      @relation(fields: [clinicId, serviceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy          ClinicMembership             @relation("ClinicalFormDefinitionAuthor", fields: [clinicId, createdByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  versions           ClinicalFormDefinitionVersion[]
+  responses          ClinicalFormResponse[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, stableKey])
+  @@index([clinicId, specialtyId, status])
+}
+
+model ClinicalFormDefinitionVersion {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  clinicId              String                    @db.Uuid
+  definitionId          String                    @db.Uuid
+  versionNumber         Int
+  status                ClinicalFormVersionStatus @default(DRAFT)
+  validationSchema      Json                      @db.JsonB
+  presentationSchema    Json                      @db.JsonB
+  compatibilityMetadata Json?                     @db.JsonB
+  schemaDialect         String                    @default("https://json-schema.org/draft/2020-12/schema") @db.VarChar(100)
+  schemaDigest          String                    @db.Char(64)
+  authorMembershipId    String                    @db.Uuid
+  publishedByMembershipId String?                 @db.Uuid
+  publishedAt           DateTime?                 @db.Timestamptz(3)
+  retiredAt             DateTime?                 @db.Timestamptz(3)
+  version               Int                       @default(1)
+  createdAt             DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic                Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  definition            ClinicalFormDefinition    @relation(fields: [clinicId, definitionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  author                ClinicMembership          @relation("ClinicalFormVersionAuthor", fields: [clinicId, authorMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  publishedBy           ClinicMembership?         @relation("ClinicalFormVersionPublisher", fields: [clinicId, publishedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  responses             ClinicalFormResponse[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, definitionId, versionNumber])
+  @@index([clinicId, definitionId, status, versionNumber])
+}
+
+model ClinicalFormResponse {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  clinicId              String                     @db.Uuid
+  patientId             String                     @db.Uuid
+  encounterId           String                     @db.Uuid
+  formDefinitionId      String                     @db.Uuid
+  formVersionId         String                     @db.Uuid
+  specialtyId           String                     @db.Uuid
+  branchId              String                     @db.Uuid
+  authorMembershipId    String                     @db.Uuid
+  finalizedByMembershipId String?                   @db.Uuid
+  status                ClinicalFormResponseStatus @default(DRAFT)
+  responseData          Json                       @db.JsonB
+  contentDigest         String                     @db.Char(64)
+  submittedAt           DateTime?                  @db.Timestamptz(3)
+  finalizedAt           DateTime?                  @db.Timestamptz(3)
+  enteredInErrorReason  String?                    @db.VarChar(1000)
+  version               Int                        @default(1)
+  createdAt             DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                   @updatedAt @db.Timestamptz(3)
+
+  clinic                Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient               Patient                    @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter             ClinicalEncounter          @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  definition            ClinicalFormDefinition     @relation(fields: [clinicId, formDefinitionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  formVersion           ClinicalFormDefinitionVersion @relation(fields: [clinicId, formVersionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  specialty             MedicalSpecialty           @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch                ClinicBranch               @relation(fields: [clinicId, branchId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  author                ClinicMembership           @relation("ClinicalFormResponseAuthor", fields: [clinicId, authorMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  finalizedBy           ClinicMembership?          @relation("ClinicalFormResponseFinalizer", fields: [clinicId, finalizedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  amendments            ClinicalFormResponseAmendment[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, encounterId, createdAt])
+  @@index([clinicId, authorMembershipId, status, updatedAt])
+  @@index([clinicId, formVersionId])
+}
+
+model ClinicalFormResponseAmendment {
+  id                 String               @id @default(uuid()) @db.Uuid
+  clinicId           String               @db.Uuid
+  responseId         String               @db.Uuid
+  authorMembershipId String               @db.Uuid
+  sequence           Int
+  reason             String               @db.VarChar(1000)
+  previousDigest     String               @db.Char(64)
+  amendedData        Json                 @db.JsonB
+  contentDigest      String               @db.Char(64)
+  createdAt          DateTime             @default(now()) @db.Timestamptz(3)
+
+  clinic             Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  response           ClinicalFormResponse @relation(fields: [clinicId, responseId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  author             ClinicMembership     @relation("ClinicalFormAmendmentAuthor", fields: [clinicId, authorMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, responseId, sequence])
+  @@index([clinicId, responseId, createdAt])
 }

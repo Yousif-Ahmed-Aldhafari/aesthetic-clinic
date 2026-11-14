@@ -482,3 +482,7 @@ Every future step of Phase 6 must adhere to the rigorous verification standard e
 ## 12. Conclusion & Architectural Assessment
 
 The architecture defined in this document establishes a clean, decoupled, and extensible foundation for Lamssa's expansion into general medical practice. By leveraging the three-layer architecture (Operational Core, Clinical Foundation, Specialty Workspaces), adopting Approach B for aesthetic compatibility, and enforcing multi-tier clinical privileging, Lamssa achieves true multi-specialty healthcare capability while preserving 100% of its existing aesthetic medicine features and clinical integrity.
+
+## Phase 6.5 structured forms
+
+The shared clinical foundation now includes a clinic-owned, specialty-aware form layer. Stable definitions, immutable published JSON Schema 2020-12 versions, assigned-practitioner responses, and append-only amendments remain subordinate to relational authoritative clinical facts. See [structured-clinical-forms.md](structured-clinical-forms.md).

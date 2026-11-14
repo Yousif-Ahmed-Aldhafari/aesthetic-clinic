@@ -1491,3 +1491,7 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Decoupled Medication Reconciliation**: Chronic and acute regimens tracked via `MedicationRecord` with reconciliation provenance, strictly decoupled from physical inventory dispensing.
 - **Controlled Outpatient Prescriptions**: Atomic sequential numbering (`RX-000001`) via `ClinicPrescriptionCounter`, formal state machine lifecycle (`DRAFT` → `PENDING_REVIEW` → `SIGNED` → `CANCELLED` / `SUPERSEDED`), mandatory `MEDICATION_PRESCRIBE` clinical privilege check, cryptographic SHA-256 tamper-evident digest sealing, and database immutability triggers (`prescription_immutability_guard()`, `prescription_item_guard()`, `clinical_observation_guard()`).
 - **Relational & Security Invariants**: 105 total tables under PostgreSQL `FORCE ROW LEVEL SECURITY`, 90 locked `lamssa_security` functions (`search_path = pg_catalog, pg_temp`), composite unique keys `(clinicId, id)`, immutable `clinicId` triggers, and zero cross-tenant leakage. See [docs/shared-clinical-foundation.md](shared-clinical-foundation.md).
+
+## Phase 6.5 clinical forms boundary
+
+`ClinicalFormsModule` is the only HTTP/domain entry point for versioned specialty forms. `ClinicalFormsRepository` uses `TenantDatabaseService`; schema validation is isolated in `ClinicalFormValidationService`. Four FORCE RLS tables preserve exact form versions and append-only amendments. Administrative template permissions do not grant clinical response access. See [structured-clinical-forms.md](structured-clinical-forms.md).

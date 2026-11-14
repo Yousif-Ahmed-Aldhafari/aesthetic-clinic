@@ -211,3 +211,7 @@ Following Phase 7 production certification, Lamssa will introduce specialized cl
 - Ophthalmic visual acuity (Snellen / LogMAR fractions) and refraction charting (Sphere, Cylinder, Axis, Add, Pupillary Distance).
 - Intraocular pressure tonometry (Goldmann / Non-contact).
 - Orthopedic and Physiotherapy Range of Motion (ROM) goniometric tracking and muscle strength grading.
+
+## Step 6.5 capability boundary
+
+General medicine, dermatology, pediatrics, and aesthetics have configurable neutral forms and specialty terminology. This is documentation infrastructure, not a complete dermatology, pediatrics, dentistry, or other specialty product. Advanced modules remain scheduled for Phase 8 and later.

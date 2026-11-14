@@ -404,3 +404,7 @@ patients.update، دون حذف نهائي. تفاصيل API وRLS في دليل
 4. **الخدمات الطبية العامة، الأوامر التشخيصية والمستندات المشفرة (الخطوة 6.4)**: دليل الخدمات الطبية العامة (`GeneralClinicalService`)، الأوامر والتحاليل التشخيصية المتسلسلة (`ORD-XXXXXX`)، تسجيل واعتماد نتائج الفحوصات والتعامل الإلزامي مع القيم الحرجة، والتخزين المشفر للمستندات السريرية بـ AES-256-GCM واشتقاق مفاتيح HKDF-SHA256 مع الحجز القانوني. إثبات قاطع لإجراء استشارات طبية وفواتير كاملة دون إنشاء أي سجلات في جداول العلاج التجميلي (`TreatmentPlan` و`ProcedureExecution`).
 
 تفاصيل الخدمات والأوامر والمستندات المشفرة في [دليل الخدمات الطبية والأوامر التشخيصية](docs/general-clinical-services-orders.md).
+
+### Structured specialty forms
+
+Phase 6.5 adds Arabic RTL, specialty-aware clinical templates with server-side JSON Schema 2020-12 validation, immutable published versions, assigned-practitioner responses, finalization, and append-only amendments. Run the standard database migration/grant commands, then install templates from clinic specialty settings. See [`docs/structured-clinical-forms.md`](docs/structured-clinical-forms.md) for authorization and clinical limits.

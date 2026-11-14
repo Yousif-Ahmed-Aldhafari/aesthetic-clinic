@@ -53,7 +53,7 @@ export const GeneralConsultationWorkspace: React.FC<GeneralConsultationWorkspace
         patientId,
         generalClinicalServiceId: selectedService.id,
         requestKey,
-      });
+      }, csrfToken);
       setBillingSuccess(`تم إصدار مسودة فاتورة بنجاح للخدمة: ${selectedService.nameAr} (${(selectedService.basePriceMinor / 100).toFixed(2)} ر.س)`);
     } catch (err: unknown) {
       setBillingError((err as Error).message ?? 'فشل في إنشاء مسودة الفاتورة للخدمة');
@@ -75,7 +75,7 @@ export const GeneralConsultationWorkspace: React.FC<GeneralConsultationWorkspace
       await createDraftInvoiceForOrder(clinicId, {
         orderId: orderIdForBilling.trim(),
         requestKey,
-      });
+      }, csrfToken);
       setBillingSuccess('تم إصدار مسودة فاتورة بنجاح للأمر التشخيصي');
       setOrderIdForBilling('');
     } catch (err: unknown) {
@@ -87,6 +87,7 @@ export const GeneralConsultationWorkspace: React.FC<GeneralConsultationWorkspace
 
   return (
     <div
+      className="general-consultation-workspace"
       dir="rtl"
       style={{
         background: '#ffffff',

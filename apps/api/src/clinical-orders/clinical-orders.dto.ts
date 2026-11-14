@@ -518,6 +518,7 @@ export class CreateClinicalDocumentDto {
   mimeType!: string;
 
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) => value === 'true' || value === true ? true : value === 'false' || value === false ? false : value)
   @IsBoolean()
   isConfidential?: boolean = false;
 

@@ -354,9 +354,9 @@ describe('Clinical Orders Role Permissions Verification', () => {
     assert.ok(perms.includes('clinical.services.manage'));
   });
 
-  it('CLINIC_OWNER, CLINIC_ADMIN, RECEPTIONIST, and ACCOUNTANT have zero clinical.* permissions', () => {
+  it('nonclinical roles have no order, result, document, or service permissions', () => {
     for (const role of ['CLINIC_OWNER', 'CLINIC_ADMIN', 'RECEPTIONIST', 'ACCOUNTANT'] as const) {
-      assert.ok(!permissionsFor(role).some(p => p.startsWith('clinical.')));
+      assert.ok(!permissionsFor(role).some(p => ['clinical.orders.','clinical.results.','clinical.documents.','clinical.services.'].some(prefix => p.startsWith(prefix))));
     }
   });
 });

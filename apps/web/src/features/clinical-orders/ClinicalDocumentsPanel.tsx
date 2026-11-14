@@ -35,6 +35,7 @@ export const ClinicalDocumentsPanel: React.FC<ClinicalDocumentsPanelProps> = ({
   encounterId,
   orderId,
   resultId,
+  csrfToken,
   readOnly = false,
 }) => {
   const [documents, setDocuments] = useState<ClinicalDocument[]>([]);
@@ -105,7 +106,7 @@ export const ClinicalDocumentsPanel: React.FC<ClinicalDocumentsPanelProps> = ({
         documentType: uploadType,
         title: uploadTitle.trim(),
         isConfidential: uploadConfidential,
-      });
+      }, csrfToken);
 
       setSuccessMessage('تم رفع المستند وتشفيره بنجاح بنظام AES-256-GCM');
       setSelectedFile(null);
@@ -129,7 +130,7 @@ export const ClinicalDocumentsPanel: React.FC<ClinicalDocumentsPanelProps> = ({
         await updateClinicalDocument(clinicId, doc.id, {
           isLegalHold: false,
           legalHoldReason: '',
-        });
+        }, csrfToken);
         setSuccessMessage('تم إلغاء الحجز القانوني عن المستند');
         await loadDocuments();
       } catch (err: unknown) {
@@ -144,7 +145,7 @@ export const ClinicalDocumentsPanel: React.FC<ClinicalDocumentsPanelProps> = ({
         await updateClinicalDocument(clinicId, doc.id, {
           isLegalHold: true,
           legalHoldReason: reason.trim(),
-        });
+        }, csrfToken);
         setSuccessMessage('تم تفعيل الحجز القانوني الصارم على المستند بنجاح');
         await loadDocuments();
       } catch (err: unknown) {
@@ -157,7 +158,7 @@ export const ClinicalDocumentsPanel: React.FC<ClinicalDocumentsPanelProps> = ({
     try {
       await updateClinicalDocument(clinicId, doc.id, {
         isConfidential: !doc.isConfidential,
-      });
+      }, csrfToken);
       setSuccessMessage(`تم ${!doc.isConfidential ? 'تقييد سرية' : 'إلغاء تقييد سرية'} المستند`);
       await loadDocuments();
     } catch (err: unknown) {
@@ -173,6 +174,7 @@ export const ClinicalDocumentsPanel: React.FC<ClinicalDocumentsPanelProps> = ({
 
   return (
     <div
+      className="clinical-documents-panel"
       dir="rtl"
       style={{
         background: '#ffffff',

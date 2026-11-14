@@ -62,6 +62,8 @@ export const permissions = [
   'clinical.orders.read', 'clinical.orders.create', 'clinical.orders.update', 'clinical.orders.cancel',
   'clinical.results.read', 'clinical.results.record', 'clinical.results.verify', 'clinical.results.release',
   'clinical.documents.read', 'clinical.documents.upload', 'clinical.documents.manage',
+  'clinical.form-templates.read', 'clinical.form-templates.manage', 'clinical.form-templates.publish',
+  'clinical.form-responses.read', 'clinical.form-responses.create', 'clinical.form-responses.update', 'clinical.form-responses.finalize', 'clinical.form-responses.amend',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -113,6 +115,7 @@ const administration: Permission[] = [
   'specialties.read', 'specialties.manage',
   'practitioners.profiles.read', 'practitioners.profiles.manage',
   'privileges.read', 'privileges.request',
+  'clinical.form-templates.read', 'clinical.form-templates.manage', 'clinical.form-templates.publish',
 ];
 export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>> = {
   CLINIC_OWNER: [...administration, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read', 'privacy.export'],
@@ -145,7 +148,9 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'clinical.prescriptions.read', 'clinical.prescriptions.draft', 'clinical.prescriptions.sign', 'clinical.prescriptions.cancel',
     'clinical.orders.read', 'clinical.orders.create', 'clinical.orders.update', 'clinical.orders.cancel',
     'clinical.results.read', 'clinical.results.record', 'clinical.results.verify', 'clinical.results.release',
-    'clinical.documents.read', 'clinical.documents.upload', 'clinical.documents.manage'],
+    'clinical.documents.read', 'clinical.documents.upload', 'clinical.documents.manage',
+    'clinical.form-templates.read',
+    'clinical.form-responses.read', 'clinical.form-responses.create', 'clinical.form-responses.update', 'clinical.form-responses.finalize', 'clinical.form-responses.amend'],
   RECEPTIONIST: ['clinic.branding.read', 'branches.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record',
     'packages.catalog.read', 'packages.purchases.read', 'packages.purchases.create',
     'packages.redemptions.read', 'packages.redemptions.record', 'installments.read', 'refunds.request',

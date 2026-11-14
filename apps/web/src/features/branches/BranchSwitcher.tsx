@@ -6,7 +6,7 @@ interface Props {
   clinic: ClinicContext;
   csrfToken: string;
   onAuthError?: (error: unknown) => void;
-  onBranchSwitched?: (branchId: string, branchName: string) => void;
+  onBranchSwitched?: (branchId: string, branchName: string, csrfToken: string) => void;
 }
 
 export function BranchSwitcher({ clinic, csrfToken, onAuthError, onBranchSwitched }: Props) {
@@ -40,7 +40,7 @@ export function BranchSwitcher({ clinic, csrfToken, onAuthError, onBranchSwitche
   }, [clinic.clinicId, csrfToken]);
 
   async function handleSwitch(branch: ClinicBranchItem) {
-    if (busy || branch.id === activeBranch?.id) {
+    if (busy) {
       setIsOpen(false);
       return;
     }
@@ -51,7 +51,7 @@ export function BranchSwitcher({ clinic, csrfToken, onAuthError, onBranchSwitche
       if (res.success) {
         setActiveBranch(branch);
         setIsOpen(false);
-        onBranchSwitched?.(branch.id, branch.nameAr);
+        onBranchSwitched?.(branch.id, branch.nameAr, res.csrfToken);
       }
     } catch (err: any) {
       setError(err?.message || 'تعذّر التبديل إلى هذا الفرع');
@@ -60,7 +60,7 @@ export function BranchSwitcher({ clinic, csrfToken, onAuthError, onBranchSwitche
     }
   }
 
-  if (branches.length <= 1 && !activeBranch) {
+  if (branches.length === 0) {
     return null;
   }
 

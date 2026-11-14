@@ -166,6 +166,7 @@ export class ClinicalDocumentCryptoService {
 
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.primaryKey, iv);
+    cipher.setAAD(Buffer.from(storageKey, 'utf8'));
     const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
     const tag = cipher.getAuthTag();
 
@@ -235,18 +236,23 @@ export class ClinicalDocumentCryptoService {
     let lastError: unknown;
 
     for (const key of allKeys) {
-      try {
-        const decipher = createDecipheriv('aes-256-gcm', key, iv);
-        decipher.setAuthTag(tag);
-        decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-        break;
-      } catch (err) {
-        lastError = err;
+      for (const bindIdentity of [true, false]) {
+        try {
+          const decipher = createDecipheriv('aes-256-gcm', key, iv);
+          if (bindIdentity) decipher.setAAD(Buffer.from(storageKey, 'utf8'));
+          decipher.setAuthTag(tag);
+          decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+          break;
+        } catch (err) {
+          lastError = err;
+        }
       }
+      if (decrypted) break;
     }
 
     if (!decrypted) {
-      throw new BadRequestException(`Document decryption failed: ${lastError instanceof Error ? lastError.message : 'tag verification failed'}`);
+      void lastError;
+      throw new BadRequestException('Document decryption or authentication failed');
     }
 
     const actualSha256 = createHash('sha256').update(decrypted).digest('hex');

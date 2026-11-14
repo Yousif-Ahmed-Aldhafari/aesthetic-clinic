@@ -157,6 +157,8 @@ export async function switchBranch(clinicId: string, branchId: string, csrfToken
   return api<{
     success: boolean;
     selectedBranchId: string;
+    csrfToken: string;
+    expiresAt: string;
     branch: { id: string; code: string; nameAr: string; nameEn?: string; timezone: string };
   }>(`clinics/${clinicId}/branches/switch`, 'POST', { branchId }, csrfToken);
 }

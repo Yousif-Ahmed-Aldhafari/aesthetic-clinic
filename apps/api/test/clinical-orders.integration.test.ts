@@ -312,6 +312,14 @@ describe('General Clinical Services, Orders & Documents Integration Tests', () =
     assert.equal(criticalResult.isCritical, true);
     assert.equal(criticalResult.criticalAcknowledgedAt, null);
 
+    await assert.rejects(
+      ordersRepo.releaseResultToPatient(proofDoctorA, clinicAId, criticalResult.id, {
+        isReleasedToPatient: true,
+      }),
+      /CRITICAL_RESULT_ACKNOWLEDGMENT_REQUIRED/,
+      'A critical result stays visible but cannot be released before explicit acknowledgment',
+    );
+
     // Acknowledge critical result
     const ack = await ordersRepo.acknowledgeCriticalResult(
       proofDoctorA,
@@ -425,6 +433,14 @@ describe('General Clinical Services, Orders & Documents Integration Tests', () =
     assert.equal(dbInvoice.lines.length, 1);
     assert.equal(dbInvoice.lines[0].serviceName, 'استشارة طب عام متقدمة');
     assert.equal(dbInvoice.lines[0].description, 'Advanced General Consultation');
+
+    const replay = await ordersRepo.createDraftInvoiceForGeneralService(proofOwnerA, clinicAId, {
+      patientId: patientA1Id,
+      generalClinicalServiceId: createdServiceId,
+      requestKey,
+    });
+    assert.equal(replay.id, invoice.id, 'An idempotent retry must return the same invoice');
+    assert.equal(await owner.invoice.count({ where: { clinicId: clinicAId, requestKey } }), 1);
   });
 
   it('Specialty Neutrality Proof: general medical consultation creates zero aesthetic records', async () => {

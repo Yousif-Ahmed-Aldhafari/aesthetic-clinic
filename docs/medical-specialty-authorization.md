@@ -190,3 +190,7 @@ In Step 6.3, the Clinical Privilege Engine connects directly to runtime clinical
 - **Prescription Issuance:** When a clinician signs an outpatient prescription (`POST /clinical/prescriptions/:id/sign`), `ClinicalFoundationRepository` invokes `evaluatePrivilege(membershipId, 'MEDICATION_PRESCRIBE')`.
 - **Privilege Enforcement:** If the clinician does not possess an active, approved `MEDICATION_PRESCRIBE` privilege, the transaction immediately fails closed with `403 Forbidden: Active clinical privilege 'MEDICATION_PRESCRIBE' required to sign prescriptions`.
 - **Specialty Context:** When prescribed in a specialized department, the privilege can be scoped to the specific specialty or branch.
+
+## Clinical form authorization
+
+Clinic template management is separate from response access. Owners and clinic administrators can manage templates but cannot read responses by virtue of administration. Only the assigned doctor with an active branch membership, verified qualification, active clinic/branch specialty, and approved unexpired encounter-documentation privilege can access or finalize a response. Platform administration has no implicit clinical access.

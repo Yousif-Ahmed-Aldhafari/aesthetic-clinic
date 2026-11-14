@@ -35,6 +35,7 @@ import { IntegrationsModule } from './integrations/integrations.module.js';
 import { SpecialtyModule } from './specialties/specialty.module.js';
 import { ClinicalFoundationModule } from './clinical-foundation/clinical-foundation.module.js';
 import { ClinicalOrdersModule } from './clinical-orders/clinical-orders.module.js';
+import { ClinicalFormsModule } from './clinical-forms/clinical-forms.module.js';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { ClinicalOrdersModule } from './clinical-orders/clinical-orders.module.j
     SpecialtyModule,
     ClinicalFoundationModule,
     ClinicalOrdersModule,
+    ClinicalFormsModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],
