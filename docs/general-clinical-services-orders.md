@@ -1,9 +1,9 @@
 # Lamssa — General Clinical Services, Diagnostic Orders, Results & Secure Documents
 
-**Version:** 1.0.0 (Phase 6, Step 6.4 Specification)  
-**Date:** 2026-11-13  
-**Status:** Implemented & Verified  
-**Language:** English (Technical Documentation) / Arabic-first RTL (UI Experience)  
+**Version:** 1.0.0 (Phase 6, Step 6.4 Specification)
+**Date:** 2026-11-13
+**Status:** Implemented & Verified
+**Language:** English (Technical Documentation) / Arabic-first RTL (UI Experience)
 **Target Migration:** `20261113000300_general_clinical_services_orders`
 
 ---
