@@ -1,5 +1,6 @@
 import { isIP } from 'node:net';
 import { isAbsolute } from 'node:path';
+import { validateProductionSecurity } from './production-security-validator.js';
 
 export type Environment = {
   NODE_ENV: 'development' | 'test' | 'production';
@@ -119,7 +120,7 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
 
   // Report variable names only; never interpolate secrets or raw validation input.
   if (errors.length) throw new Error(`Invalid environment variables: ${[...new Set(errors)].join(', ')}`);
-  return {
+  const envResult: Environment = {
     NODE_ENV: mode as Environment['NODE_ENV'], API_HOST: host as string,
     API_PORT: port, CORS_ORIGINS: origins, DATABASE_URL: databaseUrl,
     AUTH_CSRF_SECRET: csrfKey, AUTH_SESSION_HOURS: hours, AUTH_IDLE_MINUTES: idle,
@@ -137,4 +138,6 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     KMS_EXTERNAL_KEY_ID: typeof input.KMS_EXTERNAL_KEY_ID === 'string' ? input.KMS_EXTERNAL_KEY_ID : undefined,
     KMS_EXTERNAL_REGION: typeof input.KMS_EXTERNAL_REGION === 'string' ? input.KMS_EXTERNAL_REGION : undefined,
   };
+  validateProductionSecurity(envResult);
+  return envResult;
 }

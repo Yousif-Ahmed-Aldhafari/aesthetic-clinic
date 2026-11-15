@@ -1,5 +1,13 @@
 # Development setup
 
+## Phase 7.2 production database isolation, secret vaulting & runtime security hardening
+
+Apply `20261116000100_runtime_security_hardening` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 38.
+- Migration: `apps/api/prisma/migrations/20261116000100_runtime_security_hardening/migration.sql` hardens RLS policies on `PatientVerificationToken` and `PatientSession` to require `lamssa.session_id` for direct DML, and fortifies `SECURITY DEFINER` functions in `lamssa_security` with procedural ownership validation, expiration checks, account status verification, and anti-replay guards.
+- Secret Vault: `SecretVaultService` in `apps/api/src/config/secret-vault.service.ts` provides provider-neutral secret access, fail-closed `SecretVaultError`, irreversible SHA-256 masking (`****:<hash>`), and deep log sanitization.
+- Production Security Validator: `validateProductionSecurity` in `apps/api/src/config/production-security-validator.ts` executes on startup in production mode, enforcing database TLS, forbidding synthetic KMS, requiring HTTPS KMS endpoints, validating master key strengths, and enforcing reverse proxy single-hop rules.
+- Test suites: `apps/api/test/runtime-security-hardening.integration.test.ts` (adversarial attack vectors), `apps/api/test/config.test.ts` (production configuration validator and secret vaulting). Total tests: 226 unit tests, 348 database tests, 46 browser checks.
+
 ## Phase 7.1 sensitive data isolation, KMS architecture & cryptographic key lifecycle
 
 Apply `20261115000100_identity_isolation_and_kms` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. KMS and security endpoints reside under `/api/v1/clinics/:clinicId/security` and `/api/v1/admin/security`.

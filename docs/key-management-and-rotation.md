@@ -99,3 +99,12 @@ Legacy ciphertexts produced during earlier phases (`v1:<iv>:<tag>:<ciphertext>`)
 - Validated via legacy fallback HKDF keys.
 - Decrypted seamlessly during read operations.
 - Re-encrypted into modern `v2` envelopes upon next record update or migration run.
+
+---
+
+## 6. Runtime Secret Vaulting & Production Validation (Phase 7, Step 7.2)
+
+In Phase 7 Step 7.2, the cryptographic infrastructure was fortified with runtime secret vaulting and configuration enforcement:
+1. **`SecretVaultService`:** Provider-neutral secret retrieval with fail-closed semantics, irreversible SHA-256 fingerprint masking (`****:<hash>`), and deep log sanitization.
+2. **`validateProductionSecurity`:** Enforces mandatory database TLS, rejects `synthetic` KMS in production, requires HTTPS external endpoints with key IDs, and validates local master keys (minimum 32 characters, template-free).
+3. **Database Migration 038:** Locked RLS policies and procedures ensuring verification tokens and session minting cannot be forged or replayed. See `docs/production-runtime-security.md` for full implementation details.

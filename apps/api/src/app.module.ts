@@ -17,6 +17,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { resolve } from 'node:path';
 import { validateEnvironment } from './config/environment.js';
+import { SecretVaultService } from './config/secret-vault.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PublicBrandingController } from './clinics/public-branding.controller.js';
 import { PublicBrandingService } from './clinics/public-branding.service.js';
@@ -65,6 +66,7 @@ import { KmsModule } from './kms/kms.module.js';
     KmsModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
-  providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],
+  providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],
+  exports: [SecretVaultService],
 })
 export class AppModule {}

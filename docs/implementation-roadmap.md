@@ -295,6 +295,19 @@ production use remains gated on authentication, isolation and operational contro
     233 unit tests, 336 database tests, 47 browser checks, 36 migrations, synthetic clinical journeys, and financial integrity.
     See [phase-6-final-acceptance.md](phase-6-final-acceptance.md).
 
+27. **7.1 — Sensitive Data Isolation, KMS Architecture & Cryptographic Key Lifecycle (implemented).**
+    Independent audit of 10 identity tables, enforcement of `FORCE RLS` on patient accounts/tokens/sessions, deployment
+    of additive Migration 037, introduction of `KmsKeyRegistry` and two-tier envelope encryption (`v2` envelope format
+    with AAD tenant context binding), rotation migration service, and comprehensive key lifecycle tests.
+    See [phase-7-step-7-1-security-audit.md](phase-7-step-7-1-security-audit.md) and [key-management-and-rotation.md](key-management-and-rotation.md).
+
+28. **7.2 — Production Database Isolation, Secret Vaulting & Runtime Security Hardening (implemented).**
+    PostgreSQL role separation (`lamssa_migrator` vs `lamssa_runtime`), additive Migration 038, `PatientVerificationToken`
+    and `PatientSession` RLS policies requiring session IDs, `SECURITY DEFINER` anti-tamper procedure hardening,
+    `SecretVaultService` with irreversible masking and log sanitization, centralized `validateProductionSecurity`, and
+    30 adversarial negative security attack vector test validations.
+    See [production-runtime-security.md](production-runtime-security.md) and [phase-7-step-7-2-acceptance.md](phase-7-step-7-2-acceptance.md).
+
 
 
 ## Migration discipline

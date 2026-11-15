@@ -218,8 +218,8 @@ if (!enabled) {
     assert(meta.ciphertextSha256);
     assert(meta.plaintextSize > 0);
     assert(meta.ciphertextSize > 0);
-    assert.equal(meta.latestMigration, '20261115000100_identity_isolation_and_kms');
-    assert(meta.migrationCount >= 37, 'Must record all applied migrations');
+    assert.equal(meta.latestMigration, '20261116000100_runtime_security_hardening');
+    assert(meta.migrationCount >= 38, 'Must record all applied migrations');
 
     // Completeness verification: all public tables tracked
     assert(meta.tableCount >= 49, 'Must track all 49+ public tables');

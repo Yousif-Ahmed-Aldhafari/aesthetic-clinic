@@ -92,8 +92,12 @@ That key grants metrics only. Diagnostics and alerts require an active
 
 ## Production configuration and release
 
-Startup requires HTTPS CORS origins, strong CSRF/MFA/monitoring secrets, an absolute
-asset path, explicit hosts and one trusted proxy hop. `DATABASE_URL` is runtime-only.
+Startup requires HTTPS CORS origins, strong CSRF/MFA/clinical-media/KMS/monitoring secrets, an absolute
+asset path, explicit hosts, mandatory database TLS encryption (`sslmode=require`), and exactly one trusted
+proxy hop (`TRUST_PROXY_HOPS=1`). Production security configuration is enforced at boot by
+`validateProductionSecurity` (`apps/api/src/config/production-security-validator.ts`). Secrets are
+retrieved via `SecretVaultService` with fail-closed error handling and irreversible masking (`****:<hash>`).
+`DATABASE_URL` is runtime-only and subject to `FORCE RLS` under `lamssa_runtime`.
 Keep `MIGRATION_DATABASE_URL`, database admin credentials and the backup key outside
 the API service. Never expose secrets through `VITE_*`, browser storage or image layers.
 
