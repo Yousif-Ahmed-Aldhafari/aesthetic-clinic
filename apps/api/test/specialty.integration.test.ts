@@ -445,4 +445,72 @@ describe('Medical Specialty Registry, Qualifications & Clinical Privilege Engine
       'Restricted runtime credentials must be denied DELETE on PractitionerClinicalPrivilege',
     );
   });
+
+  it('11. Duplicate clinic-wide clinical privileges with nullable branch IDs are rejected by unique constraint', async () => {
+    const proofDoc2 = verifiedSessions.issue(userDoctorA2Id, sessionDoctorA2Id);
+
+    // Doctor A2 already requested and was approved for MEDICATION_PRESCRIBE with branchId: null (CLINIC_WIDE)
+    // 1) Repository application layer rejects duplicate request
+    await assert.rejects(
+      async () => {
+        await specialtyRepo.requestClinicalPrivilege(proofDoc2, clinicAId, membershipDoctorA2Id, {
+          specialtyCode: 'GENERAL_MEDICINE',
+          privilegeCode: 'MEDICATION_PRESCRIBE',
+          scope: 'CLINIC_WIDE',
+        });
+      },
+      /Clinical privilege is already (approved|requested)|Unique constraint failed/i,
+      'Duplicate clinic-wide privilege with nullable branchId must be rejected by application layer',
+    );
+
+    // 2) Direct DB insert with NULL branchId is rejected by unique index PractitionerClinicalPrivilege_unique_scope_key
+    const profile = await owner.practitionerProfile.findUniqueOrThrow({
+      where: { clinicId_membershipId: { clinicId: clinicAId, membershipId: membershipDoctorA2Id } },
+    });
+    const specialty = await owner.medicalSpecialty.findUniqueOrThrow({ where: { code: 'GENERAL_MEDICINE' } });
+
+    await assert.rejects(
+      async () => {
+        await owner.practitionerClinicalPrivilege.create({
+          data: {
+            clinicId: clinicAId,
+            branchId: null,
+            practitionerProfileId: profile.id,
+            specialtyId: specialty.id,
+            privilegeCode: 'MEDICATION_PRESCRIBE',
+            scope: 'CLINIC_WIDE',
+            status: 'REQUESTED',
+          },
+        });
+      },
+      /Unique constraint failed|duplicate key value/i,
+      'PostgreSQL unique index with COALESCE(branchId, ...) must reject duplicate clinic-wide privilege',
+    );
+  });
+
+  it('12. Expired practitioner license or expired qualification blocks clinical privilege evaluation', async () => {
+    const proofDoc2 = verifiedSessions.issue(userDoctorA2Id, sessionDoctorA2Id);
+
+    // Set Doctor A2 license expiration to yesterday
+    const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await owner.practitionerProfile.update({
+      where: { clinicId_membershipId: { clinicId: clinicAId, membershipId: membershipDoctorA2Id } },
+      data: { licenseExpirationDate: pastDate },
+    });
+
+    const evalExpired = await specialtyRepo.evaluatePrivilege(proofDoc2, clinicAId, {
+      practitionerMembershipId: membershipDoctorA2Id,
+      specialtyCode: 'GENERAL_MEDICINE',
+      privilegeCode: 'MEDICATION_PRESCRIBE',
+      branchId: branchA1Id,
+    });
+    assert.equal(evalExpired.allowed, false);
+    assert.match(evalExpired.reason || '', /expired/i);
+
+    // Restore license expiration date for subsequent tests
+    await owner.practitionerProfile.update({
+      where: { clinicId_membershipId: { clinicId: clinicAId, membershipId: membershipDoctorA2Id } },
+      data: { licenseExpirationDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) },
+    });
+  });
 });

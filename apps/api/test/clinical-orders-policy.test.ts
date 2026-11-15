@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { copyFile } from 'node:fs/promises';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { ConfigService } from '@nestjs/config';
@@ -334,6 +335,34 @@ describe('ClinicalDocumentCryptoService Unit Tests', () => {
     );
 
     await cryptoService.removeDocument(stored.storageKey);
+  });
+
+  it('retrieveEncryptedDocument: rejects ciphertext substitution across different document storage keys due to AAD mismatch', async () => {
+    const clinicId = '00000000-0000-4000-8000-000000000001';
+    const documentId1 = randomUUID();
+    const documentId2 = randomUUID();
+    const sample = Buffer.from('%PDF-1.4 authentic medical report');
+
+    const stored1 = await cryptoService.storeEncryptedDocument(
+      clinicId,
+      documentId1,
+      sample,
+      'application/pdf',
+    );
+
+    // If doc1 ciphertext is copied to doc2 storageKey, AAD tag validation fails
+    const fakeDoc2StorageKey = `${clinicId}/docs/${documentId2}.enc`;
+    const doc1Path = await (cryptoService as any).resolvePath(stored1.storageKey);
+    const doc2Path = await (cryptoService as any).resolvePath(fakeDoc2StorageKey, true);
+    await copyFile(doc1Path, doc2Path);
+
+    await assert.rejects(
+      cryptoService.retrieveEncryptedDocument(fakeDoc2StorageKey, stored1.contentSha256),
+      /Document decryption or authentication failed|decryption failed|Unsupported state/i,
+    );
+
+    await cryptoService.removeDocument(stored1.storageKey);
+    await cryptoService.removeDocument(fakeDoc2StorageKey);
   });
 });
 

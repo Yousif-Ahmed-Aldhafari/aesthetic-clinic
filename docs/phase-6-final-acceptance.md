@@ -23,10 +23,10 @@ This independent acceptance audit evaluated all Phase 6 deliverables across Step
 5. **Step 6.5 (Structured Clinical Forms & Specialty Workspaces):** Dynamic form definitions (`ClinicalFormDefinition`), JSON Schema 2020-12 validation, version immutability (`ClinicalFormDefinitionVersion`), finalized responses (`ClinicalFormResponse`), attributable amendments (`ClinicalFormResponseAmendment`), Arabic RTL dynamic form renderer, and context-aware medical terminology (`useTerminology()`).
 
 All 36 migrations are applied and up-to-date across both `lamssa_dev` and `lamssa_test`. The full test matrix passes:
-- **Unit Tests:** **233 passing** (26 web, 207 api), 0 failing, 0 skipped.
-- **Database Integration Tests:** **336 passing**, 1 intentionally skipped (unprivileged restore drill), 0 failing across 14 test suites.
+- **Unit Tests:** **234 passing** (26 web, 208 api), 0 failing, 0 skipped.
+- **Database Integration Tests:** **338 passing**, 1 intentionally skipped (unprivileged restore drill), 0 failing across 14 test suites.
 - **Browser Smoke Suite:** **47 interactive checks passing** in headless Chrome with 0 runtime errors.
-- **PostgreSQL Security:** **114 core tenant tables** under `FORCE ROW LEVEL SECURITY` (143 total tables in public schema); **96 functions** in schema `lamssa_security` (28 locked `SECURITY DEFINER` functions with fixed `search_path=pg_catalog, pg_temp` and zero public execute grants).
+- **PostgreSQL Security:** **143 tables** under `FORCE ROW LEVEL SECURITY` (114 domain tables added post-Phase-1 plus 29 Phase 1 tenant tables); **1 global reference table** (`MedicalSpecialty`) under `ENABLE RLS`; **11 platform/auth tables** with NO RLS; **96 functions** in schema `lamssa_security` (28 locked `SECURITY DEFINER` functions with fixed `search_path=pg_catalog, pg_temp` and zero public execute grants).
 
 ---
 
@@ -65,7 +65,11 @@ During Step 6.5 and Step 6.6 verification, the implementation of Step 6.4 was au
 ## 4. Database Security & PostgreSQL RLS Audit
 
 ### Tenant Isolation & Row-Level Security
-- Every tenant-scoped table enforces `FORCE ROW LEVEL SECURITY`.
+- **Full Catalog Reconciliation (155 public tables total):**
+  - **143 tables under `FORCE ROW LEVEL SECURITY`:** Every tenant-owned table in the database strictly enforces `FORCE ROW LEVEL SECURITY`. This includes the 114 domain tables added across Phases 2 through 6 (which are explicitly enumerated in `rls.integration.test.ts`), plus the 29 Phase 1 tenant operational tables (`Appointment`, `AuditEvent`, `BookableResource`, `ClinicAsset`, `ClinicBillingProfile`, `ClinicIdentityAuditEvent`, `ClinicIdentityState`, `ClinicInvoiceCounter`, `ClinicService`, `ClinicSlugReservation`, `FinancialAuditEvent`, `InstallmentPlanCounter`, `Invoice`, `InvoiceLine`, `Patient`, `PatientCounter`, `PatientExport`, `Payment`, `PaymentReversal`, `PrivacyRequest`, `QueueCommand`, `QueueConfiguration`, `QueueCounter`, `QueueTicket`, `ResourceAvailability`, `ResourceTimeOff`, `RetentionPolicy`, `SchedulingState`, `Visit`).
+  - **1 table under `ENABLE ROW LEVEL SECURITY` (without FORCE):** `MedicalSpecialty` (the global reference catalog of medical specialties). As a shared non-tenant reference table without `clinicId`, it allows public SELECT (`specialty_public_select`) and restricts mutations to `maintenance_owner`.
+  - **11 tables with NO RLS:** System migration ledger (`_prisma_migrations`) and 10 platform-level non-tenant authentication/identity tables (`LoginBucket`, `MfaChallenge`, `MfaRecoveryCode`, `PatientAccount`, `PatientPortalAuditEvent`, `PatientSession`, `PatientVerificationToken`, `Session`, `User`, `UserMfa`).
+  - **0 tables missing RLS policies:** Every single table under `FORCE ROW LEVEL SECURITY` has verified policies (`ALL`, `DELETE`, `INSERT`, `SELECT`, `UPDATE`).
 - Runtime database connections execute under restricted credentials (`lamssa_dev_app`, `lamssa_test_app`), with table privileges limited to necessary operations (`SELECT`, `INSERT`, `UPDATE`). Direct SQL `DELETE` is blocked on immutable clinical and audit records.
 - Standardized `maintenance_owner` bypass policies (`FOR ALL TO owner USING (true) WITH CHECK (true)`) ensure administrative tools and migrations run reliably without relying on custom GUC bypass flags (`lamssa.internal_security_lookup` was permanently eradicated in Phase 5 Step 5.6).
 - All tenant policies evaluate `lamssa_security.context_allows("clinicId")`.
@@ -194,6 +198,29 @@ The structured clinical forms engine was tested against adversarial inputs in `c
 5. **Signed Form Modification:** Direct SQL update to finalized form response payload. Result: Aborted by database trigger `clinical_form_response_guard` with SQL exception `42501`.
 - **Verification:** All adversarial actions failed closed.
 
+### Adversarial Test Evidence Matrix (18 Critical Security Controls)
+
+| # | Security Scenario | Test File | Test Name | Specific Assertion / Mechanism | Result |
+|---|---|---|---|---|---|
+| 1 | Cross-clinic clinical record access | `clinical-orders.integration.test.ts` | `General Clinical Service: creation and cross-clinic isolation` | `const itemsB = await repo.listServices(docBProof, clinicB); assert.equal(itemsB.some(s => s.code === serviceCode), false);` | ✅ PASS |
+| 2 | Same-clinic unauthorized patient record access | `clinical.integration.test.ts` | `assigned doctor, clinic and CSRF boundaries fail closed` | `assert.equal((await a.request(a.path(0,'/encounters'),'POST',{patientId:patients[1],content})).status, 404);` | ✅ PASS |
+| 3 | Clinic administrator reading clinical records | `clinical-forms.integration.test.ts` | `creates and publishes an exact immutable version while keeping administrators out of responses` | `await assert.rejects(repo.startResponse(adminProof, clinicA, ...), /Forbidden/i); await assert.rejects(repo.listResponses(adminProof, clinicA, ...), /Forbidden/i);` | ✅ PASS |
+| 4 | Medical Director self-verification | `specialty.integration.test.ts` | `7. Practitioner qualification verification and anti-self-approval enforcement` | `await assert.rejects(async () => { await specialtyRepo.verifyQualification(proofDoc1, clinicAId, qual1.id); }, /Self-verification of practitioner qualifications is strictly prohibited/i);` | ✅ PASS |
+| 5 | Forged credential verification | `specialty.integration.test.ts` | `7. Practitioner qualification verification and anti-self-approval enforcement` | `await assert.rejects(async () => { await specialtyRepo.verifyQualification(proofDoc2, clinicAId, qual1.id); }, /Medical Director designation required/i);` | ✅ PASS |
+| 6 | Forged clinical privilege approval | `specialty.integration.test.ts` | `8. Clinical privilege engine: approval, anti-self-approval, and qualification dependency` | `await assert.rejects(async () => { await specialtyRepo.approveClinicalPrivilege(proofDoc1, clinicAId, privPedRequest.id); }, /Practitioner must have a VERIFIED qualification in this specialty/i);` | ✅ PASS |
+| 7 | Expired practitioner attempting a clinical signature | `specialty.integration.test.ts` | `12. Expired practitioner license or expired qualification blocks clinical privilege evaluation` | `assert.equal(evalExpired.allowed, false); assert.match(evalExpired.reason \|\| '', /expired/i);` | ✅ PASS |
+| 8 | Revoked practitioner attempting a prescription | `clinical-foundation.integration.test.ts` | `Prescription lifecycle: drafts sequential number, detects allergy, enforces signing privilege & SHA-256 digest, blocks tampering` | `await assert.rejects(async () => { await repo.signPrescription(doctorBProof, clinicId, prescription.id); }, /Active clinical privilege 'MEDICATION_PRESCRIBE' required/i);` | ✅ PASS |
+| 9 | Aesthetic compatibility privilege bypass | `specialty.integration.test.ts` | `9. Runtime clinical privilege evaluation and aesthetic backward-compatibility policy` | `assert.equal(evalAestheticProc.allowed, true); assert.equal(evalAestheticProc.isCompatibility, true);` vs `assert.equal(evalAestheticPrescribe.allowed, false);` | ✅ PASS |
+| 10 | Forged PostgreSQL session variables | `rls.integration.test.ts` | `malformed or incomplete GUCs fail closed, including forged clinic selection` | `await assert.rejects(client.query("SET LOCAL lamssa.clinic_id = '00000000-0000-0000-0000-000000000000'"), /invalid input syntax\|permission denied/i);` | ✅ PASS |
+| 11 | Duplicate clinic-wide privileges with nullable branch IDs | `specialty.integration.test.ts` | `11. Duplicate clinic-wide clinical privileges with nullable branch IDs are rejected by unique constraint` | Unique index `PractitionerClinicalPrivilege_unique_scope_key` using `COALESCE("branchId", ...)` throws `23505` on duplicate `branchId: null` insert | ✅ PASS |
+| 12 | Unauthorized diagnostic result release | `clinical-orders.integration.test.ts` | `Clinical Orders: lifecycle, results recording, critical values acknowledgment, and portal release gating` | `await assert.rejects(repo.releaseResultToPortal(doctorProof, clinicA, unackResult.id), /Critical result must be acknowledged prior to release/i);` | ✅ PASS |
+| 13 | Finalized clinical form alteration | `clinical-forms.integration.test.ts` | `validates draft, finalizes once, rejects stale finalization, and appends an attributable amendment` | `await assert.rejects(pool.query('UPDATE public."ClinicalFormResponse" SET "responseData"=$1 WHERE id=$2', ...), /42501\|cannot modify/i);` | ✅ PASS |
+| 14 | Direct SQL form amendment tampering | `clinical-forms.integration.test.ts` | `validates draft, finalizes once, rejects stale finalization, and appends an attributable amendment` | `await assert.rejects(pool.query('UPDATE public."ClinicalFormResponseAmendment" SET "reason"=$1 WHERE id=$2', ...), /42501\|permission denied/i);` | ✅ PASS |
+| 15 | Encrypted document ciphertext substitution | `clinical-orders-policy.test.ts` | `retrieveEncryptedDocument: rejects ciphertext substitution across different document storage keys due to AAD mismatch` | `await assert.rejects(cryptoService.retrieveEncryptedDocument(fakeDoc2StorageKey, stored1.contentSha256), /Document decryption or authentication failed/i);` | ✅ PASS |
+| 16 | Unauthorized document retrieval | `clinical-orders.integration.test.ts` | `Clinical Document: secure encrypted storage, magic bytes, legal hold, and retrieval` | `await assert.rejects(repo.retrieveDocument(doctorBProof, clinicB, docA.id), /NotFoundException\|ForbiddenException/i);` | ✅ PASS |
+| 17 | Duplicate consultation billing | `clinical-orders.integration.test.ts` | `zero aesthetic contamination: consultation, orders, results, documents and billing execute without TreatmentPlan or ProcedureExecution` | `const inv1 = await billingRepo.create(..., requestKey); await assert.rejects(billingRepo.create(..., requestKey), /ConflictException\|duplicate/i);` | ✅ PASS |
+| 18 | Existing aesthetic procedure consent preservation | `treatment.integration.test.ts` | `ConsentEligibilityService fails closed requiring verified informed consent` | `assert.equal(await eligibility.isEligible(...), false);` when consent unverified; `assert.equal(await eligibility.isEligible(...), true);` when consent verified | ✅ PASS |
+
 ---
 
 ## 11. Automated Test Execution & Skip Rationale
@@ -203,9 +230,9 @@ The structured clinical forms engine was tested against adversarial inputs in `c
 | Test Suite / Runner | Scope | Total Tests | Passed | Failed | Skipped | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **`npm test --workspace @lamssa/web`** | Web unit, presentation, terminology tests | 26 | 26 | 0 | 0 | ✅ PASS |
-| **`npm test --workspace @lamssa/api`** | Backend unit, DTO validation, policies, crypto | 207 | 207 | 0 | 0 | ✅ PASS |
-| **Total Unit Tests** | Monorepo unit suite (`npm test`) | **233** | **233** | **0** | **0** | ✅ PASS |
-| **`npm run test:db`** | Full multi-module database integration suite | 337 | 336 | 0 | 1* | ✅ PASS |
+| **`npm test --workspace @lamssa/api`** | Backend unit, DTO validation, policies, crypto | 208 | 208 | 0 | 0 | ✅ PASS |
+| **Total Unit Tests** | Monorepo unit suite (`npm test`) | **234** | **234** | **0** | **0** | ✅ PASS |
+| **`npm run test:db`** | Full multi-module database integration suite | 339 | 338 | 0 | 1* | ✅ PASS |
 | **`npm run test:browser`** | Real headless Chrome browser smoke tests | 47 checks | 47 | 0 | 0 | ✅ PASS |
 | **`npm run check:boundaries`**| Monorepo & Prisma architectural boundaries | 1 | 1 | 0 | 0 | ✅ PASS |
 | **`npm run check:deployment`**| Non-root images, proxy rules, secret invariants | 1 | 1 | 0 | 0 | ✅ PASS |
@@ -227,7 +254,7 @@ The structured clinical forms engine was tested against adversarial inputs in `c
   - `034: 20261113000200_shared_clinical_foundation`
   - `035: 20261113000300_general_clinical_services_orders`
   - `036: 20261113000400_structured_clinical_forms`
-- **Migration Invariant:** Migrations 001 through 035 were completely unmodified. Migration 036 is strictly additive.
+- **Migration Invariant:** Migrations 001 through 032 match the Phase 5 baseline on `main` byte-for-byte without any modification. Phase 6 introduced strictly additive migrations 033, 034, 035, and 036. No existing migrations were modified or re-ordered.
 - Both `lamssa_dev` and `lamssa_test` databases are fully synchronized.
 
 ---
