@@ -26,10 +26,16 @@ import { BranchRepository } from './branch.repository.js';
 import { CostingRepository } from './costing.repository.js';
 import { IntegrationCryptoService } from '../integrations/integration-crypto.service.js';
 import { IntegrationsRepository } from './integrations.repository.js';
+import { SpecialtyRepository } from './specialty.repository.js';
+import { ClinicalFoundationRepository } from './clinical-foundation.repository.js';
+import { ClinicalOrdersRepository } from './clinical-orders.repository.js';
+import { ClinicalDocumentCryptoService } from '../clinical-orders/clinical-document-crypto.service.js';
+import { ClinicalFormsRepository } from './clinical-forms.repository.js';
+import { ClinicalFormValidationService } from '../clinical-forms/clinical-form-validation.service.js';
 
 @Module({
-  providers:[CostingRepository,ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,InventoryRepository,PatientPortalRepository,BranchRepository,IntegrationCryptoService,IntegrationsRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
+  providers:[ClinicalFormValidationService,ClinicalFormsRepository,ClinicalDocumentCryptoService,ClinicalOrdersRepository,ClinicalFoundationRepository,SpecialtyRepository,CostingRepository,ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,InventoryRepository,PatientPortalRepository,BranchRepository,IntegrationCryptoService,IntegrationsRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,PrismaService,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
   // Raw Prisma is private to database infrastructure, never exported to features.
-  exports:[CostingRepository,ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,InventoryRepository,PatientPortalRepository,BranchRepository,IntegrationCryptoService,IntegrationsRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
+  exports:[ClinicalFormValidationService,ClinicalFormsRepository,ClinicalDocumentCryptoService,ClinicalOrdersRepository,ClinicalFoundationRepository,SpecialtyRepository,CostingRepository,ConsentRepository,ConsentEligibilityService,TreatmentRepository,ClinicalRepository,ClinicalFollowUpRepository,InventoryRepository,PatientPortalRepository,BranchRepository,IntegrationCryptoService,IntegrationsRepository,AuditRepository,ClinicAdministrationRepository,BillingRepository,QueueRepository,PublicQueueRepository,AppointmentRepository,SchedulingRepository,PatientRepository,IdentityDatabase,TenantDatabaseService,VerifiedSessions,PublicBrandingRepository,ClinicRepository,DatabaseHealthService,PrivacyRepository],
 })
 export class PrismaModule {}

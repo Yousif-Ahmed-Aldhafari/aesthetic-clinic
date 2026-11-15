@@ -72,8 +72,8 @@ export class BranchController {
     @Body() body: SwitchBranchDto,
   ) {
     const result = await this.repository.validateBranchSwitch(req.auth!.principal, params.clinicId, body.branchId);
-    await this.authService.rotate(req, res, params.clinicId, body.branchId);
-    return result;
+    const session = await this.authService.rotate(req, res, params.clinicId, body.branchId);
+    return { ...result, csrfToken: session.csrfToken, expiresAt: session.expiresAt };
   }
 
   // Inter-branch stock transfers

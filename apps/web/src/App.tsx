@@ -25,7 +25,7 @@ const sections: { id: Section; label: string; symbol: string }[] = [
   { id: 'inventory', label: 'المخزون والمستودعات', symbol: '📦' },
 ];
 
-export default function App({ clinic, userName, busy, onSwitch, onLogout, csrfToken, onAuthError }: { csrfToken: string; onAuthError: (error: unknown) => void; clinic: ClinicContext; userName: string; busy: boolean; onSwitch: () => void; onLogout: () => void }) {
+export default function App({ clinic, userName, busy, onSwitch, onLogout, csrfToken, onAuthError, onBranchSwitched }: { csrfToken: string; onAuthError: (error: unknown) => void; onBranchSwitched: (branchId:string,csrfToken:string)=>void; clinic: ClinicContext; userName: string; busy: boolean; onSwitch: () => void; onLogout: () => void }) {
   const [data, setData] = useState<Data>(loadData);
   const [section, setSection] = useState<Section>('overview');
   const [search, setSearch] = useState('');
@@ -83,7 +83,7 @@ export default function App({ clinic, userName, busy, onSwitch, onLogout, csrfTo
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">✧</span><div><strong>لمسة</strong><small>إدارة العيادات التجميلية</small></div></div>
       <button className="clinic-switch" onClick={onSwitch} disabled={busy} aria-label="تغيير العيادة">{clinic.branding?.logoUrl ? <img className="clinic-logo" src={clinic.branding.logoUrl} alt="شعار العيادة"/> : <span className="clinic-icon">✦</span>}<div><b>{clinic.displayName}</b><small>تغيير العيادة</small></div><span className="chevron">⌄</span></button>
-      <BranchSwitcher clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} onBranchSwitched={(_id, name) => toast(`تم التبديل إلى ${name}`)} />
+      <BranchSwitcher clinic={clinic} csrfToken={csrfToken} onAuthError={onAuthError} onBranchSwitched={(id, name, nextCsrf) => { onBranchSwitched(id,nextCsrf);toast(`تم التبديل إلى ${name}`); }} />
       <div className="menu-label">القائمة الرئيسية</div>
       <nav aria-label="القائمة الرئيسية">{sections.map(item => <button key={item.id} className={`nav-link ${section === item.id ? 'selected' : ''}`} onClick={() => { setSection(item.id); setSearch(''); setNotice(''); }}><span className="nav-icon">{item.symbol}</span>{item.label}</button>)}</nav>
       <div className="sidebar-bottom"><div className="help-card"><b>نسخة تطوير</b><p>المرضى والمواعيد والانتظار محفوظون للعيادة عبر الخدمة. الفواتير محفوظة للعيادة؛ ملخص اللوحة عرض تجريبي. استخدم بيانات وهمية فقط.</p></div><button className="reset" onClick={resetDemo}>↻ استعادة البيانات التجريبية</button></div>

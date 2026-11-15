@@ -1,5 +1,14 @@
 # Development setup
 
+## Phase 6.2 medical specialty registry, practitioner qualifications & clinical privilege engine
+
+Apply `20261113000100_medical_specialty_registry_privileges` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All specialty catalog, clinic specialty configuration, practitioner profiles, qualifications, and privileging endpoints reside under `/api/v1/clinics/:clinicId/specialties`.
+- Migration: `apps/api/prisma/migrations/20261113000100_medical_specialty_registry_privileges/migration.sql` creates 6 models: `MedicalSpecialty`, `ClinicSpecialty`, `BranchSpecialty`, `PractitionerProfile`, `PractitionerSpecialty`, and `PractitionerClinicalPrivilege` with `FORCE ROW LEVEL SECURITY` on tenant tables, global catalog RLS on `MedicalSpecialty`, composite unique constraints, immutability triggers, and automatic idempotent backfill of `AESTHETICS` on all existing clinics and branches.
+- Unit and policy tests: `apps/api/test/specialty-policy.test.ts`.
+- Database integration tests: `apps/api/test/specialty.integration.test.ts` (covers global reference catalog immutability, clinic and branch enablement and cascade disable, tenant isolation, practitioner profile creation and license management, Medical Director designation, qualification verification with anti-self-approval enforcement, clinical privilege approval requiring verified qualifications, runtime privilege evaluation engine with aesthetic backward-compatibility policy, and database protection against hard deletion under restricted runtime role).
+- Frontend workspace: Arabic RTL specialty administration panel under Clinic Settings (`/clinics/:clinicId/settings` -> `التخصصات والاعتماد`).
+- Core invariants: Medical Director credentialing authority is excluded from default administrative role ceilings. Anti-self-approval prevents credentialing officials from verifying their own qualifications or approving their own privileges. Clinic owners and administrators are isolated from clinical charts without an active clinical role. Existing aesthetic clinics retain full operational status without manual intervention.
+
 ## Phase 4.5 practitioner commissions, financial reconciliation & operational reporting
 
 Apply `20261101000500_commissions_reconciliation_reporting` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All commission, reconciliation, and operational reporting endpoints reside under `/api/v1/clinics/:clinicId/billing`.
@@ -1785,3 +1794,42 @@ actual database-backed branding and live SQL constraint tests were unverified at
 that point. These database checks are now completed in Step 1.2.1 above. Optional
 Compose parsing/runtime remains unverified without Docker. No real patient records, reset/force-push commands,
 commits or pushes were part of Step 1.2.
+
+## Phase 6 Step 6.3 verification record (2026-11-13)
+
+| Command / Check | Actual Result |
+| :--- | :--- |
+| `npm run check:boundaries` | Exit 0; strict database boundary validation passed |
+| `npm run db:validate` | Exit 0; schema valid |
+| `npm run db:generate` | Exit 0; Prisma Client (7.10.1) generated |
+| `npm run db:status` | Exit 0; 34 migrations found on `lamssa_dev`, schema up to date |
+| `npm run db:status:test` | Exit 0; 34 migrations found on `lamssa_test`, schema up to date |
+| `npm run db:grant` | Exit 0; restricted runtime privileges applied, 105 FORCE RLS tables, 90 locked functions |
+| `npm test` | Exit 0; 204 unit tests passed (178 API policy/unit tests + 26 web unit tests, 0 failed) |
+| `npm run test:db` | Exit 0; 325 database integration tests passed (1 intentional CREATEDB skip, 0 failed) |
+| `npm run build` | Exit 0; `@lamssa/web` (Vite) and `@lamssa/api` (TypeScript) compiled cleanly |
+| `npm run test:browser` | Exit 0; 43 checks passed in real headless Chrome, 0 runtime errors |
+| `npm run check:deployment` | Exit 0; deployment configuration invariants verified |
+| `git diff --check` | Exit 0; clean whitespace across all tracked and modified files |
+
+## Structured clinical forms (migration 036)
+
+Run `npm run db:migrate`, `npm run db:migrate:test`, and `npm run db:grant` after pulling Step 6.5. Both databases must report `20261113000400_structured_clinical_forms` applied. Use the clinic specialty settings page to install and publish standard templates. A doctor needs a selected active branch, verified specialty qualification, and approved `CLINICAL_ENCOUNTER_DOCUMENT` privilege to author forms. JSON Schema is limited to the documented 2020-12 subset; external references and pattern evaluation are rejected.
+
+## Phase 6 Step 6.6 final acceptance verification record (2026-11-14)
+
+| Command / Check | Actual Result |
+| :--- | :--- |
+| `npm run check:boundaries` | Exit 0; strict database boundary validation passed |
+| `npm run db:validate` | Exit 0; schema valid |
+| `npm run db:generate` | Exit 0; Prisma Client (7.10.1) generated |
+| `npm run db:status` | Exit 0; 36 migrations found on `lamssa_dev`, schema up to date |
+| `npm run db:status:test` | Exit 0; 36 migrations found on `lamssa_test`, schema up to date |
+| `npm test` | Exit 0; 233 unit tests passed (26 web + 207 api, 0 failed, 0 skipped) |
+| `npm run test:db` | Exit 0; 336 database integration tests passed (1 intentional CREATEDB skip, 0 failed across 14 test suites) |
+| `npm run build` | Exit 0; `@lamssa/web` (Vite) and `@lamssa/api` (TypeScript) compiled cleanly |
+| `npm run test:browser` | Exit 0; 47 checks passed in real headless Chrome, 0 runtime errors |
+| `npm run check:deployment` | Exit 0; deployment configuration invariants verified |
+| `git diff --check` | Exit 0; clean whitespace across all tracked and modified files |
+| RLS Audit | 114 core tenant tables under FORCE RLS (143 total in public), 96 security functions in `lamssa_security` (28 locked `SECURITY DEFINER` functions with fixed `search_path=pg_catalog, pg_temp` and zero public execute grants) |
+| Final Acceptance Verdict | Code integration readiness: **READY FOR CODE MERGE**; Production clinical deployment: **NOT READY FOR PRODUCTION** (see [phase-6-final-acceptance.md](phase-6-final-acceptance.md)) |

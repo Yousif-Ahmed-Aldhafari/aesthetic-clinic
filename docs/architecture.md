@@ -1469,3 +1469,42 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Caller-Verified `post_webhook_payment`**: Hardened `SECURITY DEFINER` function requiring authenticated clinic session, matching webhook intent session, active clinic status, payable intent status, and an authentic, fresh (<5 min) `PaymentProviderEvent` in `RECEIVED` status. Transitions event to `PROCESSED` atomically, preventing replay.
 - **Negative SQL Regression Verification**: Verified under restricted runtime database role (`lamssa_runtime`) that setting custom GUCs or attempting unauthenticated payment postings yields zero rows or immediate SQL rejection.
 - **Acceptance Scope**: All 5 Phase 5 sub-systems independently verified. Branch `phase/5-patient-enterprise` marked **READY FOR CODE MERGE** into `main`. Production deployment remains gated on formal clinical and tax authority prerequisites.
+
+## 13. Phase 6: General Medical Platform & Multi-Specialty Architecture
+
+### Step 6.1 — Specialty-Neutral Architecture Contracts & Migration Blueprint
+- **Three-Layer Architecture**: Structured separation between Layer A (Operational Core: Tenant Identity, Multi-Branch, Scheduling, Billing, Inventory Costing), Layer B (Shared Clinical Foundation: Longitudinal History, Vitals, Diagnoses, Allergies, Prescriptions, Orders), and Layer C (Specialty Workspaces: Aesthetics, Dentistry, Pediatrics, Ob/Gyn, Ophthalmology, Orthopedics, ENT, Physiotherapy).
+- **Dual-Track Coexistence (Approach B)**: Preserves existing aesthetic tables (`AestheticProcedureCatalog`, `TreatmentPlan`, `ProcedureExecution`, `ConsentTemplate`, `PatientConsent`, `InventoryClinicalConsumption`, `PractitionerCommissionRule`) without destructive schema migrations, zero downtime, and zero data loss.
+
+### Step 6.2 — Specialty Registry, Practitioner Qualifications & Clinical Privilege Engine
+- **Medical Specialty Reference Catalog**: Standard global reference table `MedicalSpecialty` seeded with 10 reference specialties, global catalog RLS (public SELECT, restricted mutations).
+- **Facility Specialty Enablement**: Tenant-scoped `ClinicSpecialty` and `BranchSpecialty` tables with composite keys, PostgreSQL `FORCE ROW LEVEL SECURITY`, and immutability triggers.
+- **Practitioner Profiles & Qualifications**: Structured tracking of professional licenses, regulatory jurisdiction, and verified qualifications via `PractitionerProfile` and `PractitionerSpecialty`.
+- **Multi-Tier Clinical Privilege Engine**: `PractitionerClinicalPrivilege` with multi-tier authorization checks evaluating facility specialty, verified qualifications, active privileges, and treating team scope.
+- **Medical Director Governance**: Strict anti-self-approval enforcement preventing credentialing officials from verifying their own qualifications or approving their own privileges; approval permissions excluded from default administrative role ceilings.
+- **Aesthetic Backward Compatibility**: Non-destructive backfill of `AESTHETICS` on all existing clinics and branches; compatibility evaluation engine allowing existing aesthetic procedures to execute without interruption. See [docs/medical-specialty-authorization.md](medical-specialty-authorization.md).
+
+### Step 6.3 — Shared Clinical Data Foundation: Observations, Diagnoses, Allergies & Prescriptions
+- **Physiological Observations & Vital Signs**: Specialty-neutral measurements (`ClinicalObservation`) with decimal precision (`Numeric(10,3)`), unit validation, standard reference ranges, deterministic BMI calculation, and physiological safety bounds.
+- **Encounter Diagnoses & Longitudinal Problem Lists**: Structured diagnostic coding (`EncounterDiagnosis`) with ICD-10 and local vocabularies, strict primary diagnosis uniqueness per encounter via partial unique index `idx_encounter_primary_diagnosis`, automatic prior primary demotion, and chronic problem list promotion.
+- **Patient Allergy Register & Pre-Flight Warnings**: Allergen classification (`DRUG`, `FOOD`, `ENVIRONMENTAL`, `BIOLOGICAL`), clinical severity scoring, clinician verification tracking, and explicit Known No Allergies (NKA) declarations via `PatientAllergy`. Real-time pre-flight conflict detection querying active allergies before prescription signature.
+- **Decoupled Medication Reconciliation**: Chronic and acute regimens tracked via `MedicationRecord` with reconciliation provenance, strictly decoupled from physical inventory dispensing.
+- **Controlled Outpatient Prescriptions**: Atomic sequential numbering (`RX-000001`) via `ClinicPrescriptionCounter`, formal state machine lifecycle (`DRAFT` → `PENDING_REVIEW` → `SIGNED` → `CANCELLED` / `SUPERSEDED`), mandatory `MEDICATION_PRESCRIBE` clinical privilege check, cryptographic SHA-256 tamper-evident digest sealing, and database immutability triggers (`prescription_immutability_guard()`, `prescription_item_guard()`, `clinical_observation_guard()`).
+- **Relational & Security Invariants**: 105 total tables under PostgreSQL `FORCE ROW LEVEL SECURITY`, 90 locked `lamssa_security` functions (`search_path = pg_catalog, pg_temp`), composite unique keys `(clinicId, id)`, immutable `clinicId` triggers, and zero cross-tenant leakage. See [docs/shared-clinical-foundation.md](shared-clinical-foundation.md).
+
+### Step 6.4 — General Clinical Services, Diagnostic Orders, Results & Secure Documents
+- **Outpatient Medical Catalog**: `GeneralClinicalService` introduces general consultations, specialist visits, routine lab panels, and diagnostic imaging decoupled from aesthetic treatment plans.
+- **Diagnostic Orders Engine**: Tenant-scoped sequential order numbering (`ORD-XXXXXX`) via atomic `ClinicOrderCounter`, priority levels (`ROUTINE`, `URGENT`, `STAT`), and sealed terminal states (`COMPLETED`, `CANCELLED`).
+- **Structured Diagnostic Results**: Component-level results (`ClinicalOrderResult`), mandatory critical result acknowledgment workflow, and physician-controlled portal release gating.
+- **Encrypted Medical Documents**: AES-256-GCM authenticated encryption at rest with HKDF-SHA256 key derivation and AAD bound to `clinicId:documentId`, magic byte format validation, SHA-256 integrity digests, and legal hold immutability protection.
+- **Financial Integration**: Invoicing through shared `BillingRepository` without aesthetic `TreatmentPlan` or `ProcedureExecution` dependencies. See [docs/general-clinical-services-orders.md](general-clinical-services-orders.md).
+
+### Step 6.5 — Structured Clinical Forms, Dynamic Templates & Specialty Workspaces
+- **Versioned Clinical Forms**: `ClinicalFormDefinition` and `ClinicalFormDefinitionVersion` with strict JSON Schema 2020-12 validation and immutable published schemas.
+- **Sealed Responses & Amendments**: `ClinicalFormResponse` transitions through `DRAFT` to `FINALIZED` with SHA-256 integrity digests; database trigger `clinical_form_response_guard` blocks direct mutation; corrections create `ClinicalFormResponseAmendment` audit records.
+- **Arabic-First Dynamic Form Renderer**: `DynamicClinicalForm` and `SpecialtyFormsPanel` providing accessible RTL inputs, keyboard navigation, and dynamic specialty terminology (`useTerminology()`). See [docs/structured-clinical-forms.md](structured-clinical-forms.md).
+
+### Step 6.6 — Comprehensive Medical Security, Compatibility Audit & Final Acceptance
+- **Comprehensive Security Audit**: 114 core tenant tables under `FORCE ROW LEVEL SECURITY` (143 total tables in public schema), 96 locked `lamssa_security` functions, zero custom GUC bypasses, and doctor-only clinical record isolation.
+- **Verification Matrix**: 233 passing unit tests, 336 passing database integration tests (1 intentional restore drill skip), 47 browser checks, 36 migrations.
+- **Acceptance Verdicts**: Code integration readiness: **READY FOR CODE MERGE**; Production clinical deployment: **NOT READY FOR PRODUCTION** (gated on real-world medical director sign-off, external licensing integrations, and KMS custody). See [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).

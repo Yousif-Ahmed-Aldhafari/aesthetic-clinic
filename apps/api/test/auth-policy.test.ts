@@ -20,9 +20,12 @@ test('all clinic roles use known granular permissions; unknown roles default den
   assert(!permissionsFor('DOCTOR').includes('staff.manage'));
   assert(!permissionsFor('ACCOUNTANT').includes('patients.read'));
   assert(!permissionsFor('RECEPTIONIST').includes('invoices.manage'));
-  const clinical=permissions.filter(value=>value.startsWith('clinical.'));
-  assert(clinical.every(value=>permissionsFor('DOCTOR').includes(value)));
-  for(const role of ['CLINIC_OWNER','CLINIC_ADMIN','RECEPTIONIST','ACCOUNTANT'] as const)assert(!permissionsFor(role).some(value=>value.startsWith('clinical.')));
+  const templateAdministration=['clinical.form-templates.read','clinical.form-templates.manage','clinical.form-templates.publish'] as const;
+  const confidentialClinical=permissions.filter(value=>value.startsWith('clinical.')&&!templateAdministration.includes(value as typeof templateAdministration[number]));
+  assert(confidentialClinical.every(value=>permissionsFor('DOCTOR').includes(value)));
+  assert.deepEqual(permissionsFor('CLINIC_ADMIN').filter(value=>value.startsWith('clinical.')),templateAdministration);
+  assert.deepEqual(permissionsFor('CLINIC_OWNER').filter(value=>value.startsWith('clinical.')),templateAdministration);
+  for(const role of ['RECEPTIONIST','ACCOUNTANT'] as const)assert(!permissionsFor(role).some(value=>value.startsWith('clinical.')));
 });
 test('production cookies are Secure, HttpOnly, host scoped and use __Host names',()=>{
   const service=new CsrfService(new ConfigService({NODE_ENV:'production'}));
