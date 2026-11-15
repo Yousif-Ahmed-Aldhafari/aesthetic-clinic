@@ -1,5 +1,15 @@
 # Development setup
 
+## Phase 7.1 sensitive data isolation, KMS architecture & cryptographic key lifecycle
+
+Apply `20261115000100_identity_isolation_and_kms` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. KMS and security endpoints reside under `/api/v1/clinics/:clinicId/security` and `/api/v1/admin/security`.
+- Migration: `apps/api/prisma/migrations/20261115000100_identity_isolation_and_kms/migration.sql` creates `KmsKeyRegistry` and `KmsMigrationAudit` with `FORCE ROW LEVEL SECURITY`, enables and forces RLS on `PatientAccount`, `PatientSession`, `PatientVerificationToken`, and `PatientPortalAuditEvent`, and installs 8 `SECURITY DEFINER` functions in `lamssa_security` (`search_path = pg_catalog, pg_temp`) for unauthenticated patient portal authentication bootstrap flows.
+- Unit and policy tests: `apps/api/test/kms-envelope.test.ts`.
+- Database integration tests: `apps/api/test/rls.integration.test.ts` (covers patient identity isolation, cross-clinic denial, and 119 tables under FORCE RLS) and `apps/api/test/patient-portal.integration.test.ts` (covers portal invitation, account activation, login, rate limiting, appointment booking, and password reset under FORCE RLS).
+- Frontend workspace: Arabic RTL security health panel under Clinic Settings (`/clinics/:clinicId/settings` -> `الأمان والجلسات`).
+- Core invariants: Ephemeral 256-bit DEKs encrypted with active KEK and zeroed out in memory immediately (`dek.fill(0)`). AAD binds ciphertext to `${clinicId}:${resourceType}:${recordId}`. Fail-closed provider architecture rejects operations without falling back when external KMS is configured. Transparent backward-compatibility decrypts legacy `v1` ciphertexts.
+
+
 ## Phase 6.2 medical specialty registry, practitioner qualifications & clinical privilege engine
 
 Apply `20261113000100_medical_specialty_registry_privileges` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All specialty catalog, clinic specialty configuration, practitioner profiles, qualifications, and privileging endpoints reside under `/api/v1/clinics/:clinicId/specialties`.

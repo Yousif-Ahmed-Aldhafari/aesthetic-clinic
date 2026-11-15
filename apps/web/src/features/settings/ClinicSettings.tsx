@@ -7,6 +7,7 @@ import { Modal } from '../../components/ui';
 import { PrivacyPane } from './PrivacyPane';
 import { BranchManagementPanel } from '../branches/BranchManagementPanel';
 import { SpecialtyAdministrationPanel } from '../specialties/SpecialtyAdministrationPanel';
+import { SecurityHealthPanel } from './SecurityHealthPanel';
 import './settings.css';
 type Props={clinic:ClinicContext;csrfToken:string;onAuthError:(error:unknown)=>void;onUpdated:()=>Promise<void>};
 type Actions={busy:boolean;write:<T>(path:string,body:unknown,method?:string)=>Promise<T|undefined>;upload:(purpose:string,file:File)=>Promise<{id:string;previewUrl:string}|undefined>};
@@ -634,6 +635,8 @@ function SecurityPane({ p, revision }: { p: Props; revision: number }) {
           </div>
         </Modal>
       )}
+
+      <SecurityHealthPanel clinic={p.clinic} csrfToken={p.csrfToken} revision={revision} />
     </section>
   );
 }

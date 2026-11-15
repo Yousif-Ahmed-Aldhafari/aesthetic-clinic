@@ -5036,3 +5036,45 @@ model ClinicalFormResponseAmendment {
   @@unique([clinicId, responseId, sequence])
   @@index([clinicId, responseId, createdAt])
 }
+
+// ---------------------------------------------------------------------------
+// Production Security & Key Management (Phase 7)
+// ---------------------------------------------------------------------------
+
+enum KmsKeyState {
+  ACTIVE
+  RETIRED
+  DISABLED
+  REVOKED
+}
+
+enum KmsKeyAlgorithm {
+  AES_256_GCM
+  AES_256_KW
+}
+
+model KmsKeyRegistry {
+  id          String          @id @default(uuid()) @db.Uuid
+  keyId       String          @unique @db.VarChar(128)
+  version     Int             @unique
+  state       KmsKeyState     @default(ACTIVE)
+  algorithm   KmsKeyAlgorithm @default(AES_256_GCM)
+  description String?         @db.VarChar(255)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  rotatedAt   DateTime?       @db.Timestamptz(3)
+  revokedAt   DateTime?       @db.Timestamptz(3)
+}
+
+model KmsMigrationAudit {
+  id           String    @id @default(uuid()) @db.Uuid
+  clinicId     String?   @db.Uuid
+  resourceType String    @db.VarChar(64)
+  recordId     String    @db.VarChar(128)
+  sourceKeyId  String    @db.VarChar(128)
+  targetKeyId  String    @db.VarChar(128)
+  status       String    @db.VarChar(32)
+  migratedAt   DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([clinicId, resourceType])
+  @@index([migratedAt])
+}

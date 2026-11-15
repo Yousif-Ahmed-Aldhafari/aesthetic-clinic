@@ -21,6 +21,12 @@ export type Environment = {
   CLINICAL_MEDIA_ENCRYPTION_KEY?: string;
   CLINICAL_MEDIA_ENCRYPTION_KEY_PREVIOUS?: string;
   METRICS_SECRET_KEY?: string;
+  KMS_PROVIDER?: 'local' | 'external' | 'synthetic';
+  KMS_PRIMARY_KEY_ID?: string;
+  KMS_LOCAL_MASTER_KEY?: string;
+  KMS_EXTERNAL_ENDPOINT?: string;
+  KMS_EXTERNAL_KEY_ID?: string;
+  KMS_EXTERNAL_REGION?: string;
 };
 
 export function validateEnvironment(input: Record<string, unknown>): Environment {
@@ -93,11 +99,22 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
   }
   const metricsKey = typeof input.METRICS_SECRET_KEY === 'string' ? input.METRICS_SECRET_KEY : '';
   if (metricsKey && !/^[A-Za-z0-9_-]{43,128}$/.test(metricsKey)) errors.push('METRICS_SECRET_KEY');
+
+  const kmsProvider = (input.KMS_PROVIDER as string | undefined) ?? 'local';
+  if (!['local', 'external', 'synthetic'].includes(kmsProvider)) errors.push('KMS_PROVIDER');
+  const kmsLocalKey = typeof input.KMS_LOCAL_MASTER_KEY === 'string' ? input.KMS_LOCAL_MASTER_KEY : '';
+  if (kmsLocalKey && (kmsLocalKey.length < 16 || !/^[A-Za-z0-9_-]{16,128}$/.test(kmsLocalKey))) {
+    errors.push('KMS_LOCAL_MASTER_KEY');
+  }
+
   if (mode === 'production') {
     if (!metricsKey) errors.push('METRICS_SECRET_KEY');
     if (!assetDir) errors.push('ASSET_STORAGE_DIR');
     if (proxyHops !== 1) errors.push('TRUST_PROXY_HOPS');
     if (typeof input.API_ALLOWED_HOSTS !== 'string' || !input.API_ALLOWED_HOSTS.trim()) errors.push('API_ALLOWED_HOSTS');
+    if (kmsLocalKey && kmsLocalKey.length < 32) {
+      errors.push('KMS_LOCAL_MASTER_KEY');
+    }
   }
 
   // Report variable names only; never interpolate secrets or raw validation input.
@@ -113,5 +130,11 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     CLINICAL_MEDIA_ENCRYPTION_KEY: mediaKey || undefined,
     CLINICAL_MEDIA_ENCRYPTION_KEY_PREVIOUS: mediaPrevKey || undefined,
     METRICS_SECRET_KEY: metricsKey || undefined,
+    KMS_PROVIDER: kmsProvider as Environment['KMS_PROVIDER'],
+    KMS_PRIMARY_KEY_ID: typeof input.KMS_PRIMARY_KEY_ID === 'string' ? input.KMS_PRIMARY_KEY_ID : 'lamssa/kek/2026-v1',
+    KMS_LOCAL_MASTER_KEY: kmsLocalKey || undefined,
+    KMS_EXTERNAL_ENDPOINT: typeof input.KMS_EXTERNAL_ENDPOINT === 'string' ? input.KMS_EXTERNAL_ENDPOINT : undefined,
+    KMS_EXTERNAL_KEY_ID: typeof input.KMS_EXTERNAL_KEY_ID === 'string' ? input.KMS_EXTERNAL_KEY_ID : undefined,
+    KMS_EXTERNAL_REGION: typeof input.KMS_EXTERNAL_REGION === 'string' ? input.KMS_EXTERNAL_REGION : undefined,
   };
 }
