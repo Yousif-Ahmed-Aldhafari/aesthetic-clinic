@@ -243,6 +243,14 @@ export class ReviewBreakGlassDto {
   reviewNotes!: string;
 }
 
+export class RevokeBreakGlassDto {
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
 export class ConductPrivilegeReviewDto {
   @IsUUID()
   practitionerProfileId!: string;

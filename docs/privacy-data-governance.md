@@ -304,3 +304,18 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Healthcare Interoperability Boundaries**: HL7 FHIR R4 mappings for 12 core clinical concepts; provider adapters (Lab, Imaging/PACS, Pharmacy/Wasfaty, HIE) default to `enabled: false`, enforce regex allowlists, run in sandbox mode, and log zero PII.
 - **Standard Medical Terminology**: Licensing disclosures for ICD-10, LOINC, WHO-ATC, and SNOMED CT® affiliate prerequisites.
 - **Regulatory Jurisdiction Matrices**: Compliance requirements documented for Saudi Arabia (MOH, Seha, Nphies, Wasfaty, ZATCA Phase 2, PDPL) and the UAE (DoH/DHA, Malaffi, Nabidh, Federal Decree Law No. 45). See [docs/clinical-governance-and-safety.md](clinical-governance-and-safety.md) and [docs/healthcare-interoperability-readiness.md](healthcare-interoperability-readiness.md).
+
+### 12.5 Operational Observability, Zero-PHI Logging & Concurrency Integrity (Step 7.5)
+- **Zero-PHI Telemetry Enforcement**:
+  - Outbound adapter logs strip patient identifiers, national IDs, medical history, and clinical notes.
+  - Operational structured JSON logs recursively redact passwords, API keys, bearer tokens, cookies, national IDs, patient names, and credit card numbers.
+  - IP masking truncates IPv4 to `/24` and IPv6 to `/64` to preserve patient network privacy.
+- **SSRF Defense in Healthcare Integrations**:
+  - Outbound HTTP requests from interoperability adapters strictly enforce `https:`, port 443, and rejection of embedded credentials.
+  - Strict blocking of all IPv4 and IPv6 literals, loopbacks (`127.0.0.1`), private RFC1918 CIDRs, cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`), and internal hostnames.
+  - Outbound transmissions restricted exclusively to certified regulatory domains via exact or subdomain suffix matching with `redirect: 'error'`.
+- **Immediate Session Revocation Propagation**:
+  - Revoking or terminating a user session immediately cuts off data access across all tenant tables via PostgreSQL RLS `lamssa_security.context_allows()`, preventing unauthorized access from terminated staff.
+- **Monotonic Sequence & Financial Hash Immutability**:
+  - Monotonic counter allocation (`PatientCounter`, `ClinicInvoiceCounter`) under concurrent load ensures continuous, non-repeating numbering.
+  - Invoices enforce cryptographic issuance hashes and SHA-256 event chaining (`FinancialAuditEvent`), providing mathematical tamper-evidence for tax and patient privacy audits. See [docs/performance-and-scalability.md](performance-and-scalability.md), [docs/operational-observability.md](operational-observability.md), and [docs/phase-7-step-7-5-acceptance.md](phase-7-step-7-5-acceptance.md).

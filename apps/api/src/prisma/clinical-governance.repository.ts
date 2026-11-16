@@ -470,6 +470,14 @@ export class ClinicalGovernanceRepository {
 
   async requestBreakGlass(proof: VerifiedPrincipal, clinicId: string, input: RequestBreakGlassInput) {
     return this.tenantDb.withClinicContext(proof, clinicId, ['clinical.break-glass.request'], async (tx, ctx) => {
+      // Must be an active, verified practitioner
+      const requesterProfile = await tx.practitionerProfile.findUnique({
+        where: { clinicId_membershipId: { clinicId, membershipId: ctx.membershipId } },
+      });
+      if (!requesterProfile || requesterProfile.verificationStatus !== 'VERIFIED') {
+        throw new ForbiddenException('Only an active verified practitioner can request emergency break-glass access');
+      }
+
       const justification = input.clinicalJustification?.trim() ?? '';
       if (justification.length < 20) {
         throw new BadRequestException('Emergency break-glass access requires a detailed clinical justification (minimum 20 characters)');
@@ -526,8 +534,82 @@ export class ClinicalGovernanceRepository {
     });
   }
 
+  async revokeBreakGlass(proof: VerifiedPrincipal, clinicId: string, breakGlassId: string, reason?: string) {
+    return this.tenantDb.withClinicContext(proof, clinicId, ['clinical.break-glass.request'], async (tx, ctx) => {
+      const breakGlass = await tx.emergencyBreakGlassAccess.findUnique({
+        where: { clinicId_id: { clinicId, id: breakGlassId } },
+      });
+      if (!breakGlass) throw new NotFoundException('Break-glass record not found');
+
+      if (breakGlass.revokedAt) {
+        throw new BadRequestException('Break-glass access has already been revoked');
+      }
+
+      // Either the requesting practitioner or a Medical Director can revoke early
+      const isRequester = breakGlass.requestedByMembershipId === ctx.membershipId;
+      const callerProfile = await tx.practitionerProfile.findUnique({
+        where: { clinicId_membershipId: { clinicId, membershipId: ctx.membershipId } },
+      });
+      const isMedicalDirector = !!(callerProfile?.isMedicalDirector && callerProfile.verificationStatus === 'VERIFIED');
+
+      if (!isRequester && !isMedicalDirector) {
+        throw new ForbiddenException('Only the requester or a verified Medical Director can revoke emergency break-glass access');
+      }
+
+      const revoked = await tx.emergencyBreakGlassAccess.update({
+        where: { clinicId_id: { clinicId, id: breakGlassId } },
+        data: {
+          revokedAt: new Date(),
+          revokedByMembershipId: ctx.membershipId,
+          version: { increment: 1 },
+        },
+      });
+
+      await this.audit.record({
+        clinicId,
+        actorId: ctx.userId,
+        category: 'SECURITY',
+        action: 'clinical.break-glass.revoked',
+        targetType: 'EmergencyBreakGlassAccess',
+        targetId: breakGlassId,
+        outcome: 'SUCCESS',
+        metadata: { reason: reason ?? 'Early clinical revocation' },
+      });
+
+      return revoked;
+    });
+  }
+
+  async isEmergencyAccessActive(
+    tx: any,
+    clinicId: string,
+    membershipId: string,
+    patientId: string,
+  ): Promise<boolean> {
+    const now = new Date();
+    const active = await tx.emergencyBreakGlassAccess.findFirst({
+      where: {
+        clinicId,
+        requestedByMembershipId: membershipId,
+        patientId,
+        revokedAt: null,
+        grantedAt: { lte: now },
+        expiresAt: { gt: now },
+      },
+    });
+    return !!active;
+  }
+
   async reviewBreakGlass(proof: VerifiedPrincipal, clinicId: string, breakGlassId: string, input: ReviewBreakGlassInput) {
     return this.tenantDb.withClinicContext(proof, clinicId, ['clinical.break-glass.audit'], async (tx, ctx) => {
+      // Must be an active verified Medical Director
+      const reviewerProfile = await tx.practitionerProfile.findUnique({
+        where: { clinicId_membershipId: { clinicId, membershipId: ctx.membershipId } },
+      });
+      if (!reviewerProfile || !reviewerProfile.isMedicalDirector || reviewerProfile.verificationStatus !== 'VERIFIED') {
+        throw new ForbiddenException('Only an active verified Medical Director can audit emergency break-glass episodes');
+      }
+
       const breakGlass = await tx.emergencyBreakGlassAccess.findUnique({
         where: { clinicId_id: { clinicId, id: breakGlassId } },
       });

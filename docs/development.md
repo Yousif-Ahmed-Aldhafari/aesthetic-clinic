@@ -1,5 +1,15 @@
 # Development setup
 
+## Phase 7.5 performance, scalability, reliability & operational validation
+
+Execute realistic multi-tenant benchmark workloads and operational resilience suites:
+- Benchmark runner: `scripts/benchmark-runner.mjs` (run via `npm run perf:benchmark`). Evaluates 5 multi-tenant workloads (A–E) across 5 isolated tenant clinics with active `Session` records and PostgreSQL FORCE RLS tenant context (`lamssa.session_id`, `lamssa.user_id`, `lamssa.clinic_id`).
+- Concurrency & idempotency test suite: `apps/api/test/concurrency-integrity.integration.test.ts` validating atomic monotonic counter allocation on `PatientCounter` (10 workers), `ClinicInvoiceCounter` (10 workers), and idempotency deduplication (PostgreSQL error 23505).
+- Fault-injection & resilience test suite: `apps/api/test/fault-injection.integration.test.ts` validating immediate session revocation propagation under RLS, connection pool exhaustion timeout handling, and fail-closed transaction abort with zero orphan state.
+- Step 7.4 security audit test suite: `apps/api/test/step-7-4-security-audit.integration.test.ts` validating verified practitioner break-glass identity requirements, duration (1–120 min) and justification ($\ge 20$ char) bounds, active emergency access verification, early revocation endpoint/audit event, Medical Director safety policy approval authority, anti-self-approval, and comprehensive SSRF adapter defenses.
+- Observability and Prometheus metrics: `GET /api/v1/metrics` with `x-metrics-key` / `PLATFORM_OPERATOR` authentication, bounded cardinality label protections, multi-tier health probes (`/api/v1/health`, `/api/v1/health/ready`), and 15-minute deduplicated alerting engine.
+- Documentation: `docs/performance-and-scalability.md`, `docs/operational-observability.md`, and `docs/phase-7-step-7-5-acceptance.md`.
+
 ## Phase 7.4 clinical governance, patient safety & healthcare integration readiness
 
 Apply `20261116000300_clinical_governance_and_safety` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 40.

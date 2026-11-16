@@ -291,6 +291,20 @@ In Phase 7 Step 7.3, disaster recovery was unified into an end-to-end multi-comp
 - `npm run assets:verify`: Cross-checks file storage against database records in `ClinicalDocument`, `ClinicalPhoto`, and `ClinicAsset`.
 - See `docs/disaster-recovery-and-resilience.md` for complete runbooks, Patroni HA architecture, continuous PITR WAL replay, and Saudi cloud data sovereignty specifications.
 
+### Production Hardware Sizing & Operational Observability (Step 7.5)
+
+In Phase 7 Step 7.5, realistic multi-tenant performance and operational resilience were benchmarked and verified:
+- **Benchmark Suite**: `npm run perf:benchmark` runs Workloads A through E across isolated tenant clinics with full PostgreSQL FORCE RLS, atomic counter locking, and SHA-256 financial audit chaining.
+- **Production Hardware Tiers**:
+  - Small Clinic Tier (1–3 clinics, $\le 50$ concurrent users): 2 vCPU, 4 GB RAM, 15–20 DB pool connections, 50 GB NVMe storage.
+  - Medium Multi-Clinic (5–15 clinics, $\le 250$ concurrent users): 4 vCPU, 16 GB RAM, 30–50 DB connections, 150 GB NVMe storage.
+  - Enterprise Tier (20+ clinics, $\ge 1,000$ concurrent users): 8–16 vCPU, 32–64 GB RAM, 100 DB connections with PgBouncer, 500 GB NVMe (RAID 10).
+- **Observability Configuration**:
+  - Prometheus Metrics: `GET /api/v1/metrics` protected by `METRICS_API_KEY` header (`x-metrics-key`) or `PLATFORM_OPERATOR` role, with strict label cardinality guards.
+  - Health Probes: `GET /api/v1/health` (liveness), `GET /api/v1/health/ready` (readiness checking PostgreSQL, Prisma pool, and KMS Master Key).
+  - Alerting Engine: Built-in 15-minute deduplicated alerting covering high 5xx error rate, DB pool saturation, failed login brute-force spikes, and financial hash mismatches.
+- See `docs/performance-and-scalability.md` and `docs/operational-observability.md` for complete specifications and runbooks.
+
 All temporary staging/recovery containers, volumes, credentials and verification
 artifacts are removed after the exercise. The temporary Docker socket group override
 must then be revoked by the owner. No public deployment, DNS change, real certificate

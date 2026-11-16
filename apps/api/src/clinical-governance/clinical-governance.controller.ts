@@ -19,6 +19,7 @@ import {
   ReportClinicalIncidentDto,
   RequestBreakGlassDto,
   ReviewBreakGlassDto,
+  RevokeBreakGlassDto,
   RollbackPolicyDto,
 } from './clinical-governance.dto.js';
 
@@ -172,6 +173,16 @@ export class ClinicalGovernanceController {
     @Req() req: AuthRequest,
   ) {
     return this.repo.reviewBreakGlass(req.auth!.principal, params.clinicId, params.breakGlassId, dto);
+  }
+
+  @Post('break-glass/:breakGlassId/revoke')
+  @ClinicPermissions('clinical.break-glass.request')
+  async revokeBreakGlass(
+    @Param() params: BreakGlassParams,
+    @Body() dto: RevokeBreakGlassDto,
+    @Req() req: AuthRequest,
+  ) {
+    return this.repo.revokeBreakGlass(req.auth!.principal, params.clinicId, params.breakGlassId, dto.reason);
   }
 
   // --------------------------------------------------------------------------
