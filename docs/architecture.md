@@ -1532,3 +1532,15 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Measurable Recovery Objectives**: RTO SLA `< 15 minutes` (measured drill benchmark: `0.22s`); RPO SLA `< 60 minutes` cold / `< 5 minutes` PITR (measured: `0 minutes`).
 - **Asset Consistency Auditor**: `scripts/verify-asset-consistency.mjs` audits on-disk clinical assets against PostgreSQL metadata tables (`ClinicalDocument`, `ClinicalPhoto`, `ClinicAsset`), detecting missing, orphaned, or tampered files.
 - **High Availability & Saudi Data Sovereignty**: Documented 3-node Patroni/etcd cluster with synchronous standby, continuous WAL archiving (`pg_receivewal`), and 100% in-kingdom data residency compliance across Riyadh (`me-central-1`) and Jeddah (`me-central-2`). See [docs/disaster-recovery-and-resilience.md](disaster-recovery-and-resilience.md) and [docs/phase-7-step-7-3-acceptance.md](phase-7-step-7-3-acceptance.md).
+
+### Step 7.4 — Clinical Governance, Patient Safety & Healthcare Integration Readiness
+- **Administrative Isolation & Segregation of Duties**: Administrative clinic roles (`CLINIC_OWNER`, `CLINIC_ADMIN`) are strictly barred from clinical documentation, consultation notes, and policy approvals. Clinical governance authority belongs exclusively to `DOCTOR` (and Medical Directors).
+- **Anti-Tamper Database Triggers (Migration 040)**:
+  - `clinical_safety_policy_version_guard()`: Prohibits mutation of approved/activated safety policies and enforces anti-self-approval (`approvedByMembershipId !== authorMembershipId`).
+  - `break_glass_guard()`: Prohibits modification of audited emergency sessions and enforces anti-self-audit (`reviewedByMembershipId !== requestedByMembershipId`).
+  - `privilege_review_guard()`: Enforces anti-self-review on credentialing and emergency suspensions (`conductedByMembershipId !== practitionerProfile.membershipId`).
+- **Clinical Safety Policies & Hashed Rules**: Policies enforce deterministic SHA-256 digests over key-sorted rules JSON (`rulesHashSha256`), supporting non-destructive version rollback.
+- **Incident Reporting & Root Cause Analysis (`INC-CLIN-XXXXXX`)**: Sequential monotonic incident numbering, structured severity tiers (`NEAR_MISS` to `SENTINEL_EVENT`), and CAPA workflows.
+- **Emergency Break-Glass Controls**: Time-bounded ($\le 120$ minutes), clinically justified ($\ge 20$ characters), patient-scoped, with mandatory post-hoc Medical Director audit.
+- **HL7® FHIR® R4 Interoperability & Adapters**: 12 core clinical concepts mapped to standard FHIR R4 resources with provider adapters (Lab, Imaging/PACS, Pharmacy/Wasfaty, HIE) disabled by default (`enabled: false`), regex allowlisted, running in sandbox mode with zero PII in logs.
+- **Terminology Licensing & Regional Compliance**: Syntactic validation for ICD-10, LOINC, WHO-ATC, with explicit licensing disclosures for SNOMED CT® and regulatory matrices for KSA (MOH, Seha, Nphies, Wasfaty, ZATCA, PDPL) and UAE (DoH/DHA, Malaffi, Nabidh). See [docs/clinical-governance-and-safety.md](clinical-governance-and-safety.md) and [docs/healthcare-interoperability-readiness.md](healthcare-interoperability-readiness.md).

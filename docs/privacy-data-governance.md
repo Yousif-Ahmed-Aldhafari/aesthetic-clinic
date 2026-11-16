@@ -275,7 +275,7 @@ All automated verification gates for Step 2.3 passed cleanly:
 
 ---
 
-## 12. Phase 7 Disaster Recovery, Saudi Data Sovereignty & Key Lifecycle Governance (Steps 7.1–7.3)
+## 12. Phase 7 Production Security, Clinical Governance & Interoperability Readiness (Steps 7.1–7.4)
 
 ### 12.1 Patient Identity Isolation & Two-Tier KMS Envelope Encryption (Step 7.1)
 - **Patient Portal Security Boundary**: `PatientAccount`, `PatientSession`, `PatientVerificationToken`, and `PatientPortalAuditEvent` enforce `FORCE ROW LEVEL SECURITY` with non-recursive tenant policies. Unauthenticated authentication bootstrap routines are executed through 8 locked `SECURITY DEFINER` procedures in `lamssa_security`.
@@ -293,3 +293,14 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **HMAC-SHA256 Signed DR Manifests**: Disaster recovery manifests link encrypted database dumps, clinic asset/document archives, and KMS metadata under a cryptographic signature, preventing manifest tampering or asset desynchronization.
 - **Dual-Mode Recovery Drills**: Regular non-destructive drills (`npm run dr:drill`) verify database TOC (157 tables, 735 RLS policies, 39 migrations) and asset archives without modifying live data.
 - **Asset-to-Database Consistency**: `scripts/verify-asset-consistency.mjs` verifies file existence, permissions (`0600`/`0640`), and SHA-256 digests against database metadata, eliminating orphaned or tampered clinical records. See [docs/disaster-recovery-and-resilience.md](disaster-recovery-and-resilience.md).
+
+### 12.4 Clinical Governance, Patient Safety & Healthcare Interoperability Boundaries (Step 7.4)
+- **Administrative Isolation**: Administrative clinic ownership (`CLINIC_OWNER`, `CLINIC_ADMIN`) grants zero access to confidential clinical documentation, patient consultation notes, or safety policy approvals.
+- **Separation of Duties & Anti-Tamper Database Triggers**:
+  - `clinical_safety_policy_version_guard()`: Enforces anti-self-approval on policies (`approvedByMembershipId !== authorMembershipId`).
+  - `break_glass_guard()`: Enforces anti-self-audit on emergency access (`reviewedByMembershipId !== requestedByMembershipId`).
+  - `privilege_review_guard()`: Enforces anti-self-review on credentialing and emergency suspensions (`conductedByMembershipId !== practitionerProfile.membershipId`).
+- **Emergency Break-Glass Controls**: Time-bounded ($\le 120$ minutes), clinically justified ($\ge 20$ characters), patient-scoped, with mandatory post-hoc Medical Director audit.
+- **Healthcare Interoperability Boundaries**: HL7 FHIR R4 mappings for 12 core clinical concepts; provider adapters (Lab, Imaging/PACS, Pharmacy/Wasfaty, HIE) default to `enabled: false`, enforce regex allowlists, run in sandbox mode, and log zero PII.
+- **Standard Medical Terminology**: Licensing disclosures for ICD-10, LOINC, WHO-ATC, and SNOMED CT® affiliate prerequisites.
+- **Regulatory Jurisdiction Matrices**: Compliance requirements documented for Saudi Arabia (MOH, Seha, Nphies, Wasfaty, ZATCA Phase 2, PDPL) and the UAE (DoH/DHA, Malaffi, Nabidh, Federal Decree Law No. 45). See [docs/clinical-governance-and-safety.md](clinical-governance-and-safety.md) and [docs/healthcare-interoperability-readiness.md](healthcare-interoperability-readiness.md).

@@ -224,6 +224,12 @@ model Clinic {
   clinicalFormVersions ClinicalFormDefinitionVersion[]
   clinicalFormResponses ClinicalFormResponse[]
   clinicalFormAmendments ClinicalFormResponseAmendment[]
+  clinicalSafetyPolicies ClinicalSafetyPolicy[]
+  clinicalSafetyPolicyVersions ClinicalSafetyPolicyVersion[]
+  clinicalIncidents ClinicalIncident[]
+  clinicalIncidentCounter ClinicalIncidentCounter?
+  emergencyBreakGlassAccesses EmergencyBreakGlassAccess[]
+  practitionerPrivilegeReviews PractitionerPrivilegeReview[]
 
   @@index([status, createdAt])
 }
@@ -499,6 +505,14 @@ model ClinicMembership {
   authoredClinicalFormResponses ClinicalFormResponse[] @relation("ClinicalFormResponseAuthor")
   finalizedClinicalFormResponses ClinicalFormResponse[] @relation("ClinicalFormResponseFinalizer")
   authoredClinicalFormAmendments ClinicalFormResponseAmendment[] @relation("ClinicalFormAmendmentAuthor")
+  authoredSafetyPolicies ClinicalSafetyPolicyVersion[] @relation("SafetyPolicyAuthor")
+  approvedSafetyPolicies ClinicalSafetyPolicyVersion[] @relation("SafetyPolicyApprover")
+  reportedClinicalIncidents ClinicalIncident[] @relation("IncidentReporter")
+  investigatedClinicalIncidents ClinicalIncident[] @relation("IncidentInvestigator")
+  requestedBreakGlassAccesses EmergencyBreakGlassAccess[] @relation("BreakGlassRequester")
+  revokedBreakGlassAccesses EmergencyBreakGlassAccess[] @relation("BreakGlassRevoker")
+  auditedBreakGlassAccesses EmergencyBreakGlassAccess[] @relation("BreakGlassAuditor")
+  conductedPrivilegeReviews PractitionerPrivilegeReview[] @relation("PrivilegeReviewer")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -658,6 +672,8 @@ model Patient {
   clinicalOrderResults ClinicalOrderResult[]
   clinicalDocuments ClinicalDocument[]
   clinicalFormResponses ClinicalFormResponse[]
+  clinicalIncidents ClinicalIncident[]
+  emergencyBreakGlassAccesses EmergencyBreakGlassAccess[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -720,6 +736,7 @@ model ClinicalEncounter {
   clinicalOrders ClinicalOrder[]
   clinicalDocuments ClinicalDocument[]
   clinicalFormResponses ClinicalFormResponse[]
+  clinicalIncidents ClinicalIncident[]
   @@unique([clinicId,id])
   @@unique([clinicId,visitId])
   @@index([clinicId,patientId,createdAt,id])
@@ -4188,6 +4205,7 @@ model MedicalSpecialty {
   clinicalOrders ClinicalOrder[]
   clinicalFormDefinitions ClinicalFormDefinition[]
   clinicalFormResponses ClinicalFormResponse[]
+  clinicalSafetyPolicies ClinicalSafetyPolicy[]
 
   @@index([isActive, classification])
 }
@@ -4265,6 +4283,7 @@ model PractitionerProfile {
   verifiedBy            ClinicMembership?            @relation("PractitionerProfileVerifier", fields: [clinicId, verifiedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   qualifications        PractitionerSpecialty[]
   clinicalPrivileges    PractitionerClinicalPrivilege[]
+  privilegeReviews      PractitionerPrivilegeReview[]
 
   @@unique([clinicId, membershipId])
   @@unique([clinicId, id])
@@ -4328,6 +4347,7 @@ model PractitionerClinicalPrivilege {
   practitionerSpecialty   PractitionerSpecialty? @relation(fields: [clinicId, practitionerSpecialtyId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   approvedBy              ClinicMembership?     @relation("ClinicalPrivilegeApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
   prescriptions           MedicationPrescription[]
+  privilegeReviews        PractitionerPrivilegeReview[]
 
   @@unique([practitionerProfileId, specialtyId, privilegeCode, branchId])
   @@unique([clinicId, id])
@@ -5077,4 +5097,232 @@ model KmsMigrationAudit {
 
   @@index([clinicId, resourceType])
   @@index([migratedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Clinical Governance, Patient Safety & Interoperability Readiness (Phase 7.4)
+// ---------------------------------------------------------------------------
+
+enum ClinicalPolicyStatus {
+  DRAFT
+  APPROVED
+  ACTIVATED
+  RETIRED
+}
+
+enum ClinicalPolicyCategory {
+  ALLERGY_SAFETY
+  PRESCRIPTION_SAFETY
+  CRITICAL_RESULT_ESCALATION
+  FORM_APPROVAL
+  CLINICAL_PROTOCOL
+  GENERAL_SAFETY
+}
+
+enum ClinicalIncidentSeverity {
+  NEAR_MISS
+  LOW
+  MODERATE
+  SEVERE
+  SENTINEL
+}
+
+enum ClinicalIncidentCategory {
+  MEDICATION_SAFETY
+  ALLERGY_ADVERSE_REACTION
+  DIAGNOSTIC_DELAY
+  PROCEDURAL_COMPLICATION
+  PRIVILEGE_BOUNDARY
+  EQUIPMENT_SAFETY
+  DOCUMENTATION_ERROR
+}
+
+enum ClinicalIncidentStatus {
+  REPORTED
+  UNDER_INVESTIGATION
+  CORRECTIVE_ACTION_PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum PrivilegeReviewType {
+  INITIAL_GRANT
+  PERIODIC_RENEWAL
+  EMERGENCY_SUSPENSION
+  PRIVILEGE_REDUCTION
+  REINSTATEMENT
+}
+
+enum PrivilegeReviewStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+}
+
+enum BreakGlassReviewOutcome {
+  APPROVED_JUSTIFIED
+  QUESTIONED
+  UNJUSTIFIED_FLAGGED
+}
+
+// Controlled, versioned clinical safety policies and clinical protocol registry
+model ClinicalSafetyPolicy {
+  id              String                 @id @default(uuid()) @db.Uuid
+  clinicId        String                 @db.Uuid
+  code            String                 @db.VarChar(64)
+  titleAr         String                 @db.VarChar(200)
+  titleEn         String?                @db.VarChar(200)
+  description     String?                @db.Text
+  category        ClinicalPolicyCategory @default(GENERAL_SAFETY)
+  specialtyId     String?                @db.Uuid
+  jurisdiction    String                 @default("GLOBAL") @db.VarChar(32)
+  status          ClinicalPolicyStatus   @default(DRAFT)
+  activeVersionId String?                @db.Uuid
+  version         Int                    @default(1)
+  createdAt       DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic          Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  specialty       MedicalSpecialty?      @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  versions        ClinicalSafetyPolicyVersion[]
+  activeVersion   ClinicalSafetyPolicyVersion? @relation("ActivePolicyVersion", fields: [clinicId, activeVersionId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, code])
+  @@index([clinicId, category, status])
+  @@index([clinicId, jurisdiction])
+}
+
+model ClinicalSafetyPolicyVersion {
+  id                     String               @id @default(uuid()) @db.Uuid
+  clinicId               String               @db.Uuid
+  policyId               String               @db.Uuid
+  versionNumber          Int
+  rulesJson              Json                 @db.JsonB
+  changeSummary          String?              @db.VarChar(500)
+  status                 ClinicalPolicyStatus @default(DRAFT)
+  sha256Digest           String               @db.Char(64)
+  authorMembershipId     String               @db.Uuid
+  approvedByMembershipId String?              @db.Uuid
+  approvedAt             DateTime?            @db.Timestamptz(3)
+  effectiveFrom          DateTime?            @db.Timestamptz(3)
+  effectiveTo            DateTime?            @db.Timestamptz(3)
+  evidenceReference      String?              @db.VarChar(255)
+  version                Int                  @default(1)
+  createdAt              DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime             @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  policy                 ClinicalSafetyPolicy @relation(fields: [clinicId, policyId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  author                 ClinicMembership     @relation("SafetyPolicyAuthor", fields: [clinicId, authorMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy             ClinicMembership?    @relation("SafetyPolicyApprover", fields: [clinicId, approvedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  activeForPolicies      ClinicalSafetyPolicy[] @relation("ActivePolicyVersion")
+
+  @@unique([clinicId, id])
+  @@unique([policyId, versionNumber])
+  @@index([clinicId, policyId, status])
+}
+
+// Clinical incident reporting and root-cause analysis
+model ClinicalIncident {
+  id                         String                   @id @default(uuid()) @db.Uuid
+  clinicId                   String                   @db.Uuid
+  incidentNumber             String                   @db.VarChar(32)
+  severity                   ClinicalIncidentSeverity
+  category                   ClinicalIncidentCategory
+  status                     ClinicalIncidentStatus   @default(REPORTED)
+  patientId                  String?                  @db.Uuid
+  encounterId                String?                  @db.Uuid
+  reportedByMembershipId     String                   @db.Uuid
+  occurredAt                 DateTime                 @db.Timestamptz(3)
+  reportedAt                 DateTime                 @default(now()) @db.Timestamptz(3)
+  description                String                   @db.Text
+  immediateActionTaken       String?                  @db.Text
+  investigationFindings      String?                  @db.Text
+  rootCauseAnalysis          String?                  @db.Text
+  correctiveActions          String?                  @db.Text
+  investigatedByMembershipId String?                  @db.Uuid
+  resolvedAt                 DateTime?                @db.Timestamptz(3)
+  closedAt                   DateTime?                @db.Timestamptz(3)
+  version                    Int                      @default(1)
+  createdAt                  DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime                 @updatedAt @db.Timestamptz(3)
+
+  clinic                     Clinic                   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                    Patient?                 @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                  ClinicalEncounter?       @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  reportedBy                 ClinicMembership         @relation("IncidentReporter", fields: [clinicId, reportedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  investigatedBy             ClinicMembership?        @relation("IncidentInvestigator", fields: [clinicId, investigatedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, incidentNumber])
+  @@index([clinicId, severity, status])
+  @@index([clinicId, category])
+  @@index([clinicId, patientId])
+}
+
+// Row-locked atomic sequence allocator for clinical incidents
+model ClinicalIncidentCounter {
+  clinicId   String @id @db.Uuid
+  lastNumber Int
+  clinic     Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+// Time-bounded, narrow emergency break-glass access
+model EmergencyBreakGlassAccess {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  clinicId                String                   @db.Uuid
+  requestedByMembershipId String                   @db.Uuid
+  patientId               String                   @db.Uuid
+  clinicalJustification   String                   @db.VarChar(500)
+  durationMinutes         Int                      @default(60)
+  grantedAt               DateTime                 @default(now()) @db.Timestamptz(3)
+  expiresAt               DateTime                 @db.Timestamptz(3)
+  revokedAt               DateTime?                @db.Timestamptz(3)
+  revokedByMembershipId   String?                  @db.Uuid
+  auditReviewedAt         DateTime?                @db.Timestamptz(3)
+  reviewedByMembershipId  String?                  @db.Uuid
+  reviewOutcome           BreakGlassReviewOutcome?
+  reviewNotes             String?                  @db.Text
+  version                 Int                      @default(1)
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                 @updatedAt @db.Timestamptz(3)
+
+  clinic                  Clinic                   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy             ClinicMembership         @relation("BreakGlassRequester", fields: [clinicId, requestedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  revokedBy               ClinicMembership?        @relation("BreakGlassRevoker", fields: [clinicId, revokedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  reviewedBy              ClinicMembership?        @relation("BreakGlassAuditor", fields: [clinicId, reviewedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  patient                 Patient                  @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, expiresAt])
+  @@index([clinicId, requestedByMembershipId])
+}
+
+// Periodic credential review, renewal, and emergency suspension
+model PractitionerPrivilegeReview {
+  id                    String                @id @default(uuid()) @db.Uuid
+  clinicId              String                @db.Uuid
+  practitionerProfileId String                @db.Uuid
+  privilegeId           String?               @db.Uuid
+  reviewType            PrivilegeReviewType
+  status                PrivilegeReviewStatus @default(PENDING)
+  conductedByMembershipId String              @db.Uuid
+  findings              String                @db.Text
+  recommendation        String                @db.Text
+  effectiveDate         DateTime              @default(now()) @db.Timestamptz(3)
+  expirationDate        DateTime?             @db.Timestamptz(3)
+  evidenceReference     String?               @db.VarChar(255)
+  version               Int                   @default(1)
+  createdAt             DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime              @updatedAt @db.Timestamptz(3)
+
+  clinic                Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  practitionerProfile   PractitionerProfile   @relation(fields: [clinicId, practitionerProfileId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  privilege             PractitionerClinicalPrivilege? @relation(fields: [clinicId, privilegeId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  conductedBy           ClinicMembership      @relation("PrivilegeReviewer", fields: [clinicId, conductedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, practitionerProfileId, reviewType])
+  @@index([clinicId, status])
 }

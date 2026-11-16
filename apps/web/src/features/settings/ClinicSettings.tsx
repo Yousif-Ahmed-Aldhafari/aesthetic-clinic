@@ -8,6 +8,7 @@ import { PrivacyPane } from './PrivacyPane';
 import { BranchManagementPanel } from '../branches/BranchManagementPanel';
 import { SpecialtyAdministrationPanel } from '../specialties/SpecialtyAdministrationPanel';
 import { SecurityHealthPanel } from './SecurityHealthPanel';
+import { ClinicalGovernanceWorkspace } from '../clinical-governance/ClinicalGovernanceWorkspace';
 import './settings.css';
 type Props={clinic:ClinicContext;csrfToken:string;onAuthError:(error:unknown)=>void;onUpdated:()=>Promise<void>};
 type Actions={busy:boolean;write:<T>(path:string,body:unknown,method?:string)=>Promise<T|undefined>;upload:(purpose:string,file:File)=>Promise<{id:string;previewUrl:string}|undefined>};
@@ -26,7 +27,7 @@ export function ClinicSettings(p:Props){
   const refresh=()=>setRevision(n=>n+1),updated=async()=>{refresh();try{await p.onUpdated();}catch(e){setError('حُفظ التغيير، وتعذّر تحديث هوية الصفحة. أعد تحميل الصفحة.');if(e instanceof ApiError&&e.status===401)p.onAuthError(e);}};
   if(!p.clinic.permissions.includes('clinic.settings.read'))return <p role="alert">لا تملك صلاحية إدارة إعدادات هذه العيادة.</p>;
   return <section className="clinic-settings" dir="rtl"><div className="settings-intro"><span className="auth-kicker">هوية مستقلة لكل عيادة</span><h3>{p.clinic.displayName}</h3><p>هذه إعدادات العيادة المختارة. إدارة المنصة منفصلة ولا تمنح وصولًا إلى سجلات العيادات.</p></div>
-    <nav className="settings-tabs" aria-label="أقسام إعدادات العيادة">{[['profile','بيانات العيادة'],['branding','الهوية البصرية'],['domains','النطاقات'],['members','فريق العمل'],['branches','إدارة الفروع'],['specialties','التخصصات والاعتماد'],['audit','سجل التغييرات'],['security','الأمان والجلسات'],['privacy','الخصوصية والحوكمة']].filter(([id])=>(id!=='branches'||p.clinic.permissions.includes('branches.read'))&&(id!=='specialties'||p.clinic.permissions.includes('specialties.read'))).map(([id,label])=><button key={id} className={tab===id?'selected':''} aria-pressed={tab===id} disabled={busy} onClick={()=>{setTab(id);setMessage('');setError('');}}>{label}</button>)}</nav>
+    <nav className="settings-tabs" aria-label="أقسام إعدادات العيادة">{[['profile','بيانات العيادة'],['branding','الهوية البصرية'],['domains','النطاقات'],['members','فريق العمل'],['branches','إدارة الفروع'],['specialties','التخصصات والاعتماد'],['clinical-governance','الحوكمة السريرية وسلامة المرضى'],['audit','سجل التغييرات'],['security','الأمان والجلسات'],['privacy','الخصوصية والحوكمة']].filter(([id])=>(id!=='branches'||p.clinic.permissions.includes('branches.read'))&&(id!=='specialties'||p.clinic.permissions.includes('specialties.read'))&&(id!=='clinical-governance'||p.clinic.permissions.includes('clinical.governance.read')||p.clinic.permissions.includes('clinical.safety-policies.read'))).map(([id,label])=><button key={id} className={tab===id?'selected':''} aria-pressed={tab===id} disabled={busy} onClick={()=>{setTab(id);setMessage('');setError('');}}>{label}</button>)}</nav>
     {error&&<p className="patient-error" role="alert">{error}</p>}{message&&<p className="settings-success" role="status">{message}</p>}<div aria-busy={busy}>
     {tab==='profile'&&<ProfilePane key={tab} p={p} actions={actions} revision={revision} saved={updated}/>}
     {tab==='branding'&&<BrandingPane key={tab} p={p} actions={actions} revision={revision} saved={updated}/>}
@@ -34,6 +35,7 @@ export function ClinicSettings(p:Props){
     {tab==='members'&&<StaffPane key={tab} p={p} actions={actions} revision={revision} saved={refresh}/>}
     {tab==='branches'&&<BranchManagementPanel key={tab} clinic={p.clinic} csrfToken={p.csrfToken} onAuthError={p.onAuthError}/>}
     {tab==='specialties'&&<SpecialtyAdministrationPanel key={tab} clinic={p.clinic} csrfToken={p.csrfToken} onAuthError={p.onAuthError}/>}
+    {tab==='clinical-governance'&&<ClinicalGovernanceWorkspace key={tab} clinic={p.clinic} csrfToken={p.csrfToken} onAuthError={p.onAuthError}/>}
     {tab==='audit'&&<AuditPane key={tab} p={p} revision={revision}/>}
     {tab==='security'&&<SecurityPane key={tab} p={p} revision={revision}/>}
     {tab==='privacy'&&<PrivacyPane key={tab} clinic={p.clinic} csrfToken={p.csrfToken} revision={revision} onAuthError={p.onAuthError}/>}

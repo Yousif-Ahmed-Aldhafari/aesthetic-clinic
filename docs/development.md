@@ -1,5 +1,18 @@
 # Development setup
 
+## Phase 7.4 clinical governance, patient safety & healthcare integration readiness
+
+Apply `20261116000300_clinical_governance_and_safety` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 40.
+- Migration: `apps/api/prisma/migrations/20261116000300_clinical_governance_and_safety/migration.sql` creates 6 models: `ClinicalSafetyPolicy`, `ClinicalSafetyPolicyVersion`, `ClinicalIncident`, `ClinicalIncidentCounter`, `EmergencyBreakGlassAccess`, and `PractitionerPrivilegeReview` with `FORCE ROW LEVEL SECURITY`, tenant isolation policies, and database trigger guards in `lamssa_security`:
+  - `clinical_safety_policy_version_guard()`: prevents mutation of approved/activated versions and enforces anti-self-approval (`approvedByMembershipId !== authorMembershipId`).
+  - `break_glass_guard()`: prevents modification of audited sessions and enforces anti-self-audit (`reviewedByMembershipId !== requestedByMembershipId`).
+  - `privilege_review_guard()`: enforces anti-self-review on credentialing and emergency suspensions (`conductedByMembershipId !== practitionerProfile.membershipId`).
+- Clinical Governance Module: `apps/api/src/clinical-governance/` providing REST endpoints under `/api/v1/clinics/:clinicId/clinical-governance/`.
+- Interoperability Module: `apps/api/src/interoperability/` providing HL7® FHIR® R4 mappers for 12 core clinical concepts and provider adapters (Lab, Imaging/PACS, Pharmacy/Wasfaty, HIE) running under strict sandbox boundaries (`enabled: false` by default, regex allowlist, zero-PII logging).
+- Clinical Governance Workspace: `apps/web/src/features/clinical-governance/ClinicalGovernanceWorkspace.tsx` providing a 6-tab Arabic-first RTL workspace under Clinic Settings.
+- Test suites: `apps/api/test/clinical-governance.integration.test.ts` (all 7 test blocks passed), `apps/api/test/interoperability-fhir.test.ts`, `apps/api/test/clinical-governance-policy.test.ts`. Total tests: 258 unit tests, 375 database integration tests.
+- Documentation: `docs/clinical-governance-and-safety.md`, `docs/healthcare-interoperability-readiness.md`, and `docs/phase-7-step-7-4-acceptance.md`.
+
 ## Phase 7.3 disaster recovery, backup restoration & infrastructure resilience
 
 Apply `20261116000200_trusted_session_authorization` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 39.

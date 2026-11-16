@@ -38,6 +38,8 @@ import { ClinicalFoundationModule } from './clinical-foundation/clinical-foundat
 import { ClinicalOrdersModule } from './clinical-orders/clinical-orders.module.js';
 import { ClinicalFormsModule } from './clinical-forms/clinical-forms.module.js';
 import { KmsModule } from './kms/kms.module.js';
+import { ClinicalGovernanceModule } from './clinical-governance/clinical-governance.module.js';
+import { InteroperabilityModule } from './interoperability/interoperability.module.js';
 
 @Module({
   imports: [
@@ -64,6 +66,8 @@ import { KmsModule } from './kms/kms.module.js';
     ClinicalOrdersModule,
     ClinicalFormsModule,
     KmsModule,
+    ClinicalGovernanceModule,
+    InteroperabilityModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],
