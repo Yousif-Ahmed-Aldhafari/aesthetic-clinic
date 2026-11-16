@@ -1,5 +1,18 @@
 # Development setup
 
+## Phase 7.3 disaster recovery, backup restoration & infrastructure resilience
+
+Apply `20261116000200_trusted_session_authorization` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 39.
+- Migration: `apps/api/prisma/migrations/20261116000200_trusted_session_authorization/migration.sql` eliminates caller-controlled GUC session variables, switching to trusted database session lookups (`Session`, `ClinicMembership`), revokes direct table grants on `PatientVerificationToken` and `PatientSession` from `lamssa_runtime`, and installs `lamssa_security.portal_create_invitation_token(...)` as an attributable `SECURITY DEFINER` routine.
+- Disaster Recovery Tooling:
+  - `npm run dr:backup`: Orchestrates full encrypted PostgreSQL backup, clinic asset/document archive, and sanitized KMS Key Registry metadata into an HMAC-SHA256 signed manifest bundle.
+  - `npm run dr:drill`: Non-destructively validates manifest cryptographic HMAC signatures, ciphertext SHA-256 digests, AES-256-GCM auth tags, and in-memory database TOC without modifying databases.
+  - `npm run dr:restore`: Executes genuine restoration into an isolated target database with destructive overwrite guards.
+  - `npm run dr:status`: Real-time operational readiness monitoring evaluating backup freshness against RTO/RPO SLAs.
+  - `npm run assets:verify`: Cross-checks file storage against database records in `ClinicalDocument`, `ClinicalPhoto`, and `ClinicAsset`.
+- Test suites: `apps/api/test/disaster-recovery.integration.test.ts` (11 integration tests verifying drills, tampering detection, KMS lifecycle, and SLA metrics). Total tests: 227 unit tests, 367 database tests, 11 DR tests, 46 browser checks.
+- Documentation: Complete SRE, PITR, Patroni HA, and Saudi data sovereignty manual at `docs/disaster-recovery-and-resilience.md`.
+
 ## Phase 7.2 production database isolation, secret vaulting & runtime security hardening
 
 Apply `20261116000100_runtime_security_hardening` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 38.

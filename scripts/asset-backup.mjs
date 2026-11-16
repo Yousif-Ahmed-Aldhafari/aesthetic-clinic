@@ -1,10 +1,10 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, lstatSync, writeFileSync, chmodSync, rmSync, unlinkSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { encryptBackup, calculateSha256 } from './backup-crypto.mjs';
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
-const SAFE_KEY = new RegExp(`^${UUID}/${UUID}(?:\\.(?:thumb))?\\.(?:png|webp|enc)$`, 'i');
+const SAFE_KEY = new RegExp(`^${UUID}/(?:docs/)?${UUID}(?:\\.(?:thumb))?\\.(?:png|webp|enc)$`, 'i');
 const MAX_BUNDLE_BYTES = 1024 * 1024 * 1024;
 
 function collect(root) {
@@ -37,6 +37,9 @@ export function runAssetBackup(options = {}) {
   const retentionDays = Number(options.retentionDays ?? process.env.BACKUP_RETENTION_DAYS ?? 30);
   if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650) throw new Error('BACKUP_RETENTION_DAYS must be between 1 and 3650.');
   if (!key) throw new Error('BACKUP_ENCRYPTION_KEY is required for encrypted asset backups.');
+  if (!existsSync(source)) {
+    mkdirSync(source, { recursive: true, mode: 0o700 });
+  }
   const sourceStat = lstatSync(source, { throwIfNoEntry: false });
   if (!sourceStat?.isDirectory() || sourceStat.isSymbolicLink()) throw new Error('ASSET_STORAGE_DIR must be a real existing directory, not a link.');
   mkdirSync(outdir, { recursive: true, mode: 0o700 });

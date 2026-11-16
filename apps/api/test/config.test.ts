@@ -126,6 +126,41 @@ test('production security validator enforces session and idle limits', () => {
   });
 });
 
+test('production security validator enforces verified TLS on remote production database', () => {
+  // Remote database without TLS encryption rejected
+  assert.throws(() => validateEnvironment({
+    ...validProd,
+    DATABASE_URL: 'postgresql://lamssa_prod:secret@remote-db.internal:5432/lamssa_prod',
+  }), (err: unknown) => {
+    assert(err instanceof ProductionSecurityValidationError);
+    assert(err.violations.includes('DATABASE_URL_REQUIRES_TLS_ENCRYPTION'));
+    return true;
+  });
+
+  // Remote database with unverified TLS (sslmode=require) rejected
+  assert.throws(() => validateEnvironment({
+    ...validProd,
+    DATABASE_URL: 'postgresql://lamssa_prod:secret@remote-db.internal:5432/lamssa_prod?sslmode=require',
+  }), (err: unknown) => {
+    assert(err instanceof ProductionSecurityValidationError);
+    assert(err.violations.includes('DATABASE_URL_REQUIRES_VERIFIED_TLS'));
+    return true;
+  });
+
+  // Remote database with verified certificate chain (sslmode=verify-full or verify-ca) accepted
+  const configFull = validateEnvironment({
+    ...validProd,
+    DATABASE_URL: 'postgresql://lamssa_prod:secret@remote-db.internal:5432/lamssa_prod?sslmode=verify-full',
+  });
+  assert.ok(configFull.DATABASE_URL);
+
+  const configCa = validateEnvironment({
+    ...validProd,
+    DATABASE_URL: 'postgresql://lamssa_prod:secret@remote-db.internal:5432/lamssa_prod?sslmode=verify-ca',
+  });
+  assert.ok(configCa.DATABASE_URL);
+});
+
 test('platform subdomain wildcard is restricted to the configured base domain', () => {
   const config = validateEnvironment({
     ...valid,

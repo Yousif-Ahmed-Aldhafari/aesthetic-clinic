@@ -31,16 +31,20 @@ The PostgreSQL database enforces three discrete role tiers:
 
 ---
 
-## 3. Database Hardening: Migration 038
+## 3. Database Hardening: Migrations 038 & 039
 
-Additive migration `20261116000100_runtime_security_hardening` was deployed to resolve verified token lifecycle and RLS procedural boundaries:
-
-### 3.1 Patient Verification Token & Session RLS Hardening
-- **`PatientVerificationToken`:** Direct DML (`INSERT`, `UPDATE`, `DELETE`) is guarded by RLS policies strictly requiring `lamssa_security.context_uuid('lamssa.session_id') IS NOT NULL`. Unauthenticated creation is impossible through direct table writes.
+### 3.1 Patient Verification Token & Session RLS Hardening (Migration 038)
+- **`PatientVerificationToken`:** Direct DML (`INSERT`, `UPDATE`, `DELETE`) is guarded by RLS policies strictly requiring authenticated session verification. Unauthenticated creation is impossible through direct table writes.
 - **`PatientSession`:** Direct `INSERT` is restricted to active authenticated sessions. Minting new patient sessions is restricted exclusively to authenticated bootstrap `SECURITY DEFINER` routines.
 
-### 3.2 `SECURITY DEFINER` Procedure Hardening
-All 36 procedures under `lamssa_security` enforce:
+### 3.2 Trusted Session Authorization & Procedural Invitation Minting (Migration 039)
+- **Session Forgery Remediation:** Replaced caller-controlled PostgreSQL GUC session variables (`lamssa.session_id`, `lamssa.clinic_id`) with trusted session verification against `public."Session"` and `public."ClinicMembership"`. An attacker with direct SQL access cannot forge session variables to impersonate tenants or users.
+- **Denial of Direct Grants:** Revoked direct `INSERT`, `UPDATE`, and `DELETE` permissions on `PatientVerificationToken` and `PatientSession` from `lamssa_runtime`.
+- **Attributable Staff Invitation Creation:** Implemented `lamssa_security.portal_create_invitation_token(...)` as an attributable, validated `SECURITY DEFINER` procedure requiring a verified active staff member with `PATIENT_WRITE` permission.
+- **Remote Production Database TLS Enforcement:** Production security validator mandates verified TLS (`sslmode=verify-full` or `sslmode=verify-ca`) on remote production database URLs.
+
+### 3.3 `SECURITY DEFINER` Procedure Hardening
+All 37 procedures under `lamssa_security` enforce:
 - Procedure ownership by the migration/owner role (`lamssa_migrator`).
 - Fixed, locked search path: `SET search_path = pg_catalog, pg_temp`.
 - Public execution revoked (`REVOKE ALL ON FUNCTION ... FROM PUBLIC`).

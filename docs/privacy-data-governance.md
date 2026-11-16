@@ -272,3 +272,24 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Data Classification**: `ClinicalFormResponse` and `ClinicalFormResponseAmendment` are classified as `SENSITIVE_PERSONAL`; definitions and versions are confidential clinic configuration. Administrative patient data exports strictly exclude unconsented clinical form responses.
 - **Audit Metadata Sanitization**: Audit logs record lifecycle state transitions (`DRAFT`, `FINALIZED`, `AMENDED`) and SHA-256 payload digests; raw clinical responses are never logged in audit metadata.
 - **Final Acceptance Verification**: Phase 6 Step 6.6 independently confirmed zero cross-tenant and zero cross-patient clinical data leakage across all 114 core tenant tables under `FORCE ROW LEVEL SECURITY`. Administrative roles remain strictly locked out from clinical records. Complete findings detailed in [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).
+
+---
+
+## 12. Phase 7 Disaster Recovery, Saudi Data Sovereignty & Key Lifecycle Governance (Steps 7.1–7.3)
+
+### 12.1 Patient Identity Isolation & Two-Tier KMS Envelope Encryption (Step 7.1)
+- **Patient Portal Security Boundary**: `PatientAccount`, `PatientSession`, `PatientVerificationToken`, and `PatientPortalAuditEvent` enforce `FORCE ROW LEVEL SECURITY` with non-recursive tenant policies. Unauthenticated authentication bootstrap routines are executed through 8 locked `SECURITY DEFINER` procedures in `lamssa_security`.
+- **Envelope Encryption**: Ephemeral 256-bit DEKs encrypt sensitive records using AES-256-GCM bound to `${clinicId}:${resourceType}:${recordId}` via AAD. DEKs are wrapped with active KEKs in `KmsKeyRegistry` and zeroed out immediately in memory (`dek.fill(0)`).
+- **Key Lifecycle Enforcements**: Encrypted records are safely read with `ACTIVE` and `RETIRED` keys. Compromised, disabled, or revoked keys fail closed immediately.
+
+### 12.2 Production Database Isolation & Secret Vaulting (Step 7.2)
+- **Elimination of Caller-Controlled Session Variables**: Session variables (`lamssa.session_id`, `lamssa.clinic_id`) replaced with trusted session verification against `Session` and `ClinicMembership`.
+- **Direct Grant Denial**: Denied direct DML privileges on patient tokens and sessions from `lamssa_runtime`.
+- **Secret Vaulting & Masking**: Provider-neutral `SecretVaultService` masks secrets via irreversible SHA-256 fingerprints (`****:<hash>`) and sanitizes application logs recursively.
+- **Remote TLS Mandate**: Production configuration validator mandates verified TLS (`sslmode=verify-full`) for remote production databases.
+
+### 12.3 Disaster Recovery, Tamper Evidence & Saudi Data Sovereignty (Step 7.3)
+- **Saudi Data Sovereignty Compliance**: Under NDMO, PDPL, and Saudi Cloud Computing Regulatory Framework, zero production health records, patient identities, or backup artifacts are transferred across national borders. Secondary DR sites are strictly located in-kingdom (Riyadh `me-central-1` primary, Jeddah `me-central-2` DR).
+- **HMAC-SHA256 Signed DR Manifests**: Disaster recovery manifests link encrypted database dumps, clinic asset/document archives, and KMS metadata under a cryptographic signature, preventing manifest tampering or asset desynchronization.
+- **Dual-Mode Recovery Drills**: Regular non-destructive drills (`npm run dr:drill`) verify database TOC (157 tables, 735 RLS policies, 39 migrations) and asset archives without modifying live data.
+- **Asset-to-Database Consistency**: `scripts/verify-asset-consistency.mjs` verifies file existence, permissions (`0600`/`0640`), and SHA-256 digests against database metadata, eliminating orphaned or tampered clinical records. See [docs/disaster-recovery-and-resilience.md](disaster-recovery-and-resilience.md).

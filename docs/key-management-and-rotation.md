@@ -107,4 +107,15 @@ Legacy ciphertexts produced during earlier phases (`v1:<iv>:<tag>:<ciphertext>`)
 In Phase 7 Step 7.2, the cryptographic infrastructure was fortified with runtime secret vaulting and configuration enforcement:
 1. **`SecretVaultService`:** Provider-neutral secret retrieval with fail-closed semantics, irreversible SHA-256 fingerprint masking (`****:<hash>`), and deep log sanitization.
 2. **`validateProductionSecurity`:** Enforces mandatory database TLS, rejects `synthetic` KMS in production, requires HTTPS external endpoints with key IDs, and validates local master keys (minimum 32 characters, template-free).
-3. **Database Migration 038:** Locked RLS policies and procedures ensuring verification tokens and session minting cannot be forged or replayed. See `docs/production-runtime-security.md` for full implementation details.
+3. **Database Migrations 038 & 039:** Locked RLS policies and procedures ensuring verification tokens and session minting cannot be forged or replayed. See `docs/production-runtime-security.md` for full implementation details.
+
+---
+
+## 7. Disaster Recovery & Operational Key Material Lifecycle (Phase 7, Step 7.3)
+
+In Phase 7 Step 7.3, disaster recovery procedures incorporate KMS Key Registry metadata into the unified DR bundle:
+1. **Metadata Export in DR Manifest:** `scripts/dr-backup.mjs` exports sanitized key metadata (`kms_registry_<target>_<timestamp>.meta.json`) recording registered KEK IDs, versions, states, and algorithms without exposing raw key material.
+2. **Fail-Closed Lifecycle Recovery:** During disaster recovery:
+   - Data encrypted under `ACTIVE` and `RETIRED` KEKs is successfully recovered and decrypted.
+   - `DISABLED` and `REVOKED` keys fail closed, throwing security exceptions upon decryption attempts to prevent unauthorized access or restoration of compromised keys.
+3. **Cross-Region DR Key Synchronization:** External KMS keys must have replica aliases provisioned in the secondary disaster recovery region (e.g. AWS KMS multi-region keys or HashiCorp Vault replication between Riyadh and Jeddah). See `docs/disaster-recovery-and-resilience.md`.

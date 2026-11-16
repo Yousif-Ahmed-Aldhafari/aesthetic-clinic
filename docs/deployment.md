@@ -281,6 +281,16 @@ For another recovery exercise:
    owner approval. A new asset directory is mandatory. Never overwrite native dev/test
    or production data during a drill.
 
+### Unified Phase 7 Disaster Recovery & Resilience (Step 7.3)
+
+In Phase 7 Step 7.3, disaster recovery was unified into an end-to-end multi-component pipeline:
+- `npm run dr:backup`: Creates an HMAC-SHA256 signed manifest bundle linking the encrypted PostgreSQL database dump, clinical media/encrypted documents archive, and sanitized KMS Key Registry metadata.
+- `npm run dr:drill`: Executes non-destructive archive drills verifying cryptographic HMAC signatures, ciphertext SHA-256 digests, AES-256-GCM auth tags, and in-memory database TOC without modifying databases.
+- `npm run dr:restore`: Executes genuine restoration into an isolated target database with destructive overwrite guards.
+- `npm run dr:status`: Real-time operational readiness monitoring evaluating backup freshness against RTO/RPO SLAs.
+- `npm run assets:verify`: Cross-checks file storage against database records in `ClinicalDocument`, `ClinicalPhoto`, and `ClinicAsset`.
+- See `docs/disaster-recovery-and-resilience.md` for complete runbooks, Patroni HA architecture, continuous PITR WAL replay, and Saudi cloud data sovereignty specifications.
+
 All temporary staging/recovery containers, volumes, credentials and verification
 artifacts are removed after the exercise. The temporary Docker socket group override
 must then be revoked by the owner. No public deployment, DNS change, real certificate

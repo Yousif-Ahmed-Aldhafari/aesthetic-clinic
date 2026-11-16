@@ -203,20 +203,10 @@ export class PatientPortalRepository {
         select: { id: true },
       });
 
-      // Revoke any previous unused tokens
-      await tx.patientVerificationToken.deleteMany({
-        where: { clinicId: c.clinicId, patientAccountId: account.id, tokenType: 'ACTIVATION', usedAt: null },
-      });
-
-      await tx.patientVerificationToken.create({
-        data: {
-          clinicId: c.clinicId,
-          patientAccountId: account.id,
-          tokenType: 'ACTIVATION',
-          tokenHash,
-          expiresAt,
-        },
-      });
+      // Invalidate prior unused tokens and mint single-use invitation token via SECURITY DEFINER procedure
+      if (tx.portalCreateInvitationToken) {
+        await tx.portalCreateInvitationToken(account.id, tokenHash, expiresAt);
+      }
 
       await this.audit.record(
         {

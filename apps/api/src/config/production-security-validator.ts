@@ -20,8 +20,12 @@ export function validateProductionSecurity(env: Environment): void {
     const dbUrl = new URL(env.DATABASE_URL);
     const isLoopback = dbUrl.hostname === '127.0.0.1' || dbUrl.hostname === 'localhost';
     const sslMode = dbUrl.searchParams.get('sslmode') || dbUrl.searchParams.get('ssl');
-    if (!isLoopback && sslMode !== 'require' && sslMode !== 'verify-full' && sslMode !== 'verify-ca' && sslMode !== 'true') {
-      violations.push('DATABASE_URL_REQUIRES_TLS_ENCRYPTION');
+    if (!isLoopback) {
+      if (!sslMode || sslMode === 'disable' || sslMode === 'allow' || sslMode === 'prefer') {
+        violations.push('DATABASE_URL_REQUIRES_TLS_ENCRYPTION');
+      } else if (sslMode !== 'verify-full' && sslMode !== 'verify-ca') {
+        violations.push('DATABASE_URL_REQUIRES_VERIFIED_TLS');
+      }
     }
   } catch {
     violations.push('DATABASE_URL_MALFORMED');
