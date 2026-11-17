@@ -274,3 +274,18 @@ Following recovery:
 - **Clinical Safety Officer**: ______________ Date: __________
 - **Data Protection Officer**: ______________ Date: __________
 ```
+
+---
+
+## 9. Disaster Recovery Release Gate & Operational Readiness Status
+
+### Current Verification Classification
+- **Automated Non-Destructive DR Drill (`--drill`)**: **VERIFIED**
+  - Cryptographic HMAC-SHA256 manifest signature verification.
+  - AES-256-GCM authentication tag and ciphertext SHA-256 validation.
+  - Archive TOC inspection: 157 tables, 735 RLS policies, 40 migrations verified in-memory.
+  - File asset checksum cross-checking against database references.
+- **Full Isolated Database Restore (`runRestore`)**: **NOT VERIFIED (ENVIRONMENT CONSTRAINT)**
+  - In local development and automated CI environments, `lamssa_test_migrator` intentionally lacks `rolcreatedb` privileges as a security guardrail.
+  - Consequently, the full end-to-end restore integration test in `apps/api/test/backup-restore.test.ts` (`runRestore creates target database and restores all tables and RLS policies`) is skipped when unprivileged.
+  - **Classification**: This is an explicit **Infrastructure Release Blocker** for production clinical deployment. It does NOT block code integration into `main` (code logic and non-destructive drills pass), but production deployment is gated until a full restore drill to an isolated staging database is executed and certified on infrastructure with database provisioning authority.

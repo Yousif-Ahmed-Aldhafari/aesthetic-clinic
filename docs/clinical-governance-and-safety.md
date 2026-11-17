@@ -92,11 +92,26 @@ In emergency situations (e.g., patient unconscious, acute anaphylaxis, trauma re
 1. **Strictly Time-Bounded**: Access is granted for a specific duration bounded between 1 and 120 minutes (`durationMinutes <= 120`). Access automatically expires after this window.
 2. **Mandatory Clinical Justification**: Requires an explicit justification of at least 20 characters (`clinicalJustification.length >= 20`) stating the nature of the emergency.
 3. **Patient-Scoped**: Granted exclusively for a specific target patient (`patientId`). Blanket clinic-wide or multi-patient overrides are architecturally prohibited.
-4. **Mandatory Post-Hoc Audit Review**:
+4. **Verified Practitioner Requirement**: Only practitioners with verified medical qualification status (`verificationStatus === 'VERIFIED'`) are authorized to initiate break-glass sessions.
+5. **Mandatory Post-Hoc Audit Review**:
    - Every break-glass activation appears in the Medical Director audit queue.
    - Outcome recorded as `APPROVED_JUSTIFIED` or `FLAGGED_UNJUSTIFIED`.
    - **Database Trigger Guard (`break_glass_guard`)**:
      - Enforces **anti-self-audit**: `reviewedByMembershipId` MUST NOT equal `requestedByMembershipId`.
+
+### Endpoint-Level Clinical Read Enforcement
+In Step 7.6, clinical encounter read authorization in `ClinicalRepository` was upgraded to evaluate active emergency break-glass sessions:
+- **`ClinicalRepository.get()`**:
+  - If the requested encounter is owned by the calling clinician, access is granted normally.
+  - If owned by another clinician, `ClinicalGovernanceRepository.isEmergencyAccessActive()` is evaluated for `(clinicId, membershipId, target.patientId)`.
+  - If an active, non-expired, non-revoked break-glass session exists for that patient, access is granted and audited under action `clinical.break-glass.encounter.read` with patient, status, and original author metadata.
+  - If no active break-glass session exists, it fails closed returning `404 Not Found`.
+- **`ClinicalRepository.list()`**:
+  - Dynamically scopes the query to all encounters for the patient across clinicians if an active break-glass session is present; otherwise scopes strictly to `clinicianMembershipId: c.membershipId`.
+  - Emits `clinical.break-glass.encounters.listed` audit event when emergency encounters are retrieved.
+- **Immediate Fail-Closed on Revocation or Expiry**:
+  - Early revocation via `POST /api/v1/clinics/:clinicId/clinical-governance/break-glass/:id/revoke` sets `revokedAt = now()`.
+  - Both `get()` and `list()` immediately revert to denying access, verified via automated integration tests (`step-7-4-security-audit.integration.test.ts`).
 
 ---
 

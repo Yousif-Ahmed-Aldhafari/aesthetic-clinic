@@ -7,6 +7,7 @@ import { PrismaClient } from '../src/generated/prisma/client.js';
 import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
 import { ClinicalGovernanceRepository } from '../src/prisma/clinical-governance.repository.js';
+import { ClinicalRepository } from '../src/prisma/clinical.repository.js';
 import { PharmacyAdapter } from '../src/interoperability/adapters/pharmacy.adapter.js';
 import { HealthExchangeAdapter } from '../src/interoperability/adapters/health-exchange.adapter.js';
 import { VerifiedSessions, type VerifiedPrincipal } from '../src/prisma/verified-sessions.js';
@@ -19,6 +20,7 @@ describe('Step 7.4 Security & Integration Code Audit: Break-Glass, Governance & 
   let owner: PrismaClient;
   let pool: pg.Pool;
   let govRepo: ClinicalGovernanceRepository;
+  let clinicalRepo: ClinicalRepository;
   let verifiedSessions: VerifiedSessions;
   let identity: IdentityDatabase;
 
@@ -59,6 +61,7 @@ describe('Step 7.4 Security & Integration Code Audit: Break-Glass, Governance & 
     const moduleRef = await NestFactory.createApplicationContext(AppModule, { logger: false });
     app = moduleRef as any;
     govRepo = moduleRef.get(ClinicalGovernanceRepository);
+    clinicalRepo = moduleRef.get(ClinicalRepository);
     verifiedSessions = moduleRef.get(VerifiedSessions);
     identity = moduleRef.get(IdentityDatabase);
 
@@ -446,6 +449,101 @@ describe('Step 7.4 Security & Integration Code Audit: Break-Glass, Governance & 
     assert.equal(reviewed.reviewOutcome, 'APPROVED_JUSTIFIED');
     assert.equal(reviewed.reviewedByMembershipId, membershipMedDirectorAId);
     assert.ok(reviewed.auditReviewedAt);
+  });
+
+  it('1.7: Clinical read endpoints enforce break-glass authorization for cross-clinician records', async () => {
+    // 1. Doctor A creates an encounter for Patient A1
+    const encounter = await clinicalRepo.create(proofDoctorA, clinicAId, {
+      patientId: patientA1Id,
+      content: {
+        chiefComplaint: 'ألم حاد في الصدر مع ضيق تنفس',
+        relevantHistory: 'ارتفاع ضغط الدم',
+        allergies: ['Penicillin'],
+        medications: ['Amlodipine 5mg'],
+        priorProcedures: '',
+        examination: 'BP 160/95, HR 102',
+        assessment: 'Suspected acute coronary syndrome',
+        recommendations: 'ECG, Troponin, Aspirin 300mg',
+      },
+    });
+    assert.ok(encounter.id);
+
+    // 2. Doctor A can read their own encounter
+    const readByDocA = await clinicalRepo.get(proofDoctorA, clinicAId, encounter.id);
+    assert.equal(readByDocA.id, encounter.id);
+
+    // 3. Med Director A (without break-glass) CANNOT read Doctor A's encounter (404)
+    await assert.rejects(
+      async () => {
+        await clinicalRepo.get(proofMedDirectorA, clinicAId, encounter.id);
+      },
+      (err: any) => err.status === 404,
+    );
+
+    // Med Director A's encounter list for patientA1 is empty without break-glass
+    const listBefore = await clinicalRepo.list(proofMedDirectorA, clinicAId, patientA1Id, { pageSize: 10 });
+    assert.equal(listBefore.items.length, 0);
+
+    // 4. Med Director A initiates emergency break-glass for patientA1
+    const bg = await govRepo.requestBreakGlass(proofMedDirectorA, clinicAId, {
+      patientId: patientA1Id,
+      clinicalJustification: 'إنعاش فوري واستشارة قلبية طارئة تتطلب مراجعة ملاحظات د. ليلى',
+      durationMinutes: 45,
+    });
+    assert.ok(bg.id);
+
+    // 5. Under active break-glass, Med Director A CAN read Doctor A's encounter
+    const readUnderBg = await clinicalRepo.get(proofMedDirectorA, clinicAId, encounter.id);
+    assert.equal(readUnderBg.id, encounter.id);
+    assert.equal(readUnderBg.patientId, patientA1Id);
+
+    // And list returns Doctor A's encounter for patientA1
+    const listUnderBg = await clinicalRepo.list(proofMedDirectorA, clinicAId, patientA1Id, { pageSize: 10 });
+    assert.equal(listUnderBg.items.length, 1);
+    assert.equal(listUnderBg.items[0].id, encounter.id);
+
+    // 6. Cross-patient isolation: Med Director A still cannot read another patient's encounters
+    const patientA2 = await owner.patient.create({
+      data: {
+        clinicId: clinicAId,
+        patientNumber: `P-${Math.floor(800000 + Math.random() * 100000)}`,
+        fullName: 'مريض آخر منفصل',
+        searchName: 'مريض آخر منفصل',
+        gender: 'FEMALE',
+        status: 'ACTIVE',
+      },
+    });
+    const encounterP2 = await clinicalRepo.create(proofDoctorA, clinicAId, {
+      patientId: patientA2.id,
+      content: {
+        chiefComplaint: 'استشارة جلدية روتينية',
+        relevantHistory: '',
+        allergies: [],
+        medications: [],
+        priorProcedures: '',
+        examination: '',
+        assessment: 'Routine review',
+        recommendations: 'Follow-up 2 weeks',
+      },
+    });
+    await assert.rejects(
+      async () => {
+        await clinicalRepo.get(proofMedDirectorA, clinicAId, encounterP2.id);
+      },
+      (err: any) => err.status === 404,
+    );
+
+    // 7. Revoke break-glass early -> immediate fail-closed
+    await govRepo.revokeBreakGlass(proofMedDirectorA, clinicAId, bg.id, 'تمت السيطرة على الحالة الإسعافية بنجاح');
+
+    await assert.rejects(
+      async () => {
+        await clinicalRepo.get(proofMedDirectorA, clinicAId, encounter.id);
+      },
+      (err: any) => err.status === 404,
+    );
+    const listAfterRevoke = await clinicalRepo.list(proofMedDirectorA, clinicAId, patientA1Id, { pageSize: 10 });
+    assert.equal(listAfterRevoke.items.length, 0);
   });
 
   // ==========================================================================

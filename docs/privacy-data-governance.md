@@ -319,3 +319,13 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Monotonic Sequence & Financial Hash Immutability**:
   - Monotonic counter allocation (`PatientCounter`, `ClinicInvoiceCounter`) under concurrent load ensures continuous, non-repeating numbering.
   - Invoices enforce cryptographic issuance hashes and SHA-256 event chaining (`FinancialAuditEvent`), providing mathematical tamper-evidence for tax and patient privacy audits. See [docs/performance-and-scalability.md](performance-and-scalability.md), [docs/operational-observability.md](operational-observability.md), and [docs/phase-7-step-7-5-acceptance.md](phase-7-step-7-5-acceptance.md).
+
+### 12.6 Break-Glass Clinical Read Audit & Endpoint Privacy Enforcement (Step 7.6)
+- **Endpoint-Level Emergency Evaluation**:
+  - `ClinicalRepository.get()` and `ClinicalRepository.list()` actively evaluate emergency break-glass sessions via `ClinicalGovernanceRepository.isEmergencyAccessActive()`.
+  - Authorized clinicians with an active emergency session for a specific patient are permitted to view past clinical encounters across clinicians.
+  - Revoked, expired, or non-emergency requests fail closed immediately (`404 Not Found`).
+- **Attributable Audit Trail for Emergency Access**:
+  - Reading an encounter under break-glass emits `clinical.break-glass.encounter.read` recording the patient, author, encounter status, and reader.
+  - Listing patient encounters under break-glass emits `clinical.break-glass.encounters.listed`.
+  - All break-glass read actions are tamper-evidently linked to the requesting practitioner and subject to mandatory Medical Director review (`break_glass_guard`). See [docs/clinical-governance-and-safety.md](clinical-governance-and-safety.md) and [docs/phase-7-final-acceptance.md](phase-7-final-acceptance.md).

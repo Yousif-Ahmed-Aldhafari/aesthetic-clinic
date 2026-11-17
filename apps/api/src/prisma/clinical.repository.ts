@@ -4,6 +4,7 @@ import type { ClinicalListQuery, CreateAmendmentDto, CreateEncounterDto, UpdateC
 import type { VerifiedPrincipal } from './verified-sessions.js';
 import { TenantDatabaseService, type TenantTransaction } from './tenant-database.service.js';
 import { AuditRepository } from './audit.repository.js';
+import { ClinicalGovernanceRepository } from './clinical-governance.repository.js';
 
 const noteSelect={id:true,status:true,version:true,content:true,signedAt:true,createdAt:true,updatedAt:true,authorMembershipId:true,
   amendments:{select:{id:true,reason:true,content:true,authorMembershipId:true,createdAt:true},orderBy:[{createdAt:'asc' as const},{id:'asc' as const}]}} satisfies Prisma.ClinicalNoteSelect;
@@ -16,17 +17,42 @@ const emptyContent={chiefComplaint:'',relevantHistory:'',allergies:[],medication
 
 @Injectable()
 export class ClinicalRepository {
-  constructor(private readonly database:TenantDatabaseService,private readonly audit:AuditRepository){}
+  constructor(
+    private readonly database:TenantDatabaseService,
+    private readonly audit:AuditRepository,
+    private readonly govRepo:ClinicalGovernanceRepository,
+  ){}
   list(proof:VerifiedPrincipal,clinicId:string,patientId:string,q:ClinicalListQuery){
     return this.database.withClinicContext(proof,clinicId,['clinical.encounters.read'],async(tx,c)=>{
       const patient=await tx.patient.findFirst({where:{id:patientId,clinicId:c.clinicId},select:{id:true}});if(!patient)throw new NotFoundException();
-      const rows=await tx.clinicalEncounter.findMany({where:{clinicId:c.clinicId,patientId,clinicianMembershipId:c.membershipId},select:encounterSelect,orderBy:[{createdAt:'desc'},{id:'desc'}],take:Math.min(q.pageSize,50)+1,...(q.cursor?{cursor:{id:q.cursor},skip:1}:{})});
-      const size=Math.min(q.pageSize,50),items=rows.slice(0,size);return{items:items.map(output),nextCursor:rows.length>size?items.at(-1)!.id:null};
+      const isEmergency=await this.govRepo.isEmergencyAccessActive(tx,c.clinicId,c.membershipId,patientId);
+      const whereClause=isEmergency
+        ?{clinicId:c.clinicId,patientId}
+        :{clinicId:c.clinicId,patientId,clinicianMembershipId:c.membershipId};
+      const rows=await tx.clinicalEncounter.findMany({where:whereClause,select:encounterSelect,orderBy:[{createdAt:'desc'},{id:'desc'}],take:Math.min(q.pageSize,50)+1,...(q.cursor?{cursor:{id:q.cursor},skip:1}:{})});
+      const size=Math.min(q.pageSize,50),items=rows.slice(0,size);
+      if(isEmergency&&items.length>0){
+        await this.safeAudit(tx,c,'clinical.break-glass.encounters.listed',patientId,{count:items.length});
+      }
+      return{items:items.map(output),nextCursor:rows.length>size?items.at(-1)!.id:null};
     });
   }
   get(proof:VerifiedPrincipal,clinicId:string,id:string){return this.database.withClinicContext(proof,clinicId,['clinical.encounters.read'],async(tx,c)=>{
-    const row=await this.owned(tx,c.clinicId,c.membershipId,id);if(!row)throw new NotFoundException();
-    await this.safeAudit(tx,c,'clinical.encounter.read',id,{status:row.status});return output(row);
+    const target=await tx.clinicalEncounter.findFirst({where:{id,clinicId:c.clinicId},select:{id:true,patientId:true,clinicianMembershipId:true,status:true}});
+    if(!target)throw new NotFoundException();
+    let isEmergency=false;
+    if(target.clinicianMembershipId!==c.membershipId){
+      isEmergency=await this.govRepo.isEmergencyAccessActive(tx,c.clinicId,c.membershipId,target.patientId);
+      if(!isEmergency)throw new NotFoundException();
+    }
+    const row=await tx.clinicalEncounter.findFirst({where:{id,clinicId:c.clinicId},select:encounterSelect});
+    if(!row)throw new NotFoundException();
+    if(isEmergency){
+      await this.safeAudit(tx,c,'clinical.break-glass.encounter.read',id,{patientId:target.patientId,originalClinicianMembershipId:target.clinicianMembershipId,status:row.status});
+    }else{
+      await this.safeAudit(tx,c,'clinical.encounter.read',id,{status:row.status});
+    }
+    return output(row);
   });}
   create(proof:VerifiedPrincipal,clinicId:string,input:CreateEncounterDto){return this.database.withClinicContext(proof,clinicId,['clinical.encounters.create'],async(tx,c)=>{
     const patient=await tx.patient.findFirst({where:{id:input.patientId,clinicId:c.clinicId,status:'ACTIVE'},select:{id:true}});if(!patient)throw new NotFoundException();
