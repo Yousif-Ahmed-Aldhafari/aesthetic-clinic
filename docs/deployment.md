@@ -92,8 +92,12 @@ That key grants metrics only. Diagnostics and alerts require an active
 
 ## Production configuration and release
 
-Startup requires HTTPS CORS origins, strong CSRF/MFA/monitoring secrets, an absolute
-asset path, explicit hosts and one trusted proxy hop. `DATABASE_URL` is runtime-only.
+Startup requires HTTPS CORS origins, strong CSRF/MFA/clinical-media/KMS/monitoring secrets, an absolute
+asset path, explicit hosts, mandatory database TLS encryption (`sslmode=require`), and exactly one trusted
+proxy hop (`TRUST_PROXY_HOPS=1`). Production security configuration is enforced at boot by
+`validateProductionSecurity` (`apps/api/src/config/production-security-validator.ts`). Secrets are
+retrieved via `SecretVaultService` with fail-closed error handling and irreversible masking (`****:<hash>`).
+`DATABASE_URL` is runtime-only and subject to `FORCE RLS` under `lamssa_runtime`.
 Keep `MIGRATION_DATABASE_URL`, database admin credentials and the backup key outside
 the API service. Never expose secrets through `VITE_*`, browser storage or image layers.
 
@@ -276,6 +280,45 @@ For another recovery exercise:
 5. Existing database targets require both destructive-overwrite options and separate
    owner approval. A new asset directory is mandatory. Never overwrite native dev/test
    or production data during a drill.
+
+### Unified Phase 7 Disaster Recovery & Resilience (Step 7.3)
+
+In Phase 7 Step 7.3, disaster recovery was unified into an end-to-end multi-component pipeline:
+- `npm run dr:backup`: Creates an HMAC-SHA256 signed manifest bundle linking the encrypted PostgreSQL database dump, clinical media/encrypted documents archive, and sanitized KMS Key Registry metadata.
+- `npm run dr:drill`: Executes non-destructive archive drills verifying cryptographic HMAC signatures, ciphertext SHA-256 digests, AES-256-GCM auth tags, and in-memory database TOC without modifying databases.
+- `npm run dr:restore`: Executes genuine restoration into an isolated target database with destructive overwrite guards.
+- `npm run dr:status`: Real-time operational readiness monitoring evaluating backup freshness against RTO/RPO SLAs.
+- `npm run assets:verify`: Cross-checks file storage against database records in `ClinicalDocument`, `ClinicalPhoto`, and `ClinicAsset`.
+- See `docs/disaster-recovery-and-resilience.md` for complete runbooks, Patroni HA architecture, continuous PITR WAL replay, and Saudi cloud data sovereignty specifications.
+
+### Production Hardware Sizing & Operational Observability (Step 7.5)
+
+In Phase 7 Step 7.5, realistic multi-tenant performance and operational resilience were benchmarked and verified:
+- **Benchmark Suite**: `npm run perf:benchmark` runs Workloads A through E across isolated tenant clinics with full PostgreSQL FORCE RLS, atomic counter locking, and SHA-256 financial audit chaining.
+- **Production Hardware Tiers**:
+  - Small Clinic Tier (1–3 clinics, $\le 50$ concurrent users): 2 vCPU, 4 GB RAM, 15–20 DB pool connections, 50 GB NVMe storage.
+  - Medium Multi-Clinic (5–15 clinics, $\le 250$ concurrent users): 4 vCPU, 16 GB RAM, 30–50 DB connections, 150 GB NVMe storage.
+  - Enterprise Tier (20+ clinics, $\ge 1,000$ concurrent users): 8–16 vCPU, 32–64 GB RAM, 100 DB connections with PgBouncer, 500 GB NVMe (RAID 10).
+- **Observability Configuration**:
+  - Prometheus Metrics: `GET /api/v1/metrics` protected by `METRICS_API_KEY` header (`x-metrics-key`) or `PLATFORM_OPERATOR` role, with strict label cardinality guards.
+  - Health Probes: `GET /api/v1/health` (liveness), `GET /api/v1/health/ready` (readiness checking PostgreSQL, Prisma pool, and KMS Master Key).
+  - Alerting Engine: Built-in 15-minute deduplicated alerting covering high 5xx error rate, DB pool saturation, failed login brute-force spikes, and financial hash mismatches.
+- See `docs/performance-and-scalability.md` and `docs/operational-observability.md` for complete specifications and runbooks.
+
+### Phase 7 Final Acceptance & Dual Readiness Verdicts (Step 7.6)
+
+In Step 7.6, an independent security, reliability, and clinical safety audit concluded Phase 7:
+- **Verdict A (Code Integration Readiness)**: **`READY FOR CODE MERGE`**
+  - All 40 database migrations, 154 tenant tables with FORCE RLS and 2 reference tables with ENABLE RLS (156 RLS tables total out of 163 regular tables), and 108 `lamssa_security` functions (37 `SECURITY DEFINER`) verified.
+  - 284 unit tests (258 api, 26 web), 398 passed DB integration tests (0 failures), and 46 browser smoke checks passing.
+  - Financial Workload D sequential throughput (1.46 TPS) verified as compliant with ZATCA cryptographic chaining and benchmark scoping invariants.
+  - Emergency clinical break-glass read endpoints fully enforced and verified with immediate fail-closed revocation.
+  - Zero architectural boundary violations (`check:boundaries` passed) and deployment config verified (`check:deployment` passed).
+- **Verdict B (Real-World Clinical Production Readiness)**: **`NOT READY FOR PRODUCTION`**
+  - **Infrastructure Release Blocker**: Isolated target database full restore test (`runRestore`) must be executed and certified on provisioned infrastructure with `createdb` privileges (`FULL RESTORE: NOT VERIFIED`).
+  - **Infrastructure Release Blocker**: Cloud HSM / production KMS master key provisioning and TLS certificate termination on ingress proxy.
+  - **Clinical Governance Blocker**: Initial facility-wide clinical safety policy approval by verified Medical Directors.
+  - **Regulatory Blocker**: Live ZATCA Phase 2 / MOH integration onboarding and compliance certification.
 
 All temporary staging/recovery containers, volumes, credentials and verification
 artifacts are removed after the exercise. The temporary Docker socket group override

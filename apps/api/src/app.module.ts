@@ -17,6 +17,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { resolve } from 'node:path';
 import { validateEnvironment } from './config/environment.js';
+import { SecretVaultService } from './config/secret-vault.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PublicBrandingController } from './clinics/public-branding.controller.js';
 import { PublicBrandingService } from './clinics/public-branding.service.js';
@@ -36,6 +37,9 @@ import { SpecialtyModule } from './specialties/specialty.module.js';
 import { ClinicalFoundationModule } from './clinical-foundation/clinical-foundation.module.js';
 import { ClinicalOrdersModule } from './clinical-orders/clinical-orders.module.js';
 import { ClinicalFormsModule } from './clinical-forms/clinical-forms.module.js';
+import { KmsModule } from './kms/kms.module.js';
+import { ClinicalGovernanceModule } from './clinical-governance/clinical-governance.module.js';
+import { InteroperabilityModule } from './interoperability/interoperability.module.js';
 
 @Module({
   imports: [
@@ -61,8 +65,12 @@ import { ClinicalFormsModule } from './clinical-forms/clinical-forms.module.js';
     ClinicalFoundationModule,
     ClinicalOrdersModule,
     ClinicalFormsModule,
+    KmsModule,
+    ClinicalGovernanceModule,
+    InteroperabilityModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
-  providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService],
+  providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],
+  exports: [SecretVaultService],
 })
 export class AppModule {}

@@ -203,20 +203,10 @@ export class PatientPortalRepository {
         select: { id: true },
       });
 
-      // Revoke any previous unused tokens
-      await tx.patientVerificationToken.deleteMany({
-        where: { clinicId: c.clinicId, patientAccountId: account.id, tokenType: 'ACTIVATION', usedAt: null },
-      });
-
-      await tx.patientVerificationToken.create({
-        data: {
-          clinicId: c.clinicId,
-          patientAccountId: account.id,
-          tokenType: 'ACTIVATION',
-          tokenHash,
-          expiresAt,
-        },
-      });
+      // Invalidate prior unused tokens and mint single-use invitation token via SECURITY DEFINER procedure
+      if (tx.portalCreateInvitationToken) {
+        await tx.portalCreateInvitationToken(account.id, tokenHash, expiresAt);
+      }
 
       await this.audit.record(
         {
@@ -299,56 +289,26 @@ export class PatientPortalRepository {
 
     const passwordHash = await hashPassword(input.password);
     const now = new Date();
-
-    await this.prisma.patientVerificationToken.update({
-      where: { id: token.tokenId },
-      data: { usedAt: now },
-    });
-
-    await this.prisma.patientAccount.update({
-      where: { id: token.patientAccountId },
-      data: {
-        passwordHash,
-        status: 'ACTIVE',
-        phoneVerifiedAt: now,
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-        lastLoginAt: now,
-        version: { increment: 1 },
-      },
-    });
-
     const rawSession = secret();
     const sessionTokenHash = digest(rawSession);
     const csrfToken = this.patientCsrfToken(rawSession);
     const csrfTokenHash = digest(csrfToken);
     const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-    await this.prisma.patientSession.create({
-      data: {
-        clinicId: clinic.id,
-        patientAccountId: token.patientAccountId,
-        sessionTokenHash,
-        csrfTokenHash,
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
-        expiresAt,
-      },
-    });
-
-    await this.prisma.patientPortalAuditEvent.create({
-      data: {
-        clinicId: clinic.id,
-        patientAccountId: token.patientAccountId,
-        patientId: token.patientId,
-        action: 'portal.account_activated',
-        targetType: 'PatientAccount',
-        targetId: token.patientAccountId,
-        outcome: 'SUCCESS',
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
-      },
-    });
+    await this.prisma.$queryRaw`
+      SELECT * FROM lamssa_security.portal_complete_activation(
+        ${token.tokenId}::uuid,
+        ${token.patientAccountId}::uuid,
+        ${clinic.id}::uuid,
+        ${token.patientId}::uuid,
+        ${passwordHash},
+        ${sessionTokenHash},
+        ${csrfTokenHash},
+        ${expiresAt}::timestamptz,
+        ${ipAddress ?? null},
+        ${userAgent ?? null}
+      )
+    `;
 
     return {
       rawSession,
@@ -435,76 +395,37 @@ export class PatientPortalRepository {
 
     const valid = await verifyPassword(account.passwordHash, input.password);
     if (!valid) {
-      const failed = account.failedLoginAttempts + 1;
-      const lockedUntil = failed >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null;
-      await this.prisma.patientAccount.update({
-        where: { id: account.accountId },
-        data: {
-          failedLoginAttempts: failed,
-          lockedUntil,
-        },
-      });
-
-      await this.prisma.patientPortalAuditEvent.create({
-        data: {
-          clinicId: clinic.id,
-          patientAccountId: account.accountId,
-          patientId: account.patientId,
-          action: 'portal.login_failed',
-          targetType: 'PatientAccount',
-          targetId: account.accountId,
-          outcome: 'FAILURE',
-          metadata: { failedAttempts: failed, locked: Boolean(lockedUntil) },
-          ipAddress: ipAddress ?? null,
-          userAgent: userAgent ?? null,
-        },
-      });
-
+      await this.prisma.$executeRaw`
+        SELECT lamssa_security.portal_record_login_failure(
+          ${clinic.id}::uuid,
+          ${account.accountId}::uuid,
+          ${ipAddress ?? null},
+          ${userAgent ?? null}
+        )
+      `;
       throw new UnauthorizedException('INVALID_CREDENTIALS');
     }
 
-    // Success: reset failed attempts
+    // Success: reset failed attempts & record session via security definer function
     const nowDate = new Date();
-    await this.prisma.patientAccount.update({
-      where: { id: account.accountId },
-      data: {
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-        lastLoginAt: nowDate,
-      },
-    });
-
     const rawSession = secret();
     const sessionTokenHash = digest(rawSession);
     const csrfToken = this.patientCsrfToken(rawSession);
     const csrfTokenHash = digest(csrfToken);
     const expiresAt = new Date(nowDate.getTime() + 24 * 60 * 60 * 1000);
 
-    await this.prisma.patientSession.create({
-      data: {
-        clinicId: clinic.id,
-        patientAccountId: account.accountId,
-        sessionTokenHash,
-        csrfTokenHash,
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
-        expiresAt,
-      },
-    });
-
-    await this.prisma.patientPortalAuditEvent.create({
-      data: {
-        clinicId: clinic.id,
-        patientAccountId: account.accountId,
-        patientId: account.patientId,
-        action: 'portal.login_success',
-        targetType: 'PatientAccount',
-        targetId: account.accountId,
-        outcome: 'SUCCESS',
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
-      },
-    });
+    await this.prisma.$queryRaw`
+      SELECT * FROM lamssa_security.portal_record_login_success(
+        ${clinic.id}::uuid,
+        ${account.accountId}::uuid,
+        ${account.patientId}::uuid,
+        ${sessionTokenHash},
+        ${csrfTokenHash},
+        ${expiresAt}::timestamptz,
+        ${ipAddress ?? null},
+        ${userAgent ?? null}
+      )
+    `;
 
     return {
       rawSession,
@@ -530,36 +451,30 @@ export class PatientPortalRepository {
   // -------------------------------------------------------------------------
   async validateSession(rawSession: string): Promise<PatientPrincipal | null> {
     const sessionTokenHash = digest(rawSession);
-    const session = await this.prisma.patientSession.findUnique({
-      where: { sessionTokenHash },
-      include: {
-        patientAccount: {
-          select: { id: true, patientId: true, status: true, clinicId: true },
-        },
-      },
-    });
+    const [session] = await this.prisma.$queryRaw<
+      {
+        id: string;
+        clinicId: string;
+        patientAccountId: string;
+        patientId: string;
+        csrfTokenHash: string;
+        lastSeenAt: Date;
+      }[]
+    >`SELECT * FROM lamssa_security.portal_validate_session(${sessionTokenHash})`;
 
-    if (
-      !session ||
-      session.revokedAt !== null ||
-      session.expiresAt <= new Date() ||
-      session.patientAccount.status !== 'ACTIVE'
-    ) {
+    if (!session) {
       return null;
     }
 
     // Touch lastSeenAt periodically
-    if (Date.now() - session.lastSeenAt.getTime() > 60000) {
-      await this.prisma.patientSession.update({
-        where: { id: session.id },
-        data: { lastSeenAt: new Date() },
-      }).catch(() => {});
+    if (Date.now() - new Date(session.lastSeenAt).getTime() > 60000) {
+      await this.prisma.$executeRaw`SELECT lamssa_security.portal_touch_session(${session.id}::uuid)`.catch(() => {});
     }
 
     return {
       clinicId: session.clinicId,
       patientAccountId: session.patientAccountId,
-      patientId: session.patientAccount.patientId,
+      patientId: session.patientId,
       sessionId: session.id,
       sessionToken: rawSession,
       csrfHash: session.csrfTokenHash,
@@ -570,22 +485,14 @@ export class PatientPortalRepository {
   // Patient Auth: Logout
   // -------------------------------------------------------------------------
   async logout(principal: PatientPrincipal) {
-    await this.prisma.patientSession.update({
-      where: { id: principal.sessionId },
-      data: { revokedAt: new Date() },
-    });
-
-    await this.prisma.patientPortalAuditEvent.create({
-      data: {
-        clinicId: principal.clinicId,
-        patientAccountId: principal.patientAccountId,
-        patientId: principal.patientId,
-        action: 'portal.logout',
-        targetType: 'PatientSession',
-        targetId: principal.sessionId,
-        outcome: 'SUCCESS',
-      },
-    });
+    await this.prisma.$executeRaw`
+      SELECT lamssa_security.portal_logout(
+        ${principal.sessionId}::uuid,
+        ${principal.clinicId}::uuid,
+        ${principal.patientAccountId}::uuid,
+        ${principal.patientId}::uuid
+      )
+    `;
   }
 
   // -------------------------------------------------------------------------
@@ -622,19 +529,14 @@ export class PatientPortalRepository {
     const tokenHash = digest(rawToken);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-    await this.prisma.patientVerificationToken.deleteMany({
-      where: { clinicId: clinic.id, patientAccountId: account.accountId, tokenType: 'PASSWORD_RESET', usedAt: null },
-    });
-
-    await this.prisma.patientVerificationToken.create({
-      data: {
-        clinicId: clinic.id,
-        patientAccountId: account.accountId,
-        tokenType: 'PASSWORD_RESET',
-        tokenHash,
-        expiresAt,
-      },
-    });
+    await this.prisma.$queryRaw`
+      SELECT * FROM lamssa_security.portal_create_reset_token(
+        ${clinic.id}::uuid,
+        ${account.accountId}::uuid,
+        ${tokenHash},
+        ${expiresAt}::timestamptz
+      )
+    `;
 
     // In non-production, return test token for test verification
     const isDev = this.config.get('NODE_ENV', { infer: true }) !== 'production';
@@ -648,55 +550,39 @@ export class PatientPortalRepository {
     await this.checkPortalRateLimit(`reset-confirm:${clinic.id}`, ipAddress);
 
     const tokenHash = digest(input.token);
-    const token = await this.prisma.patientVerificationToken.findUnique({
-      where: { tokenHash },
-      include: { patientAccount: true },
-    });
+    const [token] = await this.prisma.$queryRaw<
+      {
+        tokenId: string;
+        clinicId: string;
+        patientAccountId: string;
+        patientId: string;
+        tokenType: string;
+        expiresAt: Date;
+        usedAt: Date | null;
+      }[]
+    >`SELECT * FROM lamssa_security.portal_activation_lookup(${tokenHash})`;
 
     if (
       !token ||
       token.clinicId !== clinic.id ||
       token.tokenType !== 'PASSWORD_RESET' ||
       token.usedAt !== null ||
-      token.expiresAt <= new Date()
+      new Date(token.expiresAt) <= new Date()
     ) {
       throw new BadRequestException('INVALID_TOKEN');
     }
 
     const passwordHash = await hashPassword(input.newPassword);
-    const now = new Date();
 
-    await this.prisma.patientVerificationToken.update({
-      where: { id: token.id },
-      data: { usedAt: now },
-    });
-
-    await this.prisma.patientAccount.update({
-      where: { id: token.patientAccountId },
-      data: {
-        passwordHash,
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-        version: { increment: 1 },
-      },
-    });
-
-    // Revoke all existing sessions on password reset
-    await this.prisma.patientSession.updateMany({
-      where: { patientAccountId: token.patientAccountId, revokedAt: null },
-      data: { revokedAt: now },
-    });
-
-    await this.prisma.patientPortalAuditEvent.create({
-      data: {
-        clinicId: clinic.id,
-        patientAccountId: token.patientAccountId,
-        action: 'portal.password_reset',
-        targetType: 'PatientAccount',
-        targetId: token.patientAccountId,
-        outcome: 'SUCCESS',
-      },
-    });
+    await this.prisma.$executeRaw`
+      SELECT lamssa_security.portal_complete_password_reset(
+        ${token.tokenId}::uuid,
+        ${token.patientAccountId}::uuid,
+        ${clinic.id}::uuid,
+        ${token.patientId}::uuid,
+        ${passwordHash}
+      )
+    `;
 
     return { success: true };
   }

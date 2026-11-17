@@ -272,3 +272,60 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Data Classification**: `ClinicalFormResponse` and `ClinicalFormResponseAmendment` are classified as `SENSITIVE_PERSONAL`; definitions and versions are confidential clinic configuration. Administrative patient data exports strictly exclude unconsented clinical form responses.
 - **Audit Metadata Sanitization**: Audit logs record lifecycle state transitions (`DRAFT`, `FINALIZED`, `AMENDED`) and SHA-256 payload digests; raw clinical responses are never logged in audit metadata.
 - **Final Acceptance Verification**: Phase 6 Step 6.6 independently confirmed zero cross-tenant and zero cross-patient clinical data leakage across all 114 core tenant tables under `FORCE ROW LEVEL SECURITY`. Administrative roles remain strictly locked out from clinical records. Complete findings detailed in [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).
+
+---
+
+## 12. Phase 7 Production Security, Clinical Governance & Interoperability Readiness (Steps 7.1–7.4)
+
+### 12.1 Patient Identity Isolation & Two-Tier KMS Envelope Encryption (Step 7.1)
+- **Patient Portal Security Boundary**: `PatientAccount`, `PatientSession`, `PatientVerificationToken`, and `PatientPortalAuditEvent` enforce `FORCE ROW LEVEL SECURITY` with non-recursive tenant policies. Unauthenticated authentication bootstrap routines are executed through 8 locked `SECURITY DEFINER` procedures in `lamssa_security`.
+- **Envelope Encryption**: Ephemeral 256-bit DEKs encrypt sensitive records using AES-256-GCM bound to `${clinicId}:${resourceType}:${recordId}` via AAD. DEKs are wrapped with active KEKs in `KmsKeyRegistry` and zeroed out immediately in memory (`dek.fill(0)`).
+- **Key Lifecycle Enforcements**: Encrypted records are safely read with `ACTIVE` and `RETIRED` keys. Compromised, disabled, or revoked keys fail closed immediately.
+
+### 12.2 Production Database Isolation & Secret Vaulting (Step 7.2)
+- **Elimination of Caller-Controlled Session Variables**: Session variables (`lamssa.session_id`, `lamssa.clinic_id`) replaced with trusted session verification against `Session` and `ClinicMembership`.
+- **Direct Grant Denial**: Denied direct DML privileges on patient tokens and sessions from `lamssa_runtime`.
+- **Secret Vaulting & Masking**: Provider-neutral `SecretVaultService` masks secrets via irreversible SHA-256 fingerprints (`****:<hash>`) and sanitizes application logs recursively.
+- **Remote TLS Mandate**: Production configuration validator mandates verified TLS (`sslmode=verify-full`) for remote production databases.
+
+### 12.3 Disaster Recovery, Tamper Evidence & Saudi Data Sovereignty (Step 7.3)
+- **Saudi Data Sovereignty Compliance**: Under NDMO, PDPL, and Saudi Cloud Computing Regulatory Framework, zero production health records, patient identities, or backup artifacts are transferred across national borders. Secondary DR sites are strictly located in-kingdom (Riyadh `me-central-1` primary, Jeddah `me-central-2` DR).
+- **HMAC-SHA256 Signed DR Manifests**: Disaster recovery manifests link encrypted database dumps, clinic asset/document archives, and KMS metadata under a cryptographic signature, preventing manifest tampering or asset desynchronization.
+- **Dual-Mode Recovery Drills**: Regular non-destructive drills (`npm run dr:drill`) verify database TOC (157 tables, 735 RLS policies, 39 migrations) and asset archives without modifying live data.
+- **Asset-to-Database Consistency**: `scripts/verify-asset-consistency.mjs` verifies file existence, permissions (`0600`/`0640`), and SHA-256 digests against database metadata, eliminating orphaned or tampered clinical records. See [docs/disaster-recovery-and-resilience.md](disaster-recovery-and-resilience.md).
+
+### 12.4 Clinical Governance, Patient Safety & Healthcare Interoperability Boundaries (Step 7.4)
+- **Administrative Isolation**: Administrative clinic ownership (`CLINIC_OWNER`, `CLINIC_ADMIN`) grants zero access to confidential clinical documentation, patient consultation notes, or safety policy approvals.
+- **Separation of Duties & Anti-Tamper Database Triggers**:
+  - `clinical_safety_policy_version_guard()`: Enforces anti-self-approval on policies (`approvedByMembershipId !== authorMembershipId`).
+  - `break_glass_guard()`: Enforces anti-self-audit on emergency access (`reviewedByMembershipId !== requestedByMembershipId`).
+  - `privilege_review_guard()`: Enforces anti-self-review on credentialing and emergency suspensions (`conductedByMembershipId !== practitionerProfile.membershipId`).
+- **Emergency Break-Glass Controls**: Time-bounded ($\le 120$ minutes), clinically justified ($\ge 20$ characters), patient-scoped, with mandatory post-hoc Medical Director audit.
+- **Healthcare Interoperability Boundaries**: HL7 FHIR R4 mappings for 12 core clinical concepts; provider adapters (Lab, Imaging/PACS, Pharmacy/Wasfaty, HIE) default to `enabled: false`, enforce regex allowlists, run in sandbox mode, and log zero PII.
+- **Standard Medical Terminology**: Licensing disclosures for ICD-10, LOINC, WHO-ATC, and SNOMED CT® affiliate prerequisites.
+- **Regulatory Jurisdiction Matrices**: Compliance requirements documented for Saudi Arabia (MOH, Seha, Nphies, Wasfaty, ZATCA Phase 2, PDPL) and the UAE (DoH/DHA, Malaffi, Nabidh, Federal Decree Law No. 45). See [docs/clinical-governance-and-safety.md](clinical-governance-and-safety.md) and [docs/healthcare-interoperability-readiness.md](healthcare-interoperability-readiness.md).
+
+### 12.5 Operational Observability, Zero-PHI Logging & Concurrency Integrity (Step 7.5)
+- **Zero-PHI Telemetry Enforcement**:
+  - Outbound adapter logs strip patient identifiers, national IDs, medical history, and clinical notes.
+  - Operational structured JSON logs recursively redact passwords, API keys, bearer tokens, cookies, national IDs, patient names, and credit card numbers.
+  - IP masking truncates IPv4 to `/24` and IPv6 to `/64` to preserve patient network privacy.
+- **SSRF Defense in Healthcare Integrations**:
+  - Outbound HTTP requests from interoperability adapters strictly enforce `https:`, port 443, and rejection of embedded credentials.
+  - Strict blocking of all IPv4 and IPv6 literals, loopbacks (`127.0.0.1`), private RFC1918 CIDRs, cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`), and internal hostnames.
+  - Outbound transmissions restricted exclusively to certified regulatory domains via exact or subdomain suffix matching with `redirect: 'error'`.
+- **Immediate Session Revocation Propagation**:
+  - Revoking or terminating a user session immediately cuts off data access across all tenant tables via PostgreSQL RLS `lamssa_security.context_allows()`, preventing unauthorized access from terminated staff.
+- **Monotonic Sequence & Financial Hash Immutability**:
+  - Monotonic counter allocation (`PatientCounter`, `ClinicInvoiceCounter`) under concurrent load ensures continuous, non-repeating numbering.
+  - Invoices enforce cryptographic issuance hashes and SHA-256 event chaining (`FinancialAuditEvent`), providing mathematical tamper-evidence for tax and patient privacy audits. See [docs/performance-and-scalability.md](performance-and-scalability.md), [docs/operational-observability.md](operational-observability.md), and [docs/phase-7-step-7-5-acceptance.md](phase-7-step-7-5-acceptance.md).
+
+### 12.6 Break-Glass Clinical Read Audit & Endpoint Privacy Enforcement (Step 7.6)
+- **Endpoint-Level Emergency Evaluation**:
+  - `ClinicalRepository.get()` and `ClinicalRepository.list()` actively evaluate emergency break-glass sessions via `ClinicalGovernanceRepository.isEmergencyAccessActive()`.
+  - Authorized clinicians with an active emergency session for a specific patient are permitted to view past clinical encounters across clinicians.
+  - Revoked, expired, or non-emergency requests fail closed immediately (`404 Not Found`).
+- **Attributable Audit Trail for Emergency Access**:
+  - Reading an encounter under break-glass emits `clinical.break-glass.encounter.read` recording the patient, author, encounter status, and reader.
+  - Listing patient encounters under break-glass emits `clinical.break-glass.encounters.listed`.
+  - All break-glass read actions are tamper-evidently linked to the requesting practitioner and subject to mandatory Medical Director review (`break_glass_guard`). See [docs/clinical-governance-and-safety.md](clinical-governance-and-safety.md) and [docs/phase-7-final-acceptance.md](phase-7-final-acceptance.md).

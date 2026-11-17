@@ -1,5 +1,59 @@
 # Development setup
 
+## Phase 7.5 performance, scalability, reliability & operational validation
+
+Execute realistic multi-tenant benchmark workloads and operational resilience suites:
+- Benchmark runner: `scripts/benchmark-runner.mjs` (run via `npm run perf:benchmark`). Evaluates 5 multi-tenant workloads (A–E) across 5 isolated tenant clinics with active `Session` records and PostgreSQL FORCE RLS tenant context (`lamssa.session_id`, `lamssa.user_id`, `lamssa.clinic_id`).
+- Concurrency & idempotency test suite: `apps/api/test/concurrency-integrity.integration.test.ts` validating atomic monotonic counter allocation on `PatientCounter` (10 workers), `ClinicInvoiceCounter` (10 workers), and idempotency deduplication (PostgreSQL error 23505).
+- Fault-injection & resilience test suite: `apps/api/test/fault-injection.integration.test.ts` validating immediate session revocation propagation under RLS, connection pool exhaustion timeout handling, and fail-closed transaction abort with zero orphan state.
+- Step 7.4 security audit test suite: `apps/api/test/step-7-4-security-audit.integration.test.ts` validating verified practitioner break-glass identity requirements, duration (1–120 min) and justification ($\ge 20$ char) bounds, active emergency access verification, early revocation endpoint/audit event, Medical Director safety policy approval authority, anti-self-approval, and comprehensive SSRF adapter defenses.
+- Observability and Prometheus metrics: `GET /api/v1/metrics` with `x-metrics-key` / `PLATFORM_OPERATOR` authentication, bounded cardinality label protections, multi-tier health probes (`/api/v1/health`, `/api/v1/health/ready`), and 15-minute deduplicated alerting engine.
+- Documentation: `docs/performance-and-scalability.md`, `docs/operational-observability.md`, and `docs/phase-7-step-7-5-acceptance.md`.
+
+## Phase 7.4 clinical governance, patient safety & healthcare integration readiness
+
+Apply `20261116000300_clinical_governance_and_safety` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 40.
+- Migration: `apps/api/prisma/migrations/20261116000300_clinical_governance_and_safety/migration.sql` creates 6 models: `ClinicalSafetyPolicy`, `ClinicalSafetyPolicyVersion`, `ClinicalIncident`, `ClinicalIncidentCounter`, `EmergencyBreakGlassAccess`, and `PractitionerPrivilegeReview` with `FORCE ROW LEVEL SECURITY`, tenant isolation policies, and database trigger guards in `lamssa_security`:
+  - `clinical_safety_policy_version_guard()`: prevents mutation of approved/activated versions and enforces anti-self-approval (`approvedByMembershipId !== authorMembershipId`).
+  - `break_glass_guard()`: prevents modification of audited sessions and enforces anti-self-audit (`reviewedByMembershipId !== requestedByMembershipId`).
+  - `privilege_review_guard()`: enforces anti-self-review on credentialing and emergency suspensions (`conductedByMembershipId !== practitionerProfile.membershipId`).
+- Clinical Governance Module: `apps/api/src/clinical-governance/` providing REST endpoints under `/api/v1/clinics/:clinicId/clinical-governance/`.
+- Interoperability Module: `apps/api/src/interoperability/` providing HL7® FHIR® R4 mappers for 12 core clinical concepts and provider adapters (Lab, Imaging/PACS, Pharmacy/Wasfaty, HIE) running under strict sandbox boundaries (`enabled: false` by default, regex allowlist, zero-PII logging).
+- Clinical Governance Workspace: `apps/web/src/features/clinical-governance/ClinicalGovernanceWorkspace.tsx` providing a 6-tab Arabic-first RTL workspace under Clinic Settings.
+- Test suites: `apps/api/test/clinical-governance.integration.test.ts` (all 7 test blocks passed), `apps/api/test/interoperability-fhir.test.ts`, `apps/api/test/clinical-governance-policy.test.ts`. Total tests: 258 unit tests, 375 database integration tests.
+- Documentation: `docs/clinical-governance-and-safety.md`, `docs/healthcare-interoperability-readiness.md`, and `docs/phase-7-step-7-4-acceptance.md`.
+
+## Phase 7.3 disaster recovery, backup restoration & infrastructure resilience
+
+Apply `20261116000200_trusted_session_authorization` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 39.
+- Migration: `apps/api/prisma/migrations/20261116000200_trusted_session_authorization/migration.sql` eliminates caller-controlled GUC session variables, switching to trusted database session lookups (`Session`, `ClinicMembership`), revokes direct table grants on `PatientVerificationToken` and `PatientSession` from `lamssa_runtime`, and installs `lamssa_security.portal_create_invitation_token(...)` as an attributable `SECURITY DEFINER` routine.
+- Disaster Recovery Tooling:
+  - `npm run dr:backup`: Orchestrates full encrypted PostgreSQL backup, clinic asset/document archive, and sanitized KMS Key Registry metadata into an HMAC-SHA256 signed manifest bundle.
+  - `npm run dr:drill`: Non-destructively validates manifest cryptographic HMAC signatures, ciphertext SHA-256 digests, AES-256-GCM auth tags, and in-memory database TOC without modifying databases.
+  - `npm run dr:restore`: Executes genuine restoration into an isolated target database with destructive overwrite guards.
+  - `npm run dr:status`: Real-time operational readiness monitoring evaluating backup freshness against RTO/RPO SLAs.
+  - `npm run assets:verify`: Cross-checks file storage against database records in `ClinicalDocument`, `ClinicalPhoto`, and `ClinicAsset`.
+- Test suites: `apps/api/test/disaster-recovery.integration.test.ts` (11 integration tests verifying drills, tampering detection, KMS lifecycle, and SLA metrics). Total tests: 227 unit tests, 367 database tests, 11 DR tests, 46 browser checks.
+- Documentation: Complete SRE, PITR, Patroni HA, and Saudi data sovereignty manual at `docs/disaster-recovery-and-resilience.md`.
+
+## Phase 7.2 production database isolation, secret vaulting & runtime security hardening
+
+Apply `20261116000100_runtime_security_hardening` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 38.
+- Migration: `apps/api/prisma/migrations/20261116000100_runtime_security_hardening/migration.sql` hardens RLS policies on `PatientVerificationToken` and `PatientSession` to require `lamssa.session_id` for direct DML, and fortifies `SECURITY DEFINER` functions in `lamssa_security` with procedural ownership validation, expiration checks, account status verification, and anti-replay guards.
+- Secret Vault: `SecretVaultService` in `apps/api/src/config/secret-vault.service.ts` provides provider-neutral secret access, fail-closed `SecretVaultError`, irreversible SHA-256 masking (`****:<hash>`), and deep log sanitization.
+- Production Security Validator: `validateProductionSecurity` in `apps/api/src/config/production-security-validator.ts` executes on startup in production mode, enforcing database TLS, forbidding synthetic KMS, requiring HTTPS KMS endpoints, validating master key strengths, and enforcing reverse proxy single-hop rules.
+- Test suites: `apps/api/test/runtime-security-hardening.integration.test.ts` (adversarial attack vectors), `apps/api/test/config.test.ts` (production configuration validator and secret vaulting). Total tests: 226 unit tests, 348 database tests, 46 browser checks.
+
+## Phase 7.1 sensitive data isolation, KMS architecture & cryptographic key lifecycle
+
+Apply `20261115000100_identity_isolation_and_kms` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. KMS and security endpoints reside under `/api/v1/clinics/:clinicId/security` and `/api/v1/admin/security`.
+- Migration: `apps/api/prisma/migrations/20261115000100_identity_isolation_and_kms/migration.sql` creates `KmsKeyRegistry` and `KmsMigrationAudit` with `FORCE ROW LEVEL SECURITY`, enables and forces RLS on `PatientAccount`, `PatientSession`, `PatientVerificationToken`, and `PatientPortalAuditEvent`, and installs 8 `SECURITY DEFINER` functions in `lamssa_security` (`search_path = pg_catalog, pg_temp`) for unauthenticated patient portal authentication bootstrap flows.
+- Unit and policy tests: `apps/api/test/kms-envelope.test.ts`.
+- Database integration tests: `apps/api/test/rls.integration.test.ts` (covers patient identity isolation, cross-clinic denial, and 119 tables under FORCE RLS) and `apps/api/test/patient-portal.integration.test.ts` (covers portal invitation, account activation, login, rate limiting, appointment booking, and password reset under FORCE RLS).
+- Frontend workspace: Arabic RTL security health panel under Clinic Settings (`/clinics/:clinicId/settings` -> `الأمان والجلسات`).
+- Core invariants: Ephemeral 256-bit DEKs encrypted with active KEK and zeroed out in memory immediately (`dek.fill(0)`). AAD binds ciphertext to `${clinicId}:${resourceType}:${recordId}`. Fail-closed provider architecture rejects operations without falling back when external KMS is configured. Transparent backward-compatibility decrypts legacy `v1` ciphertexts.
+
+
 ## Phase 6.2 medical specialty registry, practitioner qualifications & clinical privilege engine
 
 Apply `20261113000100_medical_specialty_registry_privileges` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. All specialty catalog, clinic specialty configuration, practitioner profiles, qualifications, and privileging endpoints reside under `/api/v1/clinics/:clinicId/specialties`.

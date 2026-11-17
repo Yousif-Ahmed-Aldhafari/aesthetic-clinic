@@ -64,6 +64,11 @@ export const permissions = [
   'clinical.documents.read', 'clinical.documents.upload', 'clinical.documents.manage',
   'clinical.form-templates.read', 'clinical.form-templates.manage', 'clinical.form-templates.publish',
   'clinical.form-responses.read', 'clinical.form-responses.create', 'clinical.form-responses.update', 'clinical.form-responses.finalize', 'clinical.form-responses.amend',
+  'clinical.governance.read', 'clinical.governance.manage',
+  'clinical.safety-policies.read', 'clinical.safety-policies.manage', 'clinical.safety-policies.approve',
+  'clinical.incidents.read', 'clinical.incidents.report', 'clinical.incidents.investigate',
+  'clinical.break-glass.request', 'clinical.break-glass.audit',
+  'interoperability.read', 'interoperability.manage',
 ] as const;
 export type Permission = typeof permissions[number];
 const operations: Permission[] = [
@@ -116,6 +121,7 @@ const administration: Permission[] = [
   'practitioners.profiles.read', 'practitioners.profiles.manage',
   'privileges.read', 'privileges.request',
   'clinical.form-templates.read', 'clinical.form-templates.manage', 'clinical.form-templates.publish',
+  'interoperability.read', 'interoperability.manage',
 ];
 export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>> = {
   CLINIC_OWNER: [...administration, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record', 'payments.reverse', 'invoices.manage', 'reports.read', 'privacy.export'],
@@ -150,7 +156,12 @@ export const rolePermissions: Readonly<Record<ClinicRole, readonly Permission[]>
     'clinical.results.read', 'clinical.results.record', 'clinical.results.verify', 'clinical.results.release',
     'clinical.documents.read', 'clinical.documents.upload', 'clinical.documents.manage',
     'clinical.form-templates.read',
-    'clinical.form-responses.read', 'clinical.form-responses.create', 'clinical.form-responses.update', 'clinical.form-responses.finalize', 'clinical.form-responses.amend'],
+    'clinical.form-responses.read', 'clinical.form-responses.create', 'clinical.form-responses.update', 'clinical.form-responses.finalize', 'clinical.form-responses.amend',
+    'clinical.governance.read', 'clinical.governance.manage',
+    'clinical.safety-policies.read', 'clinical.safety-policies.manage', 'clinical.safety-policies.approve',
+    'clinical.incidents.read', 'clinical.incidents.report', 'clinical.incidents.investigate',
+    'clinical.break-glass.request', 'clinical.break-glass.audit',
+    'interoperability.read', 'interoperability.manage'],
   RECEPTIONIST: ['clinic.branding.read', 'branches.read', ...operations, 'invoices.read', 'invoices.create', 'invoices.issue', 'payments.record',
     'packages.catalog.read', 'packages.purchases.read', 'packages.purchases.create',
     'packages.redemptions.read', 'packages.redemptions.record', 'installments.read', 'refunds.request',
