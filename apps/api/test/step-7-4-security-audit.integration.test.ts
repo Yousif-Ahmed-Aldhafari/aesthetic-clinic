@@ -546,6 +546,92 @@ describe('Step 7.4 Security & Integration Code Audit: Break-Glass, Governance & 
     assert.equal(listAfterRevoke.items.length, 0);
   });
 
+  it('1.8: Break-glass authorization matrix: expired sessions, wrong practitioner, wrong clinic and audit trail', async () => {
+    // 1. Doctor A creates an encounter for Patient A1
+    const enc = await clinicalRepo.create(proofDoctorA, clinicAId, {
+      patientId: patientA1Id,
+      content: {
+        chiefComplaint: 'فحص سريري متقدم',
+        relevantHistory: 'سجل تجريبي لاختبار المصفوفة الأمنية',
+        allergies: [],
+        medications: [],
+        priorProcedures: '',
+        examination: 'Normal',
+        assessment: 'Clear',
+        recommendations: 'No intervention',
+      },
+    });
+
+    // 2. Expired break-glass session fails closed
+    const expiredBg = await owner.emergencyBreakGlassAccess.create({
+      data: {
+        clinicId: clinicAId,
+        requestedByMembershipId: membershipMedDirectorAId,
+        patientId: patientA1Id,
+        clinicalJustification: 'طلب وصول طارئ انتهت صلاحيته الزمنية للاختبار الأمني',
+        durationMinutes: 15,
+        grantedAt: new Date(Date.now() - 3600000), // 1 hour ago
+        expiresAt: new Date(Date.now() - 1800000), // 30 mins ago
+      },
+    });
+    assert.ok(expiredBg.id);
+
+    // Verify isEmergencyAccessActive returns false for expired session
+    const isExpiredActive = await govRepo.isEmergencyAccessActive(owner, clinicAId, membershipMedDirectorAId, patientA1Id);
+    assert.equal(isExpiredActive, false);
+
+    // Reading under expired session must fail closed with 404
+    await assert.rejects(
+      async () => {
+        await clinicalRepo.get(proofMedDirectorA, clinicAId, enc.id);
+      },
+      (err: any) => err.status === 404,
+    );
+
+    // 3. Wrong practitioner: Unverified Doctor in Clinic A cannot access even if another doctor has active break-glass
+    const activeBg = await govRepo.requestBreakGlass(proofMedDirectorA, clinicAId, {
+      patientId: patientA1Id,
+      clinicalJustification: 'تدخل عاجل من المدير الطبي يستدعي الوصول للملف السريري',
+      durationMinutes: 60,
+    });
+    assert.ok(activeBg.id);
+
+    // Med Director A can read now
+    const readByMedDir = await clinicalRepo.get(proofMedDirectorA, clinicAId, enc.id);
+    assert.equal(readByMedDir.id, enc.id);
+
+    // Unverified Doctor A (who did NOT request break-glass) is still blocked with 404
+    await assert.rejects(
+      async () => {
+        await clinicalRepo.get(proofUnverifiedDocA, clinicAId, enc.id);
+      },
+      (err: any) => err.status === 404,
+    );
+
+    // 4. Wrong clinic: Doctor B in Clinic B cannot access Clinic A encounter (fails via RLS / tenant boundary)
+    await assert.rejects(
+      async () => {
+        await clinicalRepo.get(proofDoctorB, clinicAId, enc.id);
+      },
+      (err: any) => err.status === 403 || err.status === 404,
+    );
+
+    // 5. Audit trail verification: Confirm clinical.break-glass.encounter.read was recorded
+    const readAudits = await owner.auditEvent.findMany({
+      where: {
+        clinicId: clinicAId,
+        action: 'clinical.break-glass.encounter.read',
+        targetId: enc.id,
+      },
+    });
+    assert.ok(readAudits.length >= 1, 'Expected at least one break-glass encounter read audit event');
+    assert.equal(readAudits[0].category, 'CLINICAL');
+    assert.equal(readAudits[0].outcome, 'SUCCESS');
+
+    // Clean up active break-glass session
+    await govRepo.revokeBreakGlass(proofMedDirectorA, clinicAId, activeBg.id, 'انتهاء اختبار المصفوفة الأمنية');
+  });
+
   // ==========================================================================
   // Section 2: Clinical Governance Authority & Anti-Self-Approval
   // ==========================================================================

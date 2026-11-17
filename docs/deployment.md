@@ -309,8 +309,8 @@ In Phase 7 Step 7.5, realistic multi-tenant performance and operational resilien
 
 In Step 7.6, an independent security, reliability, and clinical safety audit concluded Phase 7:
 - **Verdict A (Code Integration Readiness)**: **`READY FOR CODE MERGE`**
-  - All 40 database migrations, 124 tenant tables with FORCE RLS, and 108 `lamssa_security` functions verified.
-  - 284 unit tests (258 api, 26 web), 398 passed DB integration tests (0 failures), and 47 browser smoke checks passing.
+  - All 40 database migrations, 154 tenant tables with FORCE RLS and 2 reference tables with ENABLE RLS (156 RLS tables total out of 163 regular tables), and 108 `lamssa_security` functions (37 `SECURITY DEFINER`) verified.
+  - 284 unit tests (258 api, 26 web), 398 passed DB integration tests (0 failures), and 46 browser smoke checks passing.
   - Financial Workload D sequential throughput (1.46 TPS) verified as compliant with ZATCA cryptographic chaining and benchmark scoping invariants.
   - Emergency clinical break-glass read endpoints fully enforced and verified with immediate fail-closed revocation.
   - Zero architectural boundary violations (`check:boundaries` passed) and deployment config verified (`check:deployment` passed).

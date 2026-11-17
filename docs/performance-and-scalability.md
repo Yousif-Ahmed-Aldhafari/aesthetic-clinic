@@ -96,9 +96,9 @@ The benchmark suite (`scripts/benchmark-runner.mjs`) provisions 5 distinct tenan
   1. *Benchmark Scope Artifact*: The benchmark runner compresses the entire three-stage clinical billing lifecycle (Drafting $\rightarrow$ Official Issuance $\rightarrow$ Checkout Payment) into a single synchronous database connection transaction holding locks. In production, these three actions are discrete HTTP transactions spaced seconds or minutes apart.
   2. *Deferred Consistency Triggers*: PostgreSQL deferred constraint triggers (`finance_consistency`) fire repeatedly at transaction commit (up to 5 times), executing multi-table balance, VAT precision, and invoice line sums verification.
   3. *Audit Scan Query Plan under RLS*: The query `SELECT sequence, "eventHash" FROM "FinancialAuditEvent" WHERE "clinicId" = $1 ORDER BY sequence DESC LIMIT 1` was choosing a Bitmap Index Scan + Sort over the clinic's audit events due to low-cardinality cost estimation. When forced to an Index Scan Backward, execution time dropped to 0.064ms (2 buffer hits).
-  4. *Legitimate Sequential Invariants*: Serialized row-level locks on `ClinicInvoiceCounter` and cryptographic SHA-256 event chaining are mandatory for ZATCA Phase 2 compliance and financial immutability.
+  4. *Legitimate Sequential Invariants & Mathematical Tamper-Evidence*: Serialized row-level locks on `ClinicInvoiceCounter` and cryptographic SHA-256 event chaining are mandatory for ZATCA Phase 2 compliance and financial immutability. Crucially, SHA-256 chaining alone establishes **mathematical tamper-evidence / tamper-detection**, NOT legal non-repudiation. Full legal non-repudiation requires asymmetric digital signatures (ECDSA / RSA) with HSM-managed keys, qualified electronic timestamps from an authorized Trust Service Provider (TSP), and certified ZATCA Phase 2 onboarding (CSID).
 - **Production Architecture Verdict**:
-  - The single-clinic sequential throughput of 1.46 TPS is an expected consequence of financial non-repudiation and benchmark compression.
+  - The single-clinic sequential throughput of 1.46 TPS is an expected consequence of financial mathematical tamper-evidence and benchmark lifecycle compression.
   - In production multi-tenant environments, distinct clinics operate on independent `clinicId` rows with zero cross-tenant lock contention, scaling horizontally across tenants.
   - **Verdict**: Fully safe for code merge into `main`. Real-world production deployment requires standard multi-clinic load distribution and standard asynchronous frontend billing flows.
 
@@ -165,6 +165,9 @@ The platform's operational reliability was validated in `apps/api/test/fault-inj
 ---
 
 ## 6. Sizing Recommendations for Production
+
+> [!NOTE]
+> **Production Sizing Disclaimer**: The sizing recommendations below are **unvalidated theoretical guidelines** derived by extrapolation from a low-power 2-core bare-metal baseline environment. Formal production capacity and SLA guarantees require rigorous load testing under production-representative infrastructure (with PgBouncer, NVMe storage arrays, and realistic multi-clinic traffic distributions).
 
 Based on empirical performance measurements on 2 vCPUs, the following infrastructure tiers are specified for Lamssa production deployments:
 
