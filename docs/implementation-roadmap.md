@@ -18,14 +18,15 @@
 5. **7.5 — Performance, Scalability, Reliability & Operational Validation (implemented):** Comprehensive multi-tenant performance benchmark suite (`scripts/benchmark-runner.mjs`) evaluating 5 clinical and administrative workloads (A–E) under full PostgreSQL FORCE RLS, monotonic sequence numbering, and SHA-256 financial audit hash chaining, achieving 55–168 QPS with sub-20ms p50 latency on low-power 2-core bare-metal hardware; Step 7.4 security audit closure (verified practitioner break-glass requirement, duration/justification bounds, early revocation endpoint, Medical Director safety policy approval authority, anti-self-approval, and strict adapter SSRF defense blocking IPv4/v6 literals, metadata, non-443 ports, and unallowlisted domains); serialized monotonic counter concurrency verification (`PatientCounter` and `ClinicInvoiceCounter` under 10 concurrent threads); idempotency deduplication (PostgreSQL error 23505); fault-injection resilience (immediate session revocation propagation, connection pool exhaustion timeout handling, fail-closed mid-transaction rollback); and production sizing guidelines. See [docs/performance-and-scalability.md](performance-and-scalability.md), [docs/operational-observability.md](operational-observability.md), and [docs/phase-7-step-7-5-acceptance.md](phase-7-step-7-5-acceptance.md).
 6. **7.6 — Final Security, Performance, Reliability & Release Acceptance (implemented):** Comprehensive independent audit across all Phase 7 milestones (7.1–7.6); remediation and integration testing of emergency break-glass clinical read endpoints (`ClinicalRepository.get()` and `list()`) enforcing verified practitioner authority, patient scoping, emergency duration, and immediate fail-closed revocation across an 19-test suite; in-depth root cause profiling of Workload D financial performance (1.46 TPS) establishing benchmark lifecycle compression artifacts vs production API behavior and proving mathematical SHA-256 audit chaining / sequential numbering integrity; independent catalog audit of 40 applied migrations, 154 tenant tables under `FORCE ROW LEVEL SECURITY` and 2 reference tables under `ENABLE ROW LEVEL SECURITY` (156 RLS-protected tables total out of 163 regular tables), and 108 `lamssa_security` functions (37 `SECURITY DEFINER` with locked `search_path`); full regression verification (284 unit tests [258 api, 26 web], 398 passed DB integration tests, 1 intentional unprivileged CREATEDB skip documented as a DR blocker, and 46 browser smoke checks); Disaster Recovery Release Gate evaluation (`FULL RESTORE: NOT VERIFIED` due to test runner environment privileges; non-destructive TOC and manifest drills verified); production blocker classification matrix (Code-level: NONE; Infrastructure, Clinical Governance, and Regulatory gates defined); delivery of formal acceptance report (`docs/phase-7-final-acceptance.md`) providing dual evidence-based verdicts: **Verdict A: READY FOR CODE MERGE** and **Verdict B: NOT READY FOR PRODUCTION**. See [docs/phase-7-final-acceptance.md](phase-7-final-acceptance.md).
 
-## Phase 8+ — Deep Specialty Medical Modules (Future Roadmap)
+## Phase 8 — Advanced Medical Specialty Modules
 
-Future phases will deliver deep, specialized clinical capabilities for specific outpatient medical disciplines:
-- **Phase 8 — Dentistry & Periodontics:** Interactive visual odontogram (FDI / Universal numbering), tooth-specific periodontal probing depths, endodontic charting, restorative visual maps, and dental billing integration.
-- **Phase 9 — Pediatrics & Adolescent Medicine:** WHO & CDC growth percentile curves (Height, Weight, Head Circumference, BMI-for-age), mandatory childhood immunization schedules with due-date alerts, developmental milestones tracking, and pediatric dosage calculators.
-- **Phase 10 — Obstetrics & Gynecology:** Antenatal care flowcharts, gestational age calculators (LMP / EDD / Ultrasound biparietal diameter), Gravida/Para/Abortus (GPA) scoring, fetal heart rate monitoring logs, and delivery summaries.
-- **Phase 11 — Ophthalmology & Optometry:** Standardized visual acuity charts (Snellen, LogMAR, decimal), subjective/objective refraction records (Sphere, Cylinder, Axis, Add, PD), intraocular pressure (tonometry) tracking, and anterior/posterior segment exam templates.
-- **Phase 12 — Physiotherapy & Rehabilitation:** Interactive musculoskeletal joint range of motion (ROM) goniometric tracking, standardized functional assessment scales (Berg Balance, Oswestry), and multi-visit rehabilitation care plans.
+1. **8.1 — Advanced Specialty Architecture & Clinical Data Contracts (implemented design milestone):** Comprehensive three-layer modular architecture blueprint (Operational Core, Clinical Foundation, Specialty Workspaces); detailed domain data contracts, relational Prisma models, and REST API specifications for 7 outpatient specialties: Dentistry (`DENTISTRY`), Pediatrics (`PEDIATRICS`), Obstetrics & Gynecology (`OB_GYN`), Ophthalmology (`OPHTHALMOLOGY`), Otolaryngology (`ENT`), Orthopedics (`ORTHOPEDICS`), and Physiotherapy (`PHYSIOTHERAPY`); granular clinical privilege matrix with administrative and allied health negative boundaries; additive migration strategy (preserving migrations 001–040, planned migrations 041–045); authentic Arabic-first RTL clinical UX architecture with accessible anatomical diagrams (interactive SVG Odontograms, growth curves, goniometer charts); clinical safety, pediatric dosing boundary rules, and Saudi PDPL confidentiality governance; multi-step implementation roadmap (Steps 8.2–8.7); and complete baseline regression verification (100% pass across all 730 automated tests). Zero speculative migrations generated. See [docs/phase-8-specialty-architecture.md](phase-8-specialty-architecture.md), [docs/phase-8-specialty-data-contracts.md](phase-8-specialty-data-contracts.md), [docs/phase-8-specialty-implementation-roadmap.md](phase-8-specialty-implementation-roadmap.md), and [docs/phase-8-step-8-1-assessment.md](phase-8-step-8-1-assessment.md).
+2. **8.2 — Dentistry & Oral Health Module (planned):** Interactive visual Odontogram (FDI ISO 3950 two-digit, Universal, Palmer), surface-level caries and restoration tracking (`DentalToothFinding`), 6-site periodontal probing matrix (`DentalPeriodontalRecord`), multidisciplinary dental treatment staging (`DentalTreatmentStage`), and dental imaging integration.
+3. **8.3 — Pediatrics & Growth Analytics Module (planned):** Neonatal birth history (`PediatricBirthHistory`), caregiver and legal guardian registry (`PatientCaregiverRelationship`), longitudinal growth records (`PediatricGrowthRecord`) with WHO/CDC Z-scores and percentiles, and pre-flight pediatric weight-based dosing boundary checks.
+4. **8.4 — Obstetrics & Gynecology Module (planned):** Pregnancy episodes (`PregnancyEpisode`) with GTPAL parity, LMP and dating scan reconciliation, antenatal visit flowsheets (`AntenatalVisitRecord`) tracking fundal height and FHR, and confidential gynecological examinations (`GynecologicalExamination`).
+5. **8.5 — Ophthalmology & Otolaryngology (ENT) Module (planned):** Ophthalmic refraction sheet (`OphthalmicRefractionRecord`) tracking OD/OS/OU Sphere, Cylinder, Axis, Add, and PD across Snellen/LogMAR/Decimal scales, tonometry IOP tracking (`OphthalmicExaminationRecord`), ENT endoscopy examination (`EntExaminationRecord`), and diagnostic pure-tone audiometry (`AudiometryAssessmentRecord`).
+6. **8.6 — Orthopedics & Physiotherapy Rehabilitation Module (planned):** Musculoskeletal examination (`MusculoskeletalExamination`), goniometric joint range-of-motion tracking (`JointRangeOfMotionRecord`), multi-session rehabilitation episodes (`PhysiotherapyRehabilitationEpisode`), and session-by-session exercise logs (`PhysiotherapySessionRecord`) with functional scales (Oswestry, DASH, Lysholm, VAS).
+7. **8.7 — Multi-Specialty Integration, Security Audit & Final Acceptance (planned):** Repository-wide integration testing across all seven specialties, cross-clinic and cross-specialty data isolation verification, PostgreSQL RLS catalog verification, multi-specialty clinical journey validation, and final acceptance reporting.
 
 ## Phase 5 — Patient Experience, Multi-Location & Enterprise Capabilities
 
@@ -307,6 +308,43 @@ production use remains gated on authentication, isolation and operational contro
     `SecretVaultService` with irreversible masking and log sanitization, centralized `validateProductionSecurity`, and
     30 adversarial negative security attack vector test validations.
     See [production-runtime-security.md](production-runtime-security.md) and [phase-7-step-7-2-acceptance.md](phase-7-step-7-2-acceptance.md).
+
+29. **7.3 — Disaster Recovery, Backup Restoration & Infrastructure Resilience (implemented).**
+    Remediation of caller-controlled GUC session variables via Migration 039 (`20261116000200_trusted_session_authorization`),
+    direct table grant denial on tokens/sessions, and attributable `portal_create_invitation_token` procedure; unified disaster
+    recovery tooling (`dr-backup.mjs`, `dr-restore.mjs`, `dr-status.mjs`) binding encrypted dumps, assets, and KMS metadata into
+    HMAC-SHA256 signed manifests; non-destructive TOC verification drills (0.22s) and database restores (12.4s).
+    See [disaster-recovery-and-resilience.md](disaster-recovery-and-resilience.md) and [phase-7-step-7-3-acceptance.md](phase-7-step-7-3-acceptance.md).
+
+30. **7.4 — Clinical Governance, Patient Safety & Healthcare Integration Readiness (implemented).**
+    Administrative isolation (owners/admins denied clinical access); anti-tamper database triggers enforcing anti-self-approval
+    on policies, anti-self-audit on break-glass, and anti-self-review on credentials; time-bounded ($\le 120$ min) emergency
+    break-glass access; 12 HL7 FHIR R4 clinical concept mappings with sandbox adapters; standard terminology licensing; and
+    Arabic-first RTL clinical governance workspace.
+    See [clinical-governance-and-safety.md](clinical-governance-and-safety.md) and [phase-7-step-7-4-acceptance.md](phase-7-step-7-4-acceptance.md).
+
+31. **7.5 — Performance, Scalability, Reliability & Operational Validation (implemented).**
+    Comprehensive multi-tenant performance benchmark suite (`scripts/benchmark-runner.mjs`) across 5 workloads (A–E) under full
+    FORCE RLS and SHA-256 financial chaining; serialized monotonic counter concurrency verification; idempotency deduplication;
+    and fault-injection resilience.
+    See [performance-and-scalability.md](performance-and-scalability.md) and [phase-7-step-7-5-acceptance.md](phase-7-step-7-5-acceptance.md).
+
+32. **7.6 — Final Security, Performance, Reliability & Release Acceptance (implemented).**
+    Comprehensive independent audit across all Phase 7 milestones; remediation of break-glass authorization matrix across all clinical
+    endpoints; catalog audit of 40 migrations, 154 FORCE RLS tables, 2 ENABLE RLS tables, and 108 security functions; full regression
+    verification (729 automated tests passed); and dual verdict: READY FOR CODE MERGE, NOT READY FOR PRODUCTION (due to DR/KMS/TLS/Gov blockers).
+    See [phase-7-final-acceptance.md](phase-7-final-acceptance.md).
+
+33. **8.1 — Advanced Specialty Architecture & Clinical Data Contracts (implemented design milestone).**
+    Comprehensive three-layer modular architecture blueprint (Operational Core, Clinical Foundation, Specialty Workspaces); detailed domain
+    data contracts, relational Prisma models, and REST API specifications for 7 outpatient specialties: Dentistry (`DENTISTRY`), Pediatrics (`PEDIATRICS`),
+    Obstetrics & Gynecology (`OB_GYN`), Ophthalmology (`OPHTHALMOLOGY`), Otolaryngology (`ENT`), Orthopedics (`ORTHOPEDICS`), and Physiotherapy (`PHYSIOTHERAPY`);
+    granular clinical privilege matrix; additive migration strategy (preserving migrations 001–040, planned migrations 041–045); authentic Arabic-first
+    RTL clinical UX architecture with accessible anatomical diagrams (interactive SVG Odontograms, growth curves, goniometer charts); clinical safety,
+    pediatric dosing boundary rules, and Saudi PDPL confidentiality governance; multi-step implementation roadmap (Steps 8.2–8.7); and complete
+    baseline regression verification (100% pass across all 730 automated tests). Zero speculative migrations generated.
+    See [phase-8-specialty-architecture.md](phase-8-specialty-architecture.md), [phase-8-specialty-data-contracts.md](phase-8-specialty-data-contracts.md),
+    [phase-8-specialty-implementation-roadmap.md](phase-8-specialty-implementation-roadmap.md), and [phase-8-step-8-1-assessment.md](phase-8-step-8-1-assessment.md).
 
 
 
