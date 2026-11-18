@@ -1,5 +1,17 @@
 # Development setup
 
+## Phase 8.2 dentistry & oral health — odontograms, periodontal charting, treatment staging & RTL workspace
+
+Apply `20261118000100_dentistry_odontogram_staging` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 41.
+- Migration: `apps/api/prisma/migrations/20261118000100_dentistry_odontogram_staging/migration.sql` creates 4 models: `DentalOdontogram`, `DentalToothFinding`, `DentalPeriodontalRecord`, and `DentalTreatmentStage` with `FORCE ROW LEVEL SECURITY`, tenant isolation policies, and database triggers in `lamssa_security`:
+  - `dental_record_immutability_guard()`: prevents mutation or deletion of findings/periodontal records on finalized or superseded charts (`42501`).
+  - `dental_odontogram_status_guard()`: prevents direct modification of finalized odontograms, enforcing versioned amendment paths.
+- Tooth Numbering Library: `apps/api/src/dentistry/tooth-numbering.ts` providing FDI ISO 3950 permanent (11–48) and primary (51–85) validation, supernumerary notation, Universal (1–32, A–T) and Palmer round-trip conversions, anterior/posterior surface validation, and physiological periodontal bounds checks.
+- Backend Module: `apps/api/src/dentistry/` providing REST endpoints under `/api/v1/clinics/:clinicId/dentistry/` with `@RequireSpecialty('DENTISTRY')` and `@RequireClinicalPrivilege(...)` guards.
+- Frontend Workspace: `apps/web/src/features/dentistry/` providing `DentalWorkspace`, `InteractiveOdontogram`, `PeriodontalGrid`, `DentalTreatmentPlanning`, and `AccessibleOdontogramTable`.
+- Test suites: `apps/api/test/tooth-numbering.test.ts` (18 unit tests), `apps/api/test/dentistry.integration.test.ts` (12 integration tests).
+- Documentation: `docs/dentistry-and-oral-health.md` and `docs/phase-8-step-8-2-acceptance.md`.
+
 ## Phase 7.5 performance, scalability, reliability & operational validation
 
 Execute realistic multi-tenant benchmark workloads and operational resilience suites:

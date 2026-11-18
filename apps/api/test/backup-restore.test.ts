@@ -218,8 +218,8 @@ if (!enabled) {
     assert(meta.ciphertextSha256);
     assert(meta.plaintextSize > 0);
     assert(meta.ciphertextSize > 0);
-    assert.equal(meta.latestMigration, '20261116000300_clinical_governance_and_safety');
-    assert(meta.migrationCount >= 40, 'Must record all applied migrations');
+    assert.equal(meta.latestMigration, '20261118000100_dentistry_odontogram_staging');
+    assert(meta.migrationCount >= 41, 'Must record all applied migrations');
 
     // Completeness verification: all public tables tracked
     assert(meta.tableCount >= 49, 'Must track all 49+ public tables');

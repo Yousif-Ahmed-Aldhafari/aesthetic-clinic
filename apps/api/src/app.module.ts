@@ -40,6 +40,7 @@ import { ClinicalFormsModule } from './clinical-forms/clinical-forms.module.js';
 import { KmsModule } from './kms/kms.module.js';
 import { ClinicalGovernanceModule } from './clinical-governance/clinical-governance.module.js';
 import { InteroperabilityModule } from './interoperability/interoperability.module.js';
+import { DentistryModule } from './dentistry/dentistry.module.js';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { InteroperabilityModule } from './interoperability/interoperability.modu
     KmsModule,
     ClinicalGovernanceModule,
     InteroperabilityModule,
+    DentistryModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],

@@ -346,6 +346,17 @@ production use remains gated on authentication, isolation and operational contro
     See [phase-8-specialty-architecture.md](phase-8-specialty-architecture.md), [phase-8-specialty-data-contracts.md](phase-8-specialty-data-contracts.md),
     [phase-8-specialty-implementation-roadmap.md](phase-8-specialty-implementation-roadmap.md), and [phase-8-step-8-1-assessment.md](phase-8-step-8-1-assessment.md).
 
+34. **8.2 — Dentistry & Oral Health — Odontograms, Periodontal Charting, Dental Treatment Staging & RTL Clinical Workspace (implemented).**
+    First advanced specialty module; additive Migration 041 (`20261118000100_dentistry_odontogram_staging`) introducing `DentalOdontogram`,
+    `DentalToothFinding`, `DentalPeriodontalRecord`, and `DentalTreatmentStage` under `FORCE RLS` with PostgreSQL immutability triggers;
+    FDI ISO 3950 two-digit canonical tooth numbering (11–48 permanent, 51–85 primary, supernumerary notation) with Universal and Palmer
+    mappings; anterior incisal vs posterior occlusal surface validation; 6-site circumferential periodontal examination with real-time
+    $\text{CAL} = \text{PD} + \text{GM}$ calculation; staged dental treatment planning with verified informed consent gates, shared 15% VAT
+    billing, and inventory batch consumption; four clinical privilege controls (`DENTAL_EXAMINATION_RECORD`, `DENTAL_PROCEDURE_PLAN`,
+    `DENTAL_PROCEDURE_APPROVE`, `DENTAL_PROCEDURE_PERFORM`); cryptographic SHA-256 digest sealing; and authentic Arabic RTL interactive
+    workspace with SVG anatomical chart, patient orientation, and WCAG 2.1 AA accessible table alternative.
+    See [dentistry-and-oral-health.md](dentistry-and-oral-health.md) and [phase-8-step-8-2-acceptance.md](phase-8-step-8-2-acceptance.md).
+
 
 
 ## Migration discipline

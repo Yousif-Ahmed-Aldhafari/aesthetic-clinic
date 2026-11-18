@@ -1565,3 +1565,20 @@ multi-device correctness. See the roadmap for future acceptance gates.
 - **Acceptance Verdicts**:
   - **Verdict A (Code Integration Readiness)**: **`READY FOR CODE MERGE`** into `main`.
   - **Verdict B (Real-World Clinical Production Readiness)**: **`NOT READY FOR PRODUCTION`** pending cloud HSM activation, isolated target DR restore verification on privileged staging, Medical Director safety policy ratification, and regulatory e-invoicing onboarding. See [docs/phase-7-final-acceptance.md](phase-7-final-acceptance.md).
+
+## Phase 8 — Advanced Medical Specialty Modules
+
+### Step 8.1 — Advanced Specialty Architecture & Clinical Data Contracts
+- **Three-Layer Modular Monolith Blueprint**: Operational Core (tenant isolation, billing, appointments, inventory, security), Clinical Foundation (encounters, vitals, diagnoses, allergies, medications, orders, documents), and Specialty Workspaces (`apps/web/src/features/{specialty}`).
+- **Seven Core Outpatient Specialties**: Dentistry (`DENTISTRY`), Pediatrics (`PEDIATRICS`), Obstetrics & Gynecology (`OB_GYN`), Ophthalmology (`OPHTHALMOLOGY`), Otolaryngology (`ENT`), Orthopedics (`ORTHOPEDICS`), and Physiotherapy (`PHYSIOTHERAPY`).
+- **Data Contracts & Relational Models**: Designed relational models and contracts across all 7 specialties preserving historical migrations 001–040. See [docs/phase-8-specialty-architecture.md](phase-8-specialty-architecture.md).
+
+### Step 8.2 — Dentistry & Oral Health Module
+- **Versioned Dental Odontogram**: `DentalOdontogram`, `DentalToothFinding`, `DentalPeriodontalRecord`, and `DentalTreatmentStage` introduced via additive Migration 041 (`20261118000100_dentistry_odontogram_staging`) under `FORCE ROW LEVEL SECURITY`.
+- **Tooth Identification & Numbering**: Canonical FDI ISO 3950 two-digit numbering (permanent 11–48, primary 51–85, supernumerary notation) with bidirectional Universal and Palmer mappings.
+- **Surface Validation Engine**: Strict morphology rules: anterior teeth (x1, x2, x3) require `INCISAL` and reject `OCCLUSAL`; posterior teeth (x4..x8) require `OCCLUSAL` and reject `INCISAL`.
+- **Six-Site Periodontal Charting**: 6 sites per tooth (DB, B, MB, DL, L, ML) with deterministic Clinical Attachment Level calculation ($\text{CAL} = \text{PD} + \text{GM}$), recession bounds, and hyperplasia handling.
+- **Staged Treatment & Procedures**: Multi-stage treatment plans with verified informed-consent gates (`PatientConsent`), optimistic locking, shared 15% VAT invoicing, and inventory material consumption (`InventoryBatch`).
+- **PostgreSQL Immutability Triggers**: `trg_dental_finding_immutability` and `trg_dental_periodontal_immutability` enforce chart immutability once `FINALIZED` or `SUPERSEDED`; `trg_dental_odontogram_status` guards chart state transitions.
+- **Digital Seal**: Cryptographic SHA-256 content digest computed over canonical JSON representation upon finalization.
+- **RTL Clinical Workspace**: Interactive SVG anatomical odontogram with patient-oriented quadrants, 6-site periodontal matrix, treatment staging panel, and accessible table alternative (WCAG 2.1 AA). See [docs/dentistry-and-oral-health.md](dentistry-and-oral-health.md) and [docs/phase-8-step-8-2-acceptance.md](phase-8-step-8-2-acceptance.md).

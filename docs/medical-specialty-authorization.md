@@ -120,6 +120,10 @@ The authorization engine evaluates 8 mandatory gates before granting access to c
 | `CLINICAL_PROCEDURE_PERFORM` | Perform surgical/invasive procedures | Executing clinical and invasive procedures |
 | `MEDICATION_ADMINISTER` | Administer medications | Administering prescribed therapeutic injections |
 | `SEDATION_ADMINISTER` | Administer sedation | Procedural sedation and local anesthesia |
+| `DENTAL_EXAMINATION_RECORD` | Record dental examination | Recording and finalizing dental odontograms and periodontal charts |
+| `DENTAL_PROCEDURE_PLAN` | Plan dental procedures | Proposing staged dental treatment plans |
+| `DENTAL_PROCEDURE_APPROVE` | Approve dental treatment plans | Approving staged dental treatment plans |
+| `DENTAL_PROCEDURE_PERFORM` | Perform dental procedures | Performing and completing dental treatment stages and consuming supplies |
 
 ---
 

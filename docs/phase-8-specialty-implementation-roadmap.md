@@ -111,13 +111,13 @@ To ensure patient safety and regulatory compliance (Saudi MOH, SCFHS, WHO guidel
 
 ## 5. Detailed Implementation Breakdown (Steps 8.2–8.7)
 
-### Step 8.2 — Dentistry & Oral Health Module
-- **Scope:** Dental Odontogram (FDI ISO 3950, Universal, Palmer), surface-level caries/restoration tracking, 6-site periodontal probing matrix, dental treatment staging, and IOPA/OPG document integration.
+### Step 8.2 — Dentistry & Oral Health Module (Status: COMPLETED)
+- **Scope:** Dental Odontogram (FDI ISO 3950, Universal, Palmer), surface-level caries/restoration tracking, 6-site periodontal probing matrix, dental treatment staging, informed consent enforcement, SHA-256 digest sealing, and shared billing/inventory integration.
 - **Prisma Migration:** `041_dentistry_odontogram_staging` (`DentalOdontogram`, `DentalToothFinding`, `DentalPeriodontalRecord`, `DentalTreatmentStage`).
-- **Backend Services:** `DentistryService`, `OdontogramRepository`, DTO validation for tooth ranges and surface combinations.
-- **Frontend Workspaces:** Interactive SVG Odontogram component with RTL layout, surface click selectors, periodontal numerical table, and accessible keyboard alternative.
-- **Security Gates:** Verification of `DENTAL_EXAMINATION_RECORD` and `DENTAL_PROCEDURE_PERFORM` clinical privileges.
-- **Dependencies:** `ClinicalEncounter`, `GeneralClinicalService`, `ClinicalDocument`.
+- **Backend Services:** `DentistryModule`, `DentistryController`, `DentistryRepository`, and `tooth-numbering.ts` validation library.
+- **Frontend Workspaces:** `InteractiveOdontogram` (SVG anatomical chart), `PeriodontalGrid` (6-site CAL calculation matrix), `DentalTreatmentPlanning` (staged procedures), and `AccessibleOdontogramTable` (WCAG 2.1 AA tabular alternative).
+- **Security Gates:** Verification of `DENTAL_EXAMINATION_RECORD`, `DENTAL_PROCEDURE_PLAN`, `DENTAL_PROCEDURE_APPROVE`, and `DENTAL_PROCEDURE_PERFORM` clinical privileges; PostgreSQL immutability triggers.
+- **Dependencies:** `ClinicalEncounter`, `GeneralClinicalService`, `PatientConsent`, `Invoice`, `InventoryBatch`.
 
 ### Step 8.3 — Pediatrics & Growth Analytics Module
 - **Scope:** Neonatal birth history, legal caregiver/guardian relationship registry, longitudinal pediatric growth tracking (Height, Weight, Head Circumference, BMI) with WHO/CDC Z-scores and percentiles, and weight-based dosing pre-flight safety checks.
