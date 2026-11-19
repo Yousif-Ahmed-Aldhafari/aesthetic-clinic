@@ -43,6 +43,7 @@ import { InteroperabilityModule } from './interoperability/interoperability.modu
 import { DentistryModule } from './dentistry/dentistry.module.js';
 import { PediatricsModule } from './pediatrics/pediatrics.module.js';
 import { ObGynModule } from './obgyn/obgyn.module.js';
+import { OphthalmologyEntModule } from './ophthalmology-ent/ophthalmology-ent.module.js';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { ObGynModule } from './obgyn/obgyn.module.js';
     DentistryModule,
     PediatricsModule,
     ObGynModule,
+    OphthalmologyEntModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],

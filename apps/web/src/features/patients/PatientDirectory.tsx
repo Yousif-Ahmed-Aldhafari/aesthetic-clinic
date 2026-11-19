@@ -11,6 +11,7 @@ import { ClinicalFollowUpPanel } from '../clinical-followups/ClinicalFollowUpPan
 import { DentalWorkspace } from '../dentistry';
 import { PediatricWorkspace } from '../pediatrics';
 import { ObGynWorkspace } from '../obgyn';
+import { OphthalmologyEntWorkspace } from '../ophthalmology-ent';
 import './patients.css';
 const genderNames:Record<PatientGender,string>={FEMALE:'أنثى',MALE:'ذكر',OTHER:'هوية أخرى',UNDISCLOSED:'يفضّل عدم الإفصاح'};
 const date=(value:string)=>new Intl.DateTimeFormat('ar-YE',{dateStyle:'medium',timeZone:'UTC'}).format(new Date(value));
@@ -47,7 +48,7 @@ export function PatientDirectory({clinic,csrfToken,onAuthError,onLegacy}:{clinic
   const [page,setPage]=useState<PatientPage|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[reload,setReload]=useState(0);
   const [modal,setModal]=useState<'new'|'detail'|'edit'|null>(null),[selected,setSelected]=useState<PatientRecord|null>(null),[profileLoading,setProfileLoading]=useState(false);
   const mutating=useRef(false);
-  const [busy,setBusy]=useState(false),[formError,setFormError]=useState(''),[notice,setNotice]=useState(''),[dentalOpen,setDentalOpen]=useState(false),[pediatricOpen,setPediatricOpen]=useState(false),[obgynOpen,setObgynOpen]=useState(false);
+  const [busy,setBusy]=useState(false),[formError,setFormError]=useState(''),[notice,setNotice]=useState(''),[dentalOpen,setDentalOpen]=useState(false),[pediatricOpen,setPediatricOpen]=useState(false),[obgynOpen,setObgynOpen]=useState(false),[ophthEntOpen,setOphthEntOpen]=useState(false);
   const canRead=clinic.permissions.includes('patients.read'),canCreate=clinic.permissions.includes('patients.create'),canUpdate=clinic.permissions.includes('patients.update'),canClinical=clinic.permissions.includes('clinical.encounters.read'),canTreatmentPlans=clinic.permissions.includes('clinical.treatment-plans.read'),canConsent=clinic.permissions.includes('clinical.consents.read'),canPhotos=clinic.permissions.includes('clinical.photos.read'),canFollowUps=clinic.permissions.includes('clinical.follow-ups.read');
   const cursor=history.at(-1);
   useEffect(()=>()=>{gates.list.cancel();gates.profile.cancel();gates.mutation.cancel();},[gates]);
@@ -107,6 +108,7 @@ export function PatientDirectory({clinic,csrfToken,onAuthError,onLegacy}:{clinic
         {canClinical&&<details className="dental-panel-details" onToggle={e=>setDentalOpen(e.currentTarget.open)}><summary>🦷 ملف طب وجراحة الفم والأسنان (مخطط الأسنان، فحص اللثة، ومراحل العلاج)</summary>{dentalOpen&&<DentalWorkspace clinicId={clinic.clinicId} patientId={selected.id} csrfToken={csrfToken} onAuthError={onAuthError}/>}</details>}
         {canClinical&&<details className="pediatric-panel-details" onToggle={e=>setPediatricOpen(e.currentTarget.open)}><summary>👶 ملف طب الأطفال وصحة الطفل (تاريخ الولادة، القياسات ومخططات النمو، وتفويض الأولياء)</summary>{pediatricOpen&&<PediatricWorkspace clinicId={clinic.clinicId} patientId={selected.id} patientGender={selected.gender==='FEMALE'?'FEMALE':'MALE'} patientDob={selected.dateOfBirth??undefined} csrfToken={csrfToken} onAuthError={onAuthError}/>}</details>}
         {canClinical&&selected.gender==='FEMALE'&&<details className="obgyn-panel-details" onToggle={e=>setObgynOpen(e.currentTarget.open)}><summary>🌸 ملف التوليد وأمراض النساء (متابعة الحمل، الفحوصات الدورية، الفحص النسائي السري)</summary>{obgynOpen&&<ObGynWorkspace clinicId={clinic.clinicId} patientId={selected.id} csrfToken={csrfToken} onAuthError={onAuthError}/>}</details>}
+        {canClinical&&<details className="ophthalmology-ent-panel-details" onToggle={e=>setOphthEntOpen(e.currentTarget.open)}><summary>👁️👂 ملف العيون والأنف والأذن والحنجرة (انكسار البصر، ضغط العين، الفحص، وتخطيط السمع)</summary>{ophthEntOpen&&<OphthalmologyEntWorkspace clinicId={clinic.clinicId} patientId={selected.id} csrfToken={csrfToken}/>}</details>}
       </div>:<div className="patient-error" role="alert">{formError}</div>}
     </Modal>}
   </>;

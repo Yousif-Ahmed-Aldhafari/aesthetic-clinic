@@ -241,6 +241,10 @@ model Clinic {
   antenatalVisits AntenatalVisitRecord[]
   obstetricHistories ObstetricHistoryRecord[]
   gynecologicalExams GynecologicalExamination[]
+  ophthalmicRefractions OphthalmicRefractionRecord[]
+  ophthalmicExams OphthalmicExaminationRecord[]
+  entExams EntExaminationRecord[]
+  audiometryAssessments AudiometryAssessmentRecord[]
 
   @@index([status, createdAt])
 }
@@ -539,6 +543,10 @@ model ClinicMembership {
   antenatalVisitsRecorded AntenatalVisitRecord[] @relation("AntenatalVisitRecorder")
   obstetricHistoriesRecorded ObstetricHistoryRecord[] @relation("ObstetricHistoryRecorder")
   gynecologicalExamsPerformed GynecologicalExamination[] @relation("GynecologicalExamExaminer")
+  ophthalmicRefractionsMeasured OphthalmicRefractionRecord[] @relation("OphthalmicRefractionOptometrist")
+  ophthalmicExamsPerformed OphthalmicExaminationRecord[] @relation("OphthalmicExaminationExaminer")
+  entExamsPerformed EntExaminationRecord[] @relation("EntExaminationExaminer")
+  audiometryAssessmentsPerformed AudiometryAssessmentRecord[] @relation("AudiometryAssessmentAudiologist")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -711,6 +719,10 @@ model Patient {
   antenatalVisits AntenatalVisitRecord[]
   obstetricHistories ObstetricHistoryRecord[]
   gynecologicalExams GynecologicalExamination[]
+  ophthalmicRefractions OphthalmicRefractionRecord[]
+  ophthalmicExams OphthalmicExaminationRecord[]
+  entExams EntExaminationRecord[]
+  audiometryAssessments AudiometryAssessmentRecord[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -779,6 +791,10 @@ model ClinicalEncounter {
   pediatricGrowthRecords PediatricGrowthRecord[]
   antenatalVisits AntenatalVisitRecord[]
   gynecologicalExams GynecologicalExamination[]
+  ophthalmicRefractions OphthalmicRefractionRecord[]
+  ophthalmicExams OphthalmicExaminationRecord[]
+  entExams EntExaminationRecord[]
+  audiometryAssessments AudiometryAssessmentRecord[]
   @@unique([clinicId,id])
   @@unique([clinicId,visitId])
   @@index([clinicId,patientId,createdAt,id])
@@ -4226,6 +4242,12 @@ enum ClinicalPrivilegeCode {
   OBSTETRIC_EPISODE_FINALIZE
   GYNECOLOGICAL_EXAM_PERFORM
   GYNECOLOGICAL_RECORD_REVIEW
+  REFRACTION_MEASURE
+  OPHTHALMIC_EXAM_DOCUMENT
+  OPHTHALMIC_RECORD_FINALIZE
+  ENT_EXAM_DOCUMENT
+  AUDIOMETRY_RECORD
+  ENT_PROCEDURE_PERFORM
 }
 
 enum PrivilegeScope {
@@ -6007,4 +6029,233 @@ model GynecologicalExamination {
   @@index([clinicId, patientId, examinationDate])
   @@index([clinicId, encounterId])
   @@index([clinicId, isConfidential])
+}
+
+// ============================================================================
+// PHASE 8: OPHTHALMOLOGY & ENT SPECIALTY MODULES (STEP 8.5)
+// ============================================================================
+
+enum AnatomicalLaterality {
+  RIGHT_EYE_OD
+  LEFT_EYE_OS
+  BOTH_EYES_OU
+  RIGHT_EAR_AD
+  LEFT_EAR_AS
+  BOTH_EARS_AU
+  BILATERAL
+}
+
+enum VisualAcuityScale {
+  SNELLEN_FEET_20_20
+  SNELLEN_METERS_6_6
+  LOGMAR
+  DECIMAL
+}
+
+enum TonometryMethod {
+  GOLDMANN_APPLANATION
+  NON_CONTACT_AIR_PUFF
+  TONOPEN
+  ICARE_REBOUND
+  PERKINS_PORTABLE
+}
+
+enum TonsilFriedmanGrade {
+  GRADE_0_SURGICALLY_ABSENT
+  GRADE_1_WITHIN_PILLARS
+  GRADE_2_EXTENDING_TO_PILLARS
+  GRADE_3_BEYOND_PILLARS
+  GRADE_4_KISSING_TONSILS
+}
+
+enum TympanogramType {
+  TYPE_A_NORMAL_COMPLIANCE
+  TYPE_AS_STIFF_SYSTEM
+  TYPE_AD_HIGH_COMPLIANCE_FLACCID
+  TYPE_B_FLAT_EFFUSION
+  TYPE_C_NEGATIVE_PRESSURE
+}
+
+enum OphthalmicRecordStatus {
+  DRAFT
+  FINALIZED
+  ENTERED_IN_ERROR
+}
+
+enum EntRecordStatus {
+  DRAFT
+  FINALIZED
+  ENTERED_IN_ERROR
+}
+
+model OphthalmicRefractionRecord {
+  id                          String                 @id @default(uuid()) @db.Uuid
+  clinicId                    String                 @db.Uuid
+  patientId                   String                 @db.Uuid
+  encounterId                 String                 @db.Uuid
+  acuityScale                 VisualAcuityScale      @default(SNELLEN_METERS_6_6)
+  pupillaryDistanceMm         Decimal?               @db.Decimal(4, 1)
+
+  // Right Eye (OD) Refraction
+  odSphereDiopters            Decimal?               @db.Decimal(5, 2)
+  odCylinderDiopters          Decimal?               @db.Decimal(5, 2)
+  odAxisDegrees               Int?
+  odReadingAddDiopters        Decimal?               @db.Decimal(4, 2)
+  odUncorrectedVisualAcuity   String?                @db.VarChar(32)
+  odCorrectedVisualAcuity     String?                @db.VarChar(32)
+  odPinholeVisualAcuity       String?                @db.VarChar(32)
+
+  // Left Eye (OS) Refraction
+  osSphereDiopters            Decimal?               @db.Decimal(5, 2)
+  osCylinderDiopters          Decimal?               @db.Decimal(5, 2)
+  osAxisDegrees               Int?
+  osReadingAddDiopters        Decimal?               @db.Decimal(4, 2)
+  osUncorrectedVisualAcuity   String?                @db.VarChar(32)
+  osCorrectedVisualAcuity     String?                @db.VarChar(32)
+  osPinholeVisualAcuity       String?                @db.VarChar(32)
+
+  // Binocular (OU) & Notes
+  ouVisualAcuity              String?                @db.VarChar(32)
+  notes                       String?                @db.Text
+  optometristMembershipId     String                 @db.Uuid
+  status                      OphthalmicRecordStatus @default(FINALIZED)
+  errorReason                 String?                @db.Text
+  version                     Int                    @default(1)
+  createdAt                   DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic                      Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                     Patient                @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                   ClinicalEncounter      @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  optometrist                 ClinicMembership       @relation("OphthalmicRefractionOptometrist", fields: [clinicId, optometristMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, encounterId])
+}
+
+model OphthalmicExaminationRecord {
+  id                          String                 @id @default(uuid()) @db.Uuid
+  clinicId                    String                 @db.Uuid
+  patientId                   String                 @db.Uuid
+  encounterId                 String                 @db.Uuid
+  tonometryMethod             TonometryMethod        @default(GOLDMANN_APPLANATION)
+  odIntraocularPressureMmHg   Decimal?               @db.Decimal(4, 1)
+  osIntraocularPressureMmHg   Decimal?               @db.Decimal(4, 1)
+  tonometryTime               DateTime               @default(now()) @db.Timestamptz(3)
+
+  // Anterior Segment (OD / OS)
+  odCorneaFindings            String?                @db.VarChar(255)
+  osCorneaFindings            String?                @db.VarChar(255)
+  odAnteriorChamber           String?                @db.VarChar(255)
+  osAnteriorChamber           String?                @db.VarChar(255)
+  odLensCondition             String?                @db.VarChar(255)
+  osLensCondition             String?                @db.VarChar(255)
+
+  // Posterior Segment / Funduscopy (OD / OS)
+  odCupToDiscRatio            Decimal?               @db.Decimal(3, 2)
+  osCupToDiscRatio            Decimal?               @db.Decimal(3, 2)
+  odMaculaFindings            String?                @db.VarChar(255)
+  osMaculaFindings            String?                @db.VarChar(255)
+  odRetinalPeriphery          String?                @db.VarChar(255)
+  osRetinalPeriphery          String?                @db.VarChar(255)
+
+  clinicalNotes               String?                @db.Text
+  examinerMembershipId        String                 @db.Uuid
+  status                      OphthalmicRecordStatus @default(FINALIZED)
+  errorReason                 String?                @db.Text
+  version                     Int                    @default(1)
+  createdAt                   DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic                      Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                     Patient                @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                   ClinicalEncounter      @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  examiner                    ClinicMembership       @relation("OphthalmicExaminationExaminer", fields: [clinicId, examinerMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, encounterId])
+}
+
+model EntExaminationRecord {
+  id                          String                 @id @default(uuid()) @db.Uuid
+  clinicId                    String                 @db.Uuid
+  patientId                   String                 @db.Uuid
+  encounterId                 String                 @db.Uuid
+
+  // Otoscopy
+  rightEarCanal               String?                @db.VarChar(255)
+  rightTympanicMembrane       String?                @db.VarChar(255)
+  leftEarCanal                String?                @db.VarChar(255)
+  leftTympanicMembrane        String?                @db.VarChar(255)
+
+  // Rhinoscopy
+  nasalSeptumDeformity        String?                @db.VarChar(128)
+  turbinateHypertrophy        String?                @db.VarChar(128)
+  nasalPolypsPresent          Boolean                @default(false)
+  nasalDischargeDescription   String?                @db.VarChar(255)
+
+  // Throat & Pharynx
+  tonsilSizeGrade             TonsilFriedmanGrade    @default(GRADE_1_WITHIN_PILLARS)
+  posteriorPharyngealWall     String?                @db.VarChar(255)
+  uvulaPalateSymmetry         String?                @db.VarChar(128)
+  vocalCordMobility           String?                @db.VarChar(255)
+
+  clinicalNotes               String?                @db.Text
+  examinerMembershipId        String                 @db.Uuid
+  status                      EntRecordStatus        @default(FINALIZED)
+  errorReason                 String?                @db.Text
+  version                     Int                    @default(1)
+  createdAt                   DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic                      Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                     Patient                @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                   ClinicalEncounter      @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  examiner                    ClinicMembership       @relation("EntExaminationExaminer", fields: [clinicId, examinerMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, encounterId])
+}
+
+model AudiometryAssessmentRecord {
+  id                          String                 @id @default(uuid()) @db.Uuid
+  clinicId                    String                 @db.Uuid
+  patientId                   String                 @db.Uuid
+  encounterId                 String                 @db.Uuid
+  orderId                     String?                @db.Uuid
+
+  // Air Conduction Thresholds (dB HL at 125, 250, 500, 1000, 2000, 4000, 8000 Hz)
+  rightAirThresholdsDb        Int[]                  @default([])
+  leftAirThresholdsDb         Int[]                  @default([])
+
+  // Bone Conduction Thresholds (dB HL at 250, 500, 1000, 2000, 4000 Hz)
+  rightBoneThresholdsDb       Int[]                  @default([])
+  leftBoneThresholdsDb        Int[]                  @default([])
+
+  rightTympanogramType        TympanogramType        @default(TYPE_A_NORMAL_COMPLIANCE)
+  leftTympanogramType         TympanogramType        @default(TYPE_A_NORMAL_COMPLIANCE)
+  speechReceptionThresholdDbR Int?
+  speechReceptionThresholdDbL Int?
+  speechDiscriminationScoreR  Decimal?               @db.Decimal(5, 2)
+  speechDiscriminationScoreL  Decimal?               @db.Decimal(5, 2)
+
+  clinicalImpression          String?                @db.Text
+  audiologistMembershipId     String                 @db.Uuid
+  status                      EntRecordStatus        @default(FINALIZED)
+  errorReason                 String?                @db.Text
+  version                     Int                    @default(1)
+  createdAt                   DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic                      Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                     Patient                @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                   ClinicalEncounter      @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  audiologist                 ClinicMembership       @relation("AudiometryAssessmentAudiologist", fields: [clinicId, audiologistMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, encounterId])
 }
