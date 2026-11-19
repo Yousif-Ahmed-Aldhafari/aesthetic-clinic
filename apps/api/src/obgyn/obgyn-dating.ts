@@ -22,6 +22,7 @@ export interface DatingComparisonResult {
   recommendedMethod: DatingMethod;
   clinicalRationaleAr: string;
   clinicalRationaleEn: string;
+  versionedRuleSource: string;
 }
 
 export type PreEclampsiaCategory =
@@ -31,11 +32,14 @@ export type PreEclampsiaCategory =
   | 'SEVERE_HYPERTENSION_ALERT'
   | 'SUSPECTED_PREECLAMPSIA_PROTEINURIC'
   | 'SUSPECTED_PREECLAMPSIA_NON_PROTEINURIC'
-  | 'ISOLATED_PROTEINURIA';
+  | 'ISOLATED_PROTEINURIA'
+  | 'ATYPICAL_EARLY_HYPERTENSION_ALERT'
+  | 'POSTPARTUM_PREECLAMPSIA_SUSPECTED';
 
 export interface PreEclampsiaScreenOptions {
   gestationalAgeWeeks?: number;
   gestationalAgeDays?: number;
+  isPostpartum?: boolean;
   hasSevereHeadache?: boolean;
   hasVisualDisturbances?: boolean;
   hasEpigastricOrRupPain?: boolean;
@@ -175,21 +179,28 @@ export function calculateGestationalAgeAtDate(
 // ---------------------------------------------------------------------------
 
 /**
- * Compares LMP-derived EDD with Ultrasound-derived EDD to determine if
- * clinical redating is warranted under evidence-based guidelines:
- * - First trimester (<= 13w6d / 97 days): discrepancy > 7 days => redating recommended to ultrasound
- * - Early second trimester (14w0d to 15w6d): discrepancy > 7 days
- * - Mid second trimester (16w0d to 21w6d): discrepancy > 10 days
+ * Compares LMP-derived EDD with Ultrasound-derived EDD under authoritative clinical guidance:
+ * ACOG Committee Opinion No. 700 / AIUM / SMFM Discrepancy Thresholds:
+ * - <= 8w6d (< 9 weeks): > 5 days discrepancy => redate to ultrasound
+ * - 9w0d to 15w6d (9 to 15 weeks): > 7 days discrepancy => redate to ultrasound
+ * - 16w0d to 21w6d (16 to 21 weeks): > 10 days discrepancy => redate to ultrasound
+ * - 22w0d to 27w6d (22 to 27 weeks): > 14 days discrepancy => redate to ultrasound
+ * - >= 28w0d (>= 28 weeks): > 21 days discrepancy => redate to ultrasound
+ * 
+ * Note: Early implementations incorrectly applied a uniform 7-day or 10-day threshold across all
+ * first-trimester scans, failing to detect clinically significant 6-day discrepancies before 9 weeks.
  */
 export function evaluateDatingDiscrepancy(
   lmpEdd: Date | string,
   usEdd: Date | string,
   gaWeeksAtScan: number,
   isLmpCertain: boolean = true,
+  gaDaysAtScan: number = 0,
 ): DatingComparisonResult {
   const lmpUtc = toUtcDateOnly(lmpEdd);
   const usUtc = toUtcDateOnly(usEdd);
   const discrepancyDays = Math.abs(diffUtcDays(lmpUtc, usUtc));
+  const versionedRuleSource = 'ACOG_CO_700_AIUM_SMFM_2017';
 
   if (!isLmpCertain) {
     return {
@@ -197,16 +208,23 @@ export function evaluateDatingDiscrepancy(
       exceedsThreshold: true,
       thresholdDays: 0,
       recommendedMethod: 'ULTRASOUND_FIRST_TRIMESTER',
-      clinicalRationaleAr: 'تاريخ الدورة الشهرية غير مؤكد؛ يجب اعتماد قياس السونار لتحديد موعد الولادة المتوقع',
-      clinicalRationaleEn: 'LMP is uncertain; ultrasound biometric dating is the clinical standard of care',
+      clinicalRationaleAr: 'تاريخ الدورة الشهرية غير مؤكد؛ يجب اعتماد قياس السونار لتحديد موعد الولادة المتوقع وفق المعايير السريرية (ACOG CO 700)',
+      clinicalRationaleEn: 'LMP is uncertain; ultrasound biometric dating is the clinical standard of care under ACOG CO 700',
+      versionedRuleSource,
     };
   }
 
-  let thresholdDays = 7;
-  if (gaWeeksAtScan > 15 && gaWeeksAtScan <= 22) {
+  let thresholdDays: number;
+  if (gaWeeksAtScan < 9) {
+    thresholdDays = 5;
+  } else if (gaWeeksAtScan <= 15) {
+    thresholdDays = 7;
+  } else if (gaWeeksAtScan <= 21) {
     thresholdDays = 10;
-  } else if (gaWeeksAtScan > 22) {
+  } else if (gaWeeksAtScan <= 27) {
     thresholdDays = 14;
+  } else {
+    thresholdDays = 21;
   }
 
   const exceedsThreshold = discrepancyDays > thresholdDays;
@@ -217,12 +235,12 @@ export function evaluateDatingDiscrepancy(
     : 'LMP_CERTAIN';
 
   const clinicalRationaleAr = exceedsThreshold
-    ? `الفارق بين حساب الدورة والسونار (${discrepancyDays} يوم) يتجاوز الحد المسموح به (${thresholdDays} أيام). يوصى بتعديل موعد الولادة إلى السونار.`
-    : `الفارق بين حساب الدورة والسونار (${discrepancyDays} يوم) ضمن الحد المقبول (${thresholdDays} أيام). يتم الإبقاء على حساب الدورة الشهرية المؤكدة.`;
+    ? `الفارق بين حساب الدورة والسونار (${discrepancyDays} يوم) يتجاوز الحد المسموح به (${thresholdDays} أيام عند عمر حمل ${gaWeeksAtScan}+${gaDaysAtScan} أسبوع وفق معايير ACOG CO 700). يوصى بتعديل موعد الولادة إلى السونار.`
+    : `الفارق بين حساب الدورة والسونار (${discrepancyDays} يوم) ضمن الحد المقبول (${thresholdDays} أيام عند عمر حمل ${gaWeeksAtScan}+${gaDaysAtScan} أسبوع وفق معايير ACOG CO 700). يتم الإبقاء على حساب الدورة الشهرية المؤكدة.`;
 
   const clinicalRationaleEn = exceedsThreshold
-    ? `Discrepancy between LMP and ultrasound (${discrepancyDays} days) exceeds the ${thresholdDays}-day threshold. Clinical guideline advises redating to ultrasound.`
-    : `Discrepancy between LMP and ultrasound (${discrepancyDays} days) is within the acceptable ${thresholdDays}-day margin. LMP dating is preserved.`;
+    ? `Discrepancy between LMP and ultrasound (${discrepancyDays} days) exceeds the ${thresholdDays}-day threshold for gestational age ${gaWeeksAtScan}w ${gaDaysAtScan}d under ACOG CO 700 guidelines. Clinical redating to ultrasound is recommended.`
+    : `Discrepancy between LMP and ultrasound (${discrepancyDays} days) is within the acceptable ${thresholdDays}-day margin for gestational age ${gaWeeksAtScan}w ${gaDaysAtScan}d under ACOG CO 700 guidelines. LMP dating is preserved.`;
 
   return {
     discrepancyDays,
@@ -231,6 +249,7 @@ export function evaluateDatingDiscrepancy(
     recommendedMethod,
     clinicalRationaleAr,
     clinicalRationaleEn,
+    versionedRuleSource,
   };
 }
 
@@ -249,6 +268,16 @@ export function evaluatePreEclampsiaScreen(
   urineProtein?: string | null,
   options?: PreEclampsiaScreenOptions,
 ): PreEclampsiaScreenResult {
+  if (typeof systolicBp !== 'number' || typeof diastolicBp !== 'number' || isNaN(systolicBp) || isNaN(diastolicBp)) {
+    throw new BadRequestException('Maternal blood pressure measurements must be valid numeric values');
+  }
+  if (systolicBp <= 50 || systolicBp >= 300 || diastolicBp <= 30 || diastolicBp >= 200) {
+    throw new BadRequestException(`Blood pressure values (${systolicBp}/${diastolicBp} mmHg) are outside plausible physiological boundaries`);
+  }
+  if (systolicBp <= diastolicBp) {
+    throw new BadRequestException(`Systolic blood pressure (${systolicBp} mmHg) must exceed diastolic blood pressure (${diastolicBp} mmHg)`);
+  }
+
   const flags: string[] = [];
   const recommendationsAr: string[] = [];
   const recommendationsEn: string[] = [];
@@ -283,9 +312,10 @@ export function evaluatePreEclampsiaScreen(
     flags.push(...severeSymptomsOrLabFeatures);
   }
 
-  // Gestational age evaluation: preeclampsia is diagnosed at GA >= 20 weeks (or postpartum)
+  // Gestational age evaluation
+  const isPostpartum = Boolean(options?.isPostpartum);
   const gaWeeks = options?.gestationalAgeWeeks;
-  const isPreTwentyWeeks = gaWeeks !== undefined && gaWeeks < 20;
+  const isPreTwentyWeeks = !isPostpartum && gaWeeks !== undefined && gaWeeks < 20;
 
   if (isSevereBp) {
     flags.push('CRITICAL_SEVERE_MATERNAL_HYPERTENSION');
@@ -308,14 +338,17 @@ export function evaluatePreEclampsiaScreen(
     }
   }
 
-  // 1. Chronic hypertension boundary (< 20 weeks)
-  if (isPreTwentyWeeks && (isElevatedBp || isSevereBp)) {
-    const category: PreEclampsiaCategory = isSevereBp ? 'SEVERE_HYPERTENSION_ALERT' : 'CHRONIC_HYPERTENSION_SUSPECTED';
-    recommendationsAr.push('ارتفاع ضغط الدم قبل الأسبوع العشرين من الحمل يشير إلى احتمالية وجود ضغط دم مزمن (Chronic Hypertension)؛ يتطلب تقييم القاع القلبي والكلوي المسبق');
-    recommendationsEn.push('Hypertension before 20 weeks gestation suggests pre-existing chronic hypertension; baseline renal and cardiovascular assessment recommended');
+  // 1. Postpartum Context Evaluation
+  if (isPostpartum && (isElevatedBp || isSevereBp)) {
+    let category: PreEclampsiaCategory = 'GESTATIONAL_HYPERTENSION_RISK';
+    if (isSevereBp || hasSevereNonProteinuricFeatures || hasSignificantProteinuria) {
+      category = 'POSTPARTUM_PREECLAMPSIA_SUSPECTED';
+      recommendationsAr.push('اشتباه ما قبل الإرجاج النفاسي (Postpartum Preeclampsia)؛ يستدعي التقييم الإسعافي الفوري لاحتمالية حدوث مضاعفات عصبية أو وعائية بعد الولادة');
+      recommendationsEn.push('Suspected postpartum preeclampsia; immediate emergency evaluation required to assess for delayed postpartum vascular or neurological complications');
+    }
     return {
       isAlert: true,
-      severity: isSevereBp ? 'SEVERE_PREECLAMPSIA_RISK' : 'MILD_HYPERTENSION',
+      severity: (isSevereBp || hasSevereNonProteinuricFeatures || hasSignificantProteinuria) ? 'SEVERE_PREECLAMPSIA_RISK' : 'MILD_HYPERTENSION',
       category,
       flags,
       recommendationsAr,
@@ -325,7 +358,32 @@ export function evaluatePreEclampsiaScreen(
     };
   }
 
-  // 2. Severe Hypertension Alert (>= 160/110)
+  // 2. Pre-20-Weeks Context Evaluation (Conservative screening differentiation)
+  if (isPreTwentyWeeks && (isElevatedBp || isSevereBp)) {
+    const isAtypicalCritical = isSevereBp || hasSevereNonProteinuricFeatures || (hasSignificantProteinuria && !isPlusOneScreenOnly);
+    const category: PreEclampsiaCategory = isAtypicalCritical ? 'ATYPICAL_EARLY_HYPERTENSION_ALERT' : 'CHRONIC_HYPERTENSION_SUSPECTED';
+
+    if (isAtypicalCritical) {
+      recommendationsAr.push('ارتفاع ضغط الدم المصحوب بأعراض شديدة أو زلال بولي قبل الأسبوع 20 عرض غير نمطي حرج؛ يستدعي تقييماً عاجلاً لاستبعاد الحمل العنقودي (Molar Pregnancy) أو الاعتلال الكلوي الحاد أو الأسباب الثانوية');
+      recommendationsEn.push('Hypertension with severe features or proteinuria prior to 20 weeks is atypical and critical; urgent evaluation required to exclude gestational trophoblastic disease (hydatidiform mole), severe renal disease, or secondary hypertension');
+    } else {
+      recommendationsAr.push('ارتفاع ضغط الدم قبل الأسبوع العشرين من الحمل يشير إلى احتمالية وجود ضغط دم مزمن (Chronic Hypertension) مسبق كفرضيّة فحص استرشادية؛ لا يُعد تشخيصاً نهائياً ويتطلب إعادة القياس وتقييم القاع القلبي والكلوي');
+      recommendationsEn.push('Elevated blood pressure observed before 20 weeks suggests pre-existing chronic hypertension as an advisory screening observation requiring confirmation with repeat measurement and outpatient cardiovascular/renal evaluation, rather than a definitive diagnosis');
+    }
+
+    return {
+      isAlert: true,
+      severity: isAtypicalCritical ? 'SEVERE_PREECLAMPSIA_RISK' : 'MILD_HYPERTENSION',
+      category,
+      flags,
+      recommendationsAr,
+      recommendationsEn,
+      clinicalDisclaimerAr: CLINICAL_DISCLAIMER_AR,
+      clinicalDisclaimerEn: CLINICAL_DISCLAIMER_EN,
+    };
+  }
+
+  // 3. Severe Hypertension Alert (>= 160/110) at >= 20 weeks
   if (isSevereBp) {
     let category: PreEclampsiaCategory = 'SEVERE_HYPERTENSION_ALERT';
     if (hasSignificantProteinuria) {
@@ -351,7 +409,7 @@ export function evaluatePreEclampsiaScreen(
     };
   }
 
-  // 3. Elevated Blood Pressure (140-159 / 90-109)
+  // 4. Elevated Blood Pressure (140-159 / 90-109) at >= 20 weeks
   if (isElevatedBp) {
     if (hasSignificantProteinuria) {
       return {
@@ -409,7 +467,7 @@ export function evaluatePreEclampsiaScreen(
     };
   }
 
-  // 4. Isolated Proteinuria without Hypertension
+  // 5. Isolated Proteinuria without Hypertension
   if (hasSignificantProteinuria) {
     return {
       isAlert: true,

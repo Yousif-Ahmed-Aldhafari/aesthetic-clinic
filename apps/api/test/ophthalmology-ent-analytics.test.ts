@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   calculatePta4,
   classifyHearingImpairment,
+  evaluateBilateralHearingImpairment,
   evaluateIop,
   evaluateCupToDiscRatio,
   calculateSphericalEquivalent,
@@ -18,9 +19,20 @@ describe('Ophthalmology & ENT Analytics & Clinical Guardrails', () => {
       assert.equal(pta, 27.5);
     });
 
-    it('returns null on invalid or insufficient audiogram inputs', () => {
+    it('calculates PTA-4 from 4-frequency array [500, 1000, 2000, 4000 Hz]', () => {
+      const pta = calculatePta4([20, 25, 30, 35]);
+      assert.equal(pta, 27.5);
+    });
+
+    it('fails closed (returns null) if any core speech frequency is missing, null, or out-of-range', () => {
+      // Missing frequency (NaN or null passed)
+      // @ts-expect-error testing invalid element
+      assert.equal(calculatePta4([15, 15, 20, null, 30, 35, 40]), null);
+      // Value out of bounds (> 120 dB HL)
+      assert.equal(calculatePta4([15, 15, 20, 25, 130, 35, 40]), null);
+      // Incomplete array (only 3 frequencies)
+      assert.equal(calculatePta4([20, 25, 30]), null);
       assert.equal(calculatePta4([]), null);
-      assert.equal(calculatePta4([10, 20, 30]), null);
       // @ts-expect-error test invalid input
       assert.equal(calculatePta4(null), null);
     });
@@ -128,9 +140,84 @@ describe('Ophthalmology & ENT Analytics & Clinical Guardrails', () => {
       assert.match(result.typeDescriptionAr, /مختلط/);
       assert.match(result.typeDescriptionEn, /Mixed/);
     });
+
+    it('sets type to INDETERMINATE when bone conduction is missing (never defaults to sensorineural)', () => {
+      // Air thresholds indicating moderate hearing loss
+      const air = [30, 35, 40, 45, 45, 50, 55];
+      const result = classifyHearingImpairment(air);
+      assert.ok(result);
+      assert.equal(result.grade, 'MODERATE');
+      assert.equal(result.type, 'INDETERMINATE');
+      assert.match(result.typeDescriptionEn, /Indeterminate/);
+      assert.match(result.typeDescriptionAr, /غير محدد/);
+    });
   });
 
-  describe('3. Intraocular Pressure (IOP) Evaluation & Glaucoma Guardrails', () => {
+  describe('3. Bilateral Audiometry & WHO 2021 Better-Ear Standard', () => {
+    it('determines person-level impairment grade based on the better ear (WHO 2021)', () => {
+      // Right Ear: Normal (PTA = 15 dB)
+      const rightAir = [10, 10, 10, 15, 15, 20, 20];
+      // Left Ear: Moderate hearing loss (PTA = 45 dB)
+      const leftAir = [30, 35, 40, 45, 45, 50, 55];
+
+      const res = evaluateBilateralHearingImpairment({
+        rightAirThresholds: rightAir,
+        leftAirThresholds: leftAir,
+      });
+
+      assert.equal(res.betterEarSide, 'RIGHT');
+      assert.equal(res.betterEarPtaDb, 15);
+      assert.equal(res.betterEarGrade, 'NORMAL');
+      assert.equal(res.whoPersonLevelImpairmentGrade, 'NORMAL');
+      assert(res.whoPersonLevelDescriptionEn.includes('No impairment in better ear'));
+    });
+
+    it('flags clinical masking requirement on inter-aural difference >= 40 dB HL', () => {
+      // Right Ear: PTA = 15 dB
+      const rightAir = [10, 10, 10, 15, 15, 20, 20];
+      // Left Ear: PTA = 60 dB (diff = 45 dB >= 40 dB)
+      const leftAir = [50, 55, 60, 60, 60, 60, 65];
+
+      const res = evaluateBilateralHearingImpairment({
+        rightAirThresholds: rightAir,
+        leftAirThresholds: leftAir,
+      });
+
+      assert.ok(res.maskingAlertsEn.some((a) => a.includes('mandatory masking')));
+      assert.ok(res.maskingAlertsAr.some((a) => a.includes('تنبيه إخفاء سريري')));
+    });
+
+    it('flags clinical masking requirement on Air-Bone Gap > 10 dB HL', () => {
+      // Right Ear with ABG = 25 dB
+      const rightAir = [30, 35, 40, 45, 45, 50, 55];
+      const rightBone = [15, 15, 15, 15, 15]; // gaps = 25, 30, 30, 35
+      const leftAir = [10, 10, 10, 15, 15, 20, 20];
+
+      const res = evaluateBilateralHearingImpairment({
+        rightAirThresholds: rightAir,
+        leftAirThresholds: leftAir,
+        rightBoneThresholds: rightBone,
+      });
+
+      assert.ok(res.maskingAlertsEn.some((a) => a.includes('Right ear masking alert')));
+    });
+
+    it('includes pediatric audiometry precautions for patients under 12 years old', () => {
+      const rightAir = [10, 10, 10, 15, 15, 20, 20];
+      const leftAir = [10, 10, 10, 15, 15, 20, 20];
+
+      const res = evaluateBilateralHearingImpairment({
+        rightAirThresholds: rightAir,
+        leftAirThresholds: leftAir,
+        patientAgeYears: 7,
+      });
+
+      assert.ok(res.pediatricConsiderationsEn?.includes('Pediatric Audiology Precaution'));
+      assert.ok(res.pediatricConsiderationsAr?.includes('تنبيه طب الأطفال السمعي'));
+    });
+  });
+
+  describe('4. Intraocular Pressure (IOP) Evaluation & Glaucoma Guardrails', () => {
     it('passes normal bilateral IOP without clinical alert flags', () => {
       const result = evaluateIop(15.0, 16.5);
       assert.equal(result.isElevatedOd, false);
@@ -140,6 +227,20 @@ describe('Ophthalmology & ENT Analytics & Clinical Guardrails', () => {
       assert.equal(result.isAsymmetric, false);
       assert.equal(result.advisoryAlertsAr.length, 0);
       assert.ok(result.clinicalDisclaimerAr.includes('تنبيه سريري استشاري'));
+    });
+
+    it('evaluates unilateral IOP measurements safely without asymmetry error', () => {
+      const result = evaluateIop(18.0, null);
+      assert.equal(result.isElevatedOd, false);
+      assert.equal(result.isElevatedOs, false);
+      assert.equal(result.isAsymmetric, false);
+      assert.equal(result.differenceMmHg, null);
+    });
+
+    it('flags air-puff tonometry method warning requiring Goldmann confirmation', () => {
+      const result = evaluateIop(22.0, 18.0, 'AIR_PUFF_SCREENING');
+      assert.ok(result.advisoryAlertsEn.some((a) => a.includes('Non-contact Air-Puff') && a.includes('Goldmann Applanation Tonometry')));
+      assert.ok(result.advisoryAlertsAr.some((a) => a.includes('Air-Puff') && a.includes('غولدمان')));
     });
 
     it('flags ocular hypertension when IOP exceeds 21.0 mmHg', () => {
@@ -167,7 +268,7 @@ describe('Ophthalmology & ENT Analytics & Clinical Guardrails', () => {
     });
   });
 
-  describe('4. Cup-to-Disc Ratio (CDR) Evaluation', () => {
+  describe('5. Cup-to-Disc Ratio (CDR) Evaluation', () => {
     it('passes normal physiological CDR', () => {
       const result = evaluateCupToDiscRatio(0.35, 0.35);
       assert.equal(result.isSuspiciousOd, false);
@@ -186,7 +287,7 @@ describe('Ophthalmology & ENT Analytics & Clinical Guardrails', () => {
     });
   });
 
-  describe('5. Refractive Calculations', () => {
+  describe('6. Refractive Calculations', () => {
     it('calculates spherical equivalent accurately (SE = Sphere + Cyl / 2)', () => {
       // Myopia with astigmatism: -2.00 DS, -1.00 DC -> -2.50 D
       assert.equal(calculateSphericalEquivalent(-2.0, -1.0), -2.5);
