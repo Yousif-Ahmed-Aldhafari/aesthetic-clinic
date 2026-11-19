@@ -19,6 +19,7 @@ import type { VerifiedPrincipal } from './verified-sessions.js';
 import { AuditRepository } from './audit.repository.js';
 import { SpecialtyRepository } from './specialty.repository.js';
 import { audit as financialAudit } from './billing.helpers.js';
+import { roundHalfUp } from '../billing/money.js';
 import {
   isValidFdiToothNumber,
   validateSurfacesForTooth,
@@ -34,6 +35,7 @@ import type {
   RecordPeriodontalRecordDto,
   CreateDentalTreatmentStageDto,
   CompleteDentalTreatmentStageDto,
+  BillDentalTreatmentStageDto,
   ConsumeDentalStageMaterialsDto,
 } from '../dentistry/dentistry.dto.js';
 
@@ -172,8 +174,8 @@ export class DentistryRepository {
       if (!encounter || encounter.patientId !== input.patientId) {
         throw new BadRequestException('Encounter does not match patient or clinic');
       }
-      if (encounter.status !== 'IN_PROGRESS') {
-        throw new BadRequestException('Dental charts can only be created during an active IN_PROGRESS encounter');
+      if (encounter.status === 'CLOSED') {
+        throw new BadRequestException('Dental charts cannot be created for a CLOSED encounter');
       }
 
       const existingDraft = await tx.dentalOdontogram.findFirst({
@@ -224,7 +226,12 @@ export class DentistryRepository {
         metadata: { patientId: input.patientId, encounterId: input.encounterId },
       }, tx);
 
-      return created;
+      return {
+        ...created,
+        findings: [],
+        periodontalRecords: [],
+        treatmentStages: [],
+      };
     });
   }
 
@@ -753,6 +760,17 @@ export class DentistryRepository {
   // 4. DENTAL TREATMENT STAGING
   // =========================================================================
 
+  async getPatientTreatmentStages(proof: VerifiedPrincipal, clinicId: string, patientId: string) {
+    return this.database.withClinicContext(proof, clinicId, ['clinical.treatment-plans.read'], async (tx) => {
+      const items = await tx.dentalTreatmentStage.findMany({
+        where: { clinicId, patientId },
+        include: { service: true, encounter: true },
+        orderBy: [{ stageOrder: 'asc' }, { createdAt: 'asc' }],
+      });
+      return { items };
+    });
+  }
+
   async createTreatmentStage(
     proof: VerifiedPrincipal,
     clinicId: string,
@@ -848,6 +866,9 @@ export class DentistryRepository {
         where: { clinicId_id: { clinicId, id: stageId } },
       });
       if (!stage) throw new NotFoundException('Treatment stage not found');
+      if (input.idempotencyKey && stage.status === 'COMPLETED') {
+        return stage;
+      }
       if (!['APPROVED', 'IN_PROGRESS'].includes(stage.status)) {
         throw new BadRequestException(`Cannot complete treatment stage with status ${stage.status}`);
       }
@@ -956,8 +977,13 @@ export class DentistryRepository {
     clinicId: string,
     stageId: string,
     _actorMembershipId: string,
-    existingInvoiceId?: string,
+    input?: BillDentalTreatmentStageDto | string,
   ) {
+    const existingInvoiceId = typeof input === 'string' ? input : input?.invoiceId;
+    const configuredTaxBasisPoints = typeof input === 'object' && typeof input?.taxBasisPoints === 'number'
+      ? input.taxBasisPoints
+      : 1500;
+
     return this.database.withClinicContext(proof, clinicId, ['invoices.create'], async (tx, ctx) => {
       // Concurrency protection on clinic invoice counter
       await tx.clinicInvoiceCounter.upsert({
@@ -983,8 +1009,8 @@ export class DentistryRepository {
         ? stage.service.basePriceMinor
         : BigInt(Math.round(Number(stage.estimatedCost) * 100));
 
-      const taxBasisPoints = 1500; // 15% VAT
-      const taxMinor = (unitPriceMinor * BigInt(taxBasisPoints)) / 10000n;
+      const taxBasisPoints = configuredTaxBasisPoints;
+      const taxMinor = roundHalfUp(unitPriceMinor * BigInt(taxBasisPoints), 10000n);
       const totalMinor = unitPriceMinor + taxMinor;
 
       let invoiceId = existingInvoiceId;

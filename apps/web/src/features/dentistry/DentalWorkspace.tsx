@@ -3,6 +3,7 @@ import type {
   DentalOdontogramItem,
   DentalToothFindingItem,
   DentalPeriodontalRecordItem,
+  DentalTreatmentStageItem,
   ToothNumberingSystem,
   ToothSurface,
 } from './types';
@@ -23,6 +24,7 @@ import {
   billTreatmentStage,
   consumeStageMaterials,
 } from './dentistry-api';
+import { clinicalApi } from '../clinical/clinical-api';
 import { InteractiveOdontogram } from './InteractiveOdontogram';
 import { PeriodontalGrid } from './PeriodontalGrid';
 import { DentalTreatmentPlanning } from './DentalTreatmentPlanning';
@@ -58,20 +60,26 @@ export const DentalWorkspace: React.FC<DentalWorkspaceProps> = ({
     setError(null);
     try {
       const res = await listPatientOdontograms(clinicId, patientId, csrfToken);
-      setOdontograms(res.items);
+      const items = res?.items ?? [];
+      setOdontograms(items);
 
-      if (res.items.length > 0) {
+      if (items.length > 0) {
         // Load full details of the latest chart or the one matching current encounter
         const target =
-          (encounterId ? res.items.find((c) => c.encounterId === encounterId) : null) ??
-          res.items[0];
+          (encounterId ? items.find((c) => c.encounterId === encounterId) : null) ??
+          items[0];
         const detailed = await getOdontogramById(clinicId, target.id, csrfToken);
 
         // Also fetch treatment stages
-        const stagesRes = await listTreatmentStages(clinicId, patientId, csrfToken);
+        let stages: DentalTreatmentStageItem[] = detailed.treatmentStages ?? [];
+        try {
+          const stagesRes = await listTreatmentStages(clinicId, patientId, csrfToken);
+          if (stagesRes?.items) stages = stagesRes.items;
+        } catch {}
+
         setSelectedChart({
           ...detailed,
-          treatmentStages: stagesRes.items,
+          treatmentStages: stages,
         });
       } else {
         setSelectedChart(null);
@@ -89,8 +97,15 @@ export const DentalWorkspace: React.FC<DentalWorkspaceProps> = ({
   }, [loadCharts]);
 
   const handleCreateDraft = async () => {
-    if (!encounterId) {
-      alert('يتطلب إنشاء مخطط أسنان وجود استشارة سريرية نشطة (Encounter).');
+    let targetEncounterId = encounterId;
+    if (!targetEncounterId) {
+      try {
+        const encList = await clinicalApi(clinicId).list(patientId, new AbortController().signal);
+        targetEncounterId = encList.items[0]?.id;
+      } catch {}
+    }
+    if (!targetEncounterId) {
+      setError('يتطلب إنشاء مخطط أسنان وجود استشارة سريرية مسجلة للمريض.');
       return;
     }
     setLoading(true);
@@ -100,7 +115,7 @@ export const DentalWorkspace: React.FC<DentalWorkspaceProps> = ({
         clinicId,
         {
           patientId,
-          encounterId,
+          encounterId: targetEncounterId,
           dentitionType: 'PERMANENT',
           numberingSystem,
           chartType: 'BASELINE',
@@ -109,8 +124,12 @@ export const DentalWorkspace: React.FC<DentalWorkspaceProps> = ({
         csrfToken,
       );
       setNotice('تم إنشاء مسودة مخطط الأسنان بنجاح.');
+      const detailed = await getOdontogramById(clinicId, created.id, csrfToken);
+      setSelectedChart({
+        ...detailed,
+        treatmentStages: detailed.treatmentStages ?? [],
+      });
       await loadCharts();
-      setSelectedChart(created);
     } catch (err: unknown) {
       setError('فشل إنشاء مسودة مخطط الأسنان. تحقق من الصلاحيات السريرية وتفاصيل الزيارة.');
     } finally {
@@ -322,7 +341,7 @@ export const DentalWorkspace: React.FC<DentalWorkspaceProps> = ({
 
   if (loading && !selectedChart) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', direction: 'rtl' }}>
+      <div className="dental-workspace" style={{ padding: '24px', textAlign: 'center', direction: 'rtl' }}>
         <p>جارٍ تحميل ملف طب وجراحة الفم والأسنان...</p>
       </div>
     );

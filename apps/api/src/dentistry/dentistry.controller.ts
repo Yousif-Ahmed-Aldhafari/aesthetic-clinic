@@ -251,6 +251,16 @@ export class DentistryController {
   // DENTAL TREATMENT STAGING
   // =========================================================================
 
+  @Get('patients/:patientId/treatment-stages')
+  @ClinicPermissions('clinical.treatment-plans.read')
+  listTreatmentStages(
+    @Req() req: AuthRequest,
+    @Param('clinicId') clinicId: string,
+    @Param('patientId') patientId: string,
+  ) {
+    return this.dentistryRepo.getPatientTreatmentStages(req.auth!.principal, clinicId, patientId);
+  }
+
   @Post('encounters/:encounterId/treatment-stages')
   @ClinicPermissions('clinical.treatment-plans.create')
   @RequireSpecialty('DENTISTRY')
@@ -341,7 +351,7 @@ export class DentistryController {
       clinicId,
       stageId,
       membershipId,
-      body.invoiceId,
+      body,
     );
   }
 

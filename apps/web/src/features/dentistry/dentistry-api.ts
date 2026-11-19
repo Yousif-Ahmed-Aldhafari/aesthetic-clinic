@@ -20,12 +20,13 @@ export async function listPatientOdontograms(
   patientId: string,
   csrfToken?: string,
 ): Promise<{ items: DentalOdontogramItem[] }> {
-  return api<{ items: DentalOdontogramItem[] }>(
+  const data = await api<DentalOdontogramItem[] | { items: DentalOdontogramItem[] }>(
     `clinics/${clinicId}/dentistry/patients/${patientId}/odontograms`,
     'GET',
     undefined,
     csrfToken,
   );
+  return { items: Array.isArray(data) ? data : (data?.items ?? []) };
 }
 
 export async function getOdontogramById(

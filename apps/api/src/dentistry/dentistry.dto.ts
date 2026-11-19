@@ -294,6 +294,11 @@ export class CompleteDentalTreatmentStageDto {
   @IsUUID()
   patientConsentId?: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
+
   @IsInt()
   @Min(1)
   expectedVersion!: number;
@@ -314,6 +319,12 @@ export class BillDentalTreatmentStageDto {
   @IsOptional()
   @IsUUID()
   invoiceId?: string; // If staging to an existing draft invoice
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  taxBasisPoints?: number;
 }
 
 export class ConsumeDentalStageMaterialsDto {

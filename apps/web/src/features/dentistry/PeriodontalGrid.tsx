@@ -50,7 +50,7 @@ export const PeriodontalGrid: React.FC<PeriodontalGridProps> = ({
 
   const handleSelectTooth = (toothFdi: number) => {
     setSelectedTooth(toothFdi);
-    const existing = odontogram.periodontalRecords.find((p) => p.toothNumberFdi === toothFdi);
+    const existing = (odontogram.periodontalRecords ?? []).find((p) => p.toothNumberFdi === toothFdi);
     if (existing) {
       setProbingDepths(existing.probingDepthsMm);
       setGingivalMargins(existing.gingivalMarginMm);
@@ -93,7 +93,7 @@ export const PeriodontalGrid: React.FC<PeriodontalGridProps> = ({
   };
 
   return (
-    <div className="periodontal-chart" style={{ direction: 'rtl' }}>
+    <div className="periodontal-chart periodontal-grid" style={{ direction: 'rtl' }}>
       <div
         style={{
           display: 'flex',
@@ -121,7 +121,7 @@ export const PeriodontalGrid: React.FC<PeriodontalGridProps> = ({
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {permanentTeeth.map((tooth) => {
-            const hasRecord = odontogram.periodontalRecords.some((p) => p.toothNumberFdi === tooth);
+            const hasRecord = (odontogram.periodontalRecords ?? []).some((p) => p.toothNumberFdi === tooth);
             const isSelected = selectedTooth === tooth;
             return (
               <button
@@ -159,7 +159,7 @@ export const PeriodontalGrid: React.FC<PeriodontalGridProps> = ({
           <h5 style={{ margin: 0, fontSize: '15px', color: '#1e293b' }}>
             قياسات السن {selectedTooth}
           </h5>
-          {odontogram.periodontalRecords.some((p) => p.toothNumberFdi === selectedTooth) && (
+          {(odontogram.periodontalRecords ?? []).some((p) => p.toothNumberFdi === selectedTooth) && (
             <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>
               ✓ مسجل مسبقاً في هذا المخطط
             </span>
@@ -246,7 +246,7 @@ export const PeriodontalGrid: React.FC<PeriodontalGridProps> = ({
               {/* Clinical Attachment Level (CAL = PD + GM) */}
               <tr style={{ background: '#f8fafc' }}>
                 <td style={{ padding: '8px', border: '1px solid #cbd5e1', fontWeight: 'bold', textAlign: 'right', color: '#1e40af' }}>
-                  مستوى الالتصاق السريري (CAL = PD + GM)
+                  مستوى الارتباط اللثوي السريري (CAL = PD + GM)
                 </td>
                 {calculatedCal.map((cal, idx) => (
                   <td

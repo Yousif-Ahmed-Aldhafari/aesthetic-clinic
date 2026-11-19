@@ -234,6 +234,9 @@ model Clinic {
   dentalToothFindings DentalToothFinding[]
   dentalPeriodontalRecords DentalPeriodontalRecord[]
   dentalTreatmentStages DentalTreatmentStage[]
+  pediatricBirthHistories PediatricBirthHistory[]
+  caregiverRelationships PatientCaregiverRelationship[]
+  pediatricGrowthRecords PediatricGrowthRecord[]
 
   @@index([status, createdAt])
 }
@@ -524,6 +527,9 @@ model ClinicMembership {
   plannedDentalStages DentalTreatmentStage[] @relation("DentalStagePlanner")
   approvedDentalStages DentalTreatmentStage[] @relation("DentalStageApprover")
   completedDentalStages DentalTreatmentStage[] @relation("DentalStageCompleter")
+  verifiedBirthHistories PediatricBirthHistory[] @relation("PediatricBirthHistoryVerifier")
+  revokedCaregivers PatientCaregiverRelationship[] @relation("CaregiverRevokedBy")
+  recordedGrowthRecords PediatricGrowthRecord[] @relation("PediatricGrowthRecordedBy")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -689,6 +695,9 @@ model Patient {
   dentalToothFindings DentalToothFinding[]
   dentalPeriodontalRecords DentalPeriodontalRecord[]
   dentalTreatmentStages DentalTreatmentStage[]
+  birthHistory PediatricBirthHistory?
+  caregivers PatientCaregiverRelationship[]
+  growthRecords PediatricGrowthRecord[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -754,6 +763,7 @@ model ClinicalEncounter {
   clinicalIncidents ClinicalIncident[]
   dentalOdontograms DentalOdontogram[]
   dentalTreatmentStages DentalTreatmentStage[]
+  pediatricGrowthRecords PediatricGrowthRecord[]
   @@unique([clinicId,id])
   @@unique([clinicId,visitId])
   @@index([clinicId,patientId,createdAt,id])
@@ -4192,6 +4202,10 @@ enum ClinicalPrivilegeCode {
   DENTAL_PROCEDURE_PLAN
   DENTAL_PROCEDURE_APPROVE
   DENTAL_PROCEDURE_PERFORM
+  PEDIATRIC_CARE_DOCUMENT
+  PEDIATRIC_GROWTH_RECORD
+  PEDIATRIC_GROWTH_REVIEW
+  PEDIATRIC_BIRTH_HISTORY_VERIFY
 }
 
 enum PrivilegeScope {
@@ -5562,4 +5576,193 @@ model DentalTreatmentStage {
   @@unique([clinicId, id])
   @@index([clinicId, patientId, status])
   @@index([clinicId, odontogramId, stageOrder])
+}
+
+// ============================================================================
+// PEDIATRICS & CHILD HEALTH INFORMATICS (Step 8.3)
+// ============================================================================
+
+enum DeliveryMode {
+  VAGINAL
+  CESAREAN_PLANNED
+  CESAREAN_EMERGENCY
+  ASSISTED_VACUUM
+  ASSISTED_FORCEPS
+  OTHER
+}
+
+enum BirthType {
+  SINGLETON
+  TWIN
+  TRIPLET
+  MULTIPLE_HIGHER
+}
+
+enum BirthHistorySource {
+  MATERNAL_REPORT
+  HOSPITAL_DISCHARGE_SUMMARY
+  BIRTH_CERTIFICATE
+  PHYSICIAN_DOCUMENTED
+  OTHER
+}
+
+enum CaregiverRelationshipType {
+  MOTHER
+  FATHER
+  LEGAL_GUARDIAN
+  GRANDPARENT
+  SIBLING_ADULT
+  FOSTER_PARENT
+  CASE_WORKER
+  OTHER
+}
+
+enum StatureMeasurementMethod {
+  RECUMBENT_LENGTH
+  STANDING_HEIGHT
+}
+
+enum MeasurementSource {
+  CLINICAL_ENCOUNTER
+  NURSE_TRIAGE
+  COMMUNITY_SCREENING
+  HISTORICAL_RECORD
+}
+
+enum GrowthRecordStatus {
+  DRAFT
+  FINAL
+  ENTERED_IN_ERROR
+}
+
+model PediatricBirthHistory {
+  id                            String              @id @default(uuid()) @db.Uuid
+  clinicId                      String              @db.Uuid
+  patientId                     String              @db.Uuid
+  gestationalAgeWeeks           Int
+  gestationalAgeDays            Int                 @default(0)
+  birthWeightGrams              Int?
+  birthLengthCm                 Decimal?            @db.Decimal(5, 2)
+  birthHeadCircumferenceCm      Decimal?            @db.Decimal(5, 2)
+  apgar1Min                     Int?
+  apgar5Min                     Int?
+  apgar10Min                    Int?
+  deliveryMode                  DeliveryMode        @default(VAGINAL)
+  birthType                     BirthType           @default(SINGLETON)
+  birthComplications            String?             @db.Text
+  maternalComplications         String?             @db.Text
+  consanguinity                 Boolean             @default(false)
+  neonatalResuscitationRequired Boolean             @default(false)
+  nicAdmissionRequired          Boolean             @default(false)
+  nicStayDays                   Int?
+  newbornScreeningNotes         String?             @db.Text
+  source                        BirthHistorySource  @default(MATERNAL_REPORT)
+  verifiedByMembershipId        String?             @db.Uuid
+  verifiedAt                    DateTime?           @db.Timestamptz(3)
+  version                       Int                 @default(1)
+  amendmentHistory              Json?               @default("[]")
+  createdAt                     DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt                     DateTime            @updatedAt @db.Timestamptz(3)
+
+  clinic                        Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                       Patient             @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  verifiedBy                    ClinicMembership?   @relation("PediatricBirthHistoryVerifier", fields: [clinicId, verifiedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, patientId])
+  @@index([clinicId, patientId])
+}
+
+model PatientCaregiverRelationship {
+  id                          String                    @id @default(uuid()) @db.Uuid
+  clinicId                    String                    @db.Uuid
+  patientId                   String                    @db.Uuid
+  caregiverName               String                    @db.VarChar(150)
+  caregiverNationalId         String?                   @db.VarChar(50)
+  caregiverPhone              String                    @db.VarChar(20)
+  relationshipType            CaregiverRelationshipType
+  hasLegalCustody             Boolean                   @default(false)
+  hasMedicalConsentAuthority  Boolean                   @default(false)
+  isEmergencyContact          Boolean                   @default(false)
+  emergencyPriority           Int                       @default(1)
+  portalProxyAccess           Boolean                   @default(false)
+  portalAccountId             String?                   @db.Uuid
+  isRevoked                   Boolean                   @default(false)
+  revokedAt                   DateTime?                 @db.Timestamptz(3)
+  revokedByMembershipId       String?                   @db.Uuid
+  revocationReason            String?                   @db.Text
+  legalDocumentationReference String?                   @db.VarChar(255)
+  notes                       String?                   @db.Text
+  version                     Int                       @default(1)
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic                      Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                     Patient                   @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  revokedBy                   ClinicMembership?         @relation("CaregiverRevokedBy", fields: [clinicId, revokedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, caregiverPhone])
+}
+
+model PediatricGrowthRecord {
+  id                          String                   @id @default(uuid()) @db.Uuid
+  clinicId                    String                   @db.Uuid
+  patientId                   String                   @db.Uuid
+  encounterId                 String?                  @db.Uuid
+  recordedByMembershipId      String                   @db.Uuid
+  measuredAt                  DateTime                 @default(now()) @db.Timestamptz(3)
+  chronologicalAgeDays        Int
+  correctedAgeDays            Int?
+  gestationalAgeAtBirthWeeks  Int?
+  weightKg                    Decimal?                 @db.Decimal(5, 3)
+  statureCm                   Decimal?                 @db.Decimal(5, 2)
+  statureMethod               StatureMeasurementMethod @default(RECUMBENT_LENGTH)
+  headCircumferenceCm         Decimal?                 @db.Decimal(5, 2)
+  bmi                         Decimal?                 @db.Decimal(5, 2)
+  weightForAgeZScore          Decimal?                 @db.Decimal(4, 2)
+  weightForAgePercentile      Decimal?                 @db.Decimal(5, 2)
+  lengthForAgeZScore          Decimal?                 @db.Decimal(4, 2)
+  lengthForAgePercentile      Decimal?                 @db.Decimal(5, 2)
+  headCircumferenceZScore     Decimal?                 @db.Decimal(4, 2)
+  headCircumferencePercentile Decimal?                 @db.Decimal(5, 2)
+  bmiForAgeZScore             Decimal?                 @db.Decimal(4, 2)
+  bmiForAgePercentile         Decimal?                 @db.Decimal(5, 2)
+  growthReferenceStandard     String                   @default("WHO_2006") @db.VarChar(50)
+  measurementSource           MeasurementSource        @default(CLINICAL_ENCOUNTER)
+  status                      GrowthRecordStatus       @default(FINAL)
+  errorReason                 String?                  @db.Text
+  version                     Int                      @default(1)
+  createdAt                   DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime                 @updatedAt @db.Timestamptz(3)
+
+  clinic                      Clinic                   @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                     Patient                  @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                   ClinicalEncounter?       @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  recordedBy                  ClinicMembership         @relation("PediatricGrowthRecordedBy", fields: [clinicId, recordedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, measuredAt])
+  @@index([clinicId, encounterId])
+}
+
+model GrowthReference {
+  id                 String   @id @default(uuid()) @db.Uuid
+  standardName       String   @db.VarChar(50)
+  metric             String   @db.VarChar(50)
+  gender             PatientGender
+  ageMonths          Int
+  lValue             Decimal  @db.Decimal(8, 4)
+  mValue             Decimal  @db.Decimal(8, 4)
+  sValue             Decimal  @db.Decimal(8, 4)
+  p3Value            Decimal? @db.Decimal(8, 3)
+  p15Value           Decimal? @db.Decimal(8, 3)
+  p50Value           Decimal? @db.Decimal(8, 3)
+  p85Value           Decimal? @db.Decimal(8, 3)
+  p97Value           Decimal? @db.Decimal(8, 3)
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([standardName, metric, gender, ageMonths])
+  @@index([standardName, metric, gender])
 }

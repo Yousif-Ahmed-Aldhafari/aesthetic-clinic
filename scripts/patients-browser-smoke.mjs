@@ -26,7 +26,7 @@ try{
   for(const [i,id] of clinics.entries())await owner.clinic.create({data:{id,slug:slugs[i],legalName:'عيادة وهمية لاختبار المتصفح',displayName:i?'عيادة نور الاختبار':'عيادة ورد الاختبار',currency:'YER',timezone:'Asia/Aden',mfaPolicy:'OPTIONAL',branding:{create:{primaryColor:i?'#087F8C':'#7854D9'}}}});
   const user=await provisionUser(owner,{email,name:'مستخدم اختبار المتصفح',password,memberships:[{clinicSlug:slugs[0],role:'CLINIC_OWNER'},{clinicSlug:slugs[1],role:'DOCTOR'}]});users.push(user.id);
   await owner.patientCounter.create({data:{clinicId:clinics[1],lastNumber:1}});
-  await owner.patient.create({data:{clinicId:clinics[1],patientNumber:'P-000001',fullName:otherName,searchName:otherName}});
+  await owner.patient.create({data:{clinicId:clinics[1],patientNumber:'P-000001',fullName:otherName,searchName:otherName,gender:'FEMALE',dateOfBirth:new Date(Date.now()-270*86400000)}});
   // Administrative fictional resources, separate schedules and a doctor queue.
   for(let clinic=0;clinic<2;clinic++){
     for(let doctor=0;doctor<(clinic===0?2:1);doctor++){
@@ -46,10 +46,24 @@ try{
   const generalSpecialty=await owner.medicalSpecialty.findUniqueOrThrow({where:{code:'GENERAL_MEDICINE'}});
   await owner.clinicSpecialty.create({data:{clinicId:clinics[1],specialtyId:generalSpecialty.id,status:'ACTIVE'}});
   const aestheticSpecialty=await owner.medicalSpecialty.findUniqueOrThrow({where:{code:'AESTHETICS'}});await owner.clinicSpecialty.upsert({where:{clinicId_specialtyId:{clinicId:clinics[0],specialtyId:aestheticSpecialty.id}},update:{status:'ACTIVE'},create:{clinicId:clinics[0],specialtyId:aestheticSpecialty.id,status:'ACTIVE'}});
+  const dentalSpecialty=await owner.medicalSpecialty.findUniqueOrThrow({where:{code:'DENTISTRY'}});
+  await owner.clinicSpecialty.create({data:{clinicId:clinics[1],specialtyId:dentalSpecialty.id,status:'ACTIVE'}});
+  await owner.branchSpecialty.create({data:{clinicId:clinics[1],branchId:formBranch.id,specialtyId:dentalSpecialty.id,status:'ACTIVE'}});
   await owner.branchSpecialty.create({data:{clinicId:clinics[1],branchId:formBranch.id,specialtyId:generalSpecialty.id,status:'ACTIVE'}});
-  const formProfile=await owner.practitionerProfile.create({data:{clinicId:clinics[1],membershipId:formDoctor.id,professionalTitleAr:'طبيب عام تجريبي',professionalTitleEn:'Synthetic general physician',licenseNumber:`BROWSER-${suffix}`,licensingAuthority:'Synthetic authority',licensingJurisdiction:'TEST',verificationStatus:'VERIFIED'}});
+  const pediatricsSpecialty=await owner.medicalSpecialty.findUniqueOrThrow({where:{code:'PEDIATRICS'}});
+  await owner.clinicSpecialty.create({data:{clinicId:clinics[1],specialtyId:pediatricsSpecialty.id,status:'ACTIVE'}});
+  await owner.branchSpecialty.create({data:{clinicId:clinics[1],branchId:formBranch.id,specialtyId:pediatricsSpecialty.id,status:'ACTIVE'}});
+  const formProfile=await owner.practitionerProfile.create({data:{clinicId:clinics[1],membershipId:formDoctor.id,professionalTitleAr:'طبيب عام وجراح أسنان وأطفال تجريبي',professionalTitleEn:'Synthetic physician, dental surgeon and pediatrician',licenseNumber:`BROWSER-${suffix}`,licensingAuthority:'Synthetic authority',licensingJurisdiction:'TEST',verificationStatus:'VERIFIED'}});
   const formQualification=await owner.practitionerSpecialty.create({data:{clinicId:clinics[1],practitionerProfileId:formProfile.id,specialtyId:generalSpecialty.id,qualificationTitle:'Synthetic general medicine qualification',status:'VERIFIED',effectiveDate:new Date(Date.now()-86400000)}});
+  const dentalQualification=await owner.practitionerSpecialty.create({data:{clinicId:clinics[1],practitionerProfileId:formProfile.id,specialtyId:dentalSpecialty.id,qualificationTitle:'Synthetic dental qualification',status:'VERIFIED',effectiveDate:new Date(Date.now()-86400000)}});
+  const pedQualification=await owner.practitionerSpecialty.create({data:{clinicId:clinics[1],practitionerProfileId:formProfile.id,specialtyId:pediatricsSpecialty.id,qualificationTitle:'Synthetic pediatrics qualification',status:'VERIFIED',effectiveDate:new Date(Date.now()-86400000)}});
   await owner.practitionerClinicalPrivilege.create({data:{clinicId:clinics[1],branchId:formBranch.id,practitionerProfileId:formProfile.id,specialtyId:generalSpecialty.id,practitionerSpecialtyId:formQualification.id,privilegeCode:'CLINICAL_ENCOUNTER_DOCUMENT',scope:'BRANCH_SCOPED',status:'APPROVED',effectiveDate:new Date(Date.now()-86400000)}});
+  for(const priv of ['DENTAL_EXAMINATION_RECORD','DENTAL_PROCEDURE_PLAN','DENTAL_PROCEDURE_APPROVE','DENTAL_PROCEDURE_PERFORM']){
+    await owner.practitionerClinicalPrivilege.create({data:{clinicId:clinics[1],practitionerProfileId:formProfile.id,specialtyId:dentalSpecialty.id,practitionerSpecialtyId:dentalQualification.id,privilegeCode:priv,scope:'CLINIC_WIDE',status:'APPROVED',effectiveDate:new Date(Date.now()-86400000)}});
+  }
+  for(const priv of ['PEDIATRIC_CARE_DOCUMENT','PEDIATRIC_GROWTH_RECORD','PEDIATRIC_GROWTH_REVIEW','PEDIATRIC_BIRTH_HISTORY_VERIFY']){
+    await owner.practitionerClinicalPrivilege.create({data:{clinicId:clinics[1],practitionerProfileId:formProfile.id,specialtyId:pediatricsSpecialty.id,practitionerSpecialtyId:pedQualification.id,privilegeCode:priv,scope:'CLINIC_WIDE',status:'APPROVED',effectiveDate:new Date(Date.now()-86400000)}});
+  }
   const browserGeneralService=await owner.generalClinicalService.create({data:{clinicId:clinics[1],serviceCode:`GEN-${suffix.slice(0,8)}`,nameAr:'استشارة عامة تجريبية',nameEn:'Synthetic general consultation',description:'Synthetic browser verification service',category:'GENERAL_CONSULTATION',specialtyId:generalSpecialty.id,branchId:formBranch.id,defaultDurationMinutes:20,basePriceMinor:12500n,isActive:true}});
   const browserFormSchema={$schema:'https://json-schema.org/draft/2020-12/schema',type:'object',additionalProperties:false,properties:{chiefComplaint:{type:'string',maxLength:200},history:{type:'array',maxItems:3,items:{type:'object',additionalProperties:false,properties:{note:{type:'string',maxLength:100}},required:['note']}}},required:['chiefComplaint']};
   const canonical=value=>Array.isArray(value)?`[${value.map(canonical).join(',')}]`:value&&typeof value==='object'?`{${Object.keys(value).sort().map(key=>`${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`:JSON.stringify(value);
@@ -65,8 +79,8 @@ try{
   let chromeError;chrome.on('error',error=>{chromeError=error;});
   let port;for(let i=0;i<100;i++){if(chromeError)throw new Error('Chrome could not start; install Chrome or set CHROME_BIN.');try{port=(await readFile(join(profile,'DevToolsActivePort'),'utf8')).split('\n')[0];break;}catch{}await pause(100);}assert(port,'Installed Chrome required; set CHROME_BIN if needed');
   const targets=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();socket=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);await new Promise((r,j)=>{socket.onopen=r;socket.onerror=j;});
-  const pending=new Map(),errors=[],clinicalOrderNetwork=[],clinicalFormNetwork=[];let counter=0;
-  socket.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown')errors.push({text:m.params.exceptionDetails.text,description:m.params.exceptionDetails.exception?.description,stack:m.params.exceptionDetails.stackTrace?.callFrames?.slice(0,3)});else if(m.method==='Network.requestWillBeSent'&&m.params.request.url.includes('/clinical/orders'))clinicalOrderNetwork.push({method:m.params.request.method,url:m.params.request.url,body:m.params.request.postData});else if(m.method==='Network.responseReceived'&&m.params.response.url.includes('/clinical/orders'))clinicalOrderNetwork.push({status:m.params.response.status,url:m.params.response.url});else if(m.method==='Network.requestWillBeSent'&&m.params.request.url.includes('/clinical/forms'))clinicalFormNetwork.push({method:m.params.request.method,url:m.params.request.url,body:m.params.request.postData});else if(m.method==='Network.responseReceived'&&m.params.response.url.includes('/clinical/forms'))clinicalFormNetwork.push({status:m.params.response.status,url:m.params.response.url});else if(m.method==='Fetch.requestPaused')void call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'image/svg+xml'}],body:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="12" fill="#7854D9"/><text x="20" y="45" fill="white" font-size="40">L</text></svg>').toString('base64')});};
+  const pending=new Map(),errors=[],clinicalOrderNetwork=[],clinicalFormNetwork=[],dentistryNetwork=[],pediatricsNetwork=[];let counter=0;
+  socket.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown')errors.push({text:m.params.exceptionDetails.text,description:m.params.exceptionDetails.exception?.description,stack:m.params.exceptionDetails.stackTrace?.callFrames?.slice(0,3)});else if(m.method==='Network.requestWillBeSent'&&m.params.request.url.includes('/pediatrics'))pediatricsNetwork.push({method:m.params.request.method,url:m.params.request.url,body:m.params.request.postData});else if(m.method==='Network.responseReceived'&&m.params.response.url.includes('/pediatrics'))pediatricsNetwork.push({status:m.params.response.status,url:m.params.response.url});else if(m.method==='Network.requestWillBeSent'&&m.params.request.url.includes('/dentistry'))dentistryNetwork.push({method:m.params.request.method,url:m.params.request.url,body:m.params.request.postData});else if(m.method==='Network.responseReceived'&&m.params.response.url.includes('/dentistry'))dentistryNetwork.push({status:m.params.response.status,url:m.params.response.url});else if(m.method==='Network.requestWillBeSent'&&m.params.request.url.includes('/clinical/orders'))clinicalOrderNetwork.push({method:m.params.request.method,url:m.params.request.url,body:m.params.request.postData});else if(m.method==='Network.responseReceived'&&m.params.response.url.includes('/clinical/orders'))clinicalOrderNetwork.push({status:m.params.response.status,url:m.params.response.url});else if(m.method==='Network.requestWillBeSent'&&m.params.request.url.includes('/clinical/forms'))clinicalFormNetwork.push({method:m.params.request.method,url:m.params.request.url,body:m.params.request.postData});else if(m.method==='Network.responseReceived'&&m.params.response.url.includes('/clinical/forms'))clinicalFormNetwork.push({status:m.params.response.status,url:m.params.response.url});else if(m.method==='Fetch.requestPaused')void call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'image/svg+xml'}],body:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="12" fill="#7854D9"/><text x="20" y="45" fill="white" font-size="40">L</text></svg>').toString('base64')});};
   const call=(method,params={})=>new Promise((resolve,reject)=>{const id=++counter;pending.set(id,{resolve,reject});socket.send(JSON.stringify({id,method,params}));});
   const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
   const waitFor=async expression=>{for(let i=0;i<160;i++){if(await evaluate(`Boolean(${expression})`))return;await pause(50);}throw Error(`Timed out: ${expression}`);};
@@ -222,6 +236,89 @@ try{
   await field('.specialty-forms .dynamic-field input','شكوى نموذجية اصطناعية');await button('إضافة بند');await field('.specialty-forms .repeat-row input','تفصيل اصطناعي');await button('حفظ المسودة');await waitFor("document.querySelector('.specialty-forms [role=status]')?.textContent.includes('حفظ المسودة')");
   await button('إرسال للمراجعة');await waitFor("[...document.querySelectorAll('.specialty-forms button')].some(b=>b.textContent.trim()==='إنهاء وتثبيت')");await button('إنهاء وتثبيت');await waitFor("document.querySelector('.specialty-forms .signed-banner')");assert(await evaluate("document.querySelector('.specialty-forms > .forms-layout main > .dynamic-clinical-form input').disabled"));
   await field('.specialty-forms .amend-form > label input','تصحيح نموذج اصطناعي');await field('.specialty-forms .amend-form .dynamic-field input','شكوى مصححة اصطناعية');await button('إضافة تصحيح');await waitFor("document.querySelector('.specialty-forms .amend-form article')?.textContent.includes('تصحيح نموذج اصطناعي')");assert.equal(await evaluate('sessionStorage.length'),0);await capture('structured-form-arabic');
+  // Genuine Dentistry Journey: open dental workspace, create draft odontogram, record tooth findings, 6-site periodontal measurement with real-time CAL calculation, accessible WCAG 2.1 AA table view, and cryptographic finalization.
+  await act("document.querySelector('.dental-panel-details summary').click()");
+  await waitFor("document.querySelector('.dental-workspace')");
+  await button('＋ إنشاء مخطط أسنان جديد');
+  await waitFor("document.querySelector('.interactive-odontogram')");
+  assert(await evaluate("document.querySelector('.dental-workspace').textContent.includes('مسودة قيد التحرير')"));
+  await act("[...document.querySelectorAll('.interactive-odontogram div')].find(d=>d.textContent.trim()==='16')?.click()");
+  await button('حفظ حالة السن');
+  await waitFor("document.querySelector('.dental-workspace .clinical-notice')?.textContent.includes('حفظ')");
+  // Switch to Periodontal grid
+  await button('📐 مخطط فحص دواعم السن (6-Site Perio)');
+  await waitFor("document.querySelector('.periodontal-grid')");
+  assert(await evaluate("document.querySelector('.periodontal-grid').textContent.includes('مستوى الارتباط اللثوي السريري')"));
+  await button('حفظ قياسات السن 16');
+  await waitFor("document.querySelector('.dental-workspace .clinical-notice')?.textContent.includes('قياسات')");
+  // Switch to Accessible WCAG Table
+  await button('♿ الجدول السني الميسّر (WCAG Table)');
+  await waitFor("document.querySelector('.accessible-odontogram-table')");
+  assert(await evaluate("document.querySelector('.accessible-odontogram-table th')?.textContent.includes('رقم السن')"));
+  // Return to chart and finalize
+  await button('🦷 مخطط الأسنان التفاعلي (Odontogram)');
+  await evaluate("window.confirm = () => true");
+  await button('✓ توقيع وختم المخطط');
+  await waitFor("document.querySelector('.dental-workspace').textContent.includes('موقّع ونهائي')");
+  assert(await evaluate("document.querySelector('.dental-workspace').textContent.includes('الختم الرقمي')"));
+  await capture('dentistry-finalized-arabic');
+
+  // Genuine Pediatrics Journey: open pediatric workspace, document birth history with APGAR and gestational age, add caregiver with legal custody and consent authority, record pediatric growth measurement with real-time WHO Z-score calculation, verify accessible WCAG table view, and run medication safety preflight.
+  await act("document.querySelector('.pediatric-panel-details summary').click()");
+  await waitFor("document.querySelector('.pediatric-workspace')");
+  // 1. Birth History
+  await act("[...document.querySelectorAll('.pediatric-workspace .workspace-tabs button')].find(b=>b.textContent.includes('التاريخ الولادي')).click()");
+  await waitFor("document.querySelector('.birth-history-section')");
+  await button('➕ توثيق التاريخ الولادي');
+  await waitFor("document.querySelector('[data-testid=birth-history-form]')");
+  await field('[data-testid=gestational-age-weeks]','34');
+  await field('[data-testid=birth-weight-grams]','2100');
+  await field('[data-testid=apgar-1-min]','7');
+  await field('[data-testid=apgar-5-min]','9');
+  await button('حفظ التاريخ الولادي');
+  await waitFor("document.querySelector('.birth-history-card')");
+  assert(await evaluate("document.querySelector('.birth-history-section').textContent.includes('خديج / مبتسر')"));
+  assert(await evaluate("document.querySelector('.birth-history-section').textContent.includes('34 أسبوع')"));
+
+  // 2. Caregiver Authorization
+  await act("[...document.querySelectorAll('.pediatric-workspace .workspace-tabs button')].find(b=>b.textContent.includes('أولياء الأمور')).click()");
+  await waitFor("document.querySelector('.caregiver-authorization-section')");
+  await button('➕ إضافة ولي أمر / مفوّض');
+  await waitFor("document.querySelector('[data-testid=caregiver-form]')");
+  await field('[data-testid=caregiver-name]','أمينة عبد الله سالم');
+  await field('[data-testid=caregiver-phone]','773344556');
+  await button('تسجيل المفوض');
+  await waitFor("document.querySelector('.caregiver-card')");
+  assert(await evaluate("document.querySelector('.caregiver-authorization-section').textContent.includes('حضانة قانونية')"));
+  assert(await evaluate("document.querySelector('.caregiver-authorization-section').textContent.includes('موافقة طبية')"));
+
+  // 3. Growth Records & WHO Z-scores
+  await act("[...document.querySelectorAll('.pediatric-workspace .workspace-tabs button')].find(b=>b.textContent.includes('القياسات والنمو')).click()");
+  await waitFor("document.querySelector('.growth-records-section')");
+  await button('➕ تسجيل قياسات نمو جديدة');
+  await waitFor("document.querySelector('[data-testid=growth-record-form]')");
+  await field('[data-testid=growth-weight-kg]','8.5');
+  await field('[data-testid=growth-stature-cm]','72.0');
+  await field('[data-testid=growth-head-cm]','44.0');
+  await button('حفظ واحتساب مؤشرات النمو');
+  await waitFor("document.querySelector('.growth-record-card')");
+  assert(await evaluate("document.querySelector('.growth-records-section').textContent.includes('8.5 كجم')"));
+  assert(await evaluate("document.querySelector('.growth-records-section').textContent.includes('72 سم')"));
+
+  // 4. Accessible WCAG Table View
+  await act("document.querySelector('[data-testid=tab-accessible-table]').click()");
+  await waitFor("document.querySelector('.accessible-growth-table-wrapper')");
+  assert(await evaluate("document.querySelector('.growth-table tbody tr')?.textContent.includes('8.5 كجم')"));
+
+  // 5. Pediatric Medication Safety Preflight
+  await act("document.querySelector('[data-testid=tab-med-safety]').click()");
+  await waitFor("document.querySelector('.pediatric-medication-preflight')");
+  await field('[data-testid=preflight-medication-name]','Aspirin 100mg');
+  await button('🔍 فحص السلامة الدوائية');
+  await waitFor("document.querySelector('.preflight-result-card')");
+  assert(await evaluate("document.querySelector('.preflight-result-card').textContent.includes('ممنوع الوصف')"));
+  assert(await evaluate("document.querySelector('.preflight-result-card').textContent.includes('متلازمة راي') || document.querySelector('.preflight-result-card').textContent.includes('راي')"));
+  await capture('pediatrics-workspace-arabic');
   await act("document.querySelector('[aria-label=إغلاق]').click()");await evaluate('window.__delayClinical=true');await button('عرض الملف');await waitFor('window.__releaseClinical');await act("document.querySelector('.clinic-switch').click()");await waitFor("document.querySelectorAll('.clinic-option').length===2");await choose('عيادة ورد الاختبار');await waitFor("document.querySelector('.app-shell')");await evaluate('window.__releaseClinical()');await pause(300);assert.equal(await evaluate("document.querySelector('.clinical-panel')"),null);assert([403,404].includes(await evaluate(`fetch('/api/v1/clinics/${clinics[1]}/clinical/documents/${uploadedDocument.id}/download').then(r=>r.status)`)));
 
   // Every legacy workflow still uses its original demo patient IDs.
@@ -233,9 +330,10 @@ try{
   const persisted=await raw();await act("document.querySelector('.logout-button').click()");await waitFor("document.querySelector('#auth-email')");assert.equal(await raw(),persisted);
   await field('#auth-email',email);await field('#auth-password',password);await button('دخول إلى مساحة العمل ←');await waitFor("document.querySelectorAll('.clinic-option').length===2");await choose('عيادة ورد الاختبار');await waitFor("document.querySelector('.app-shell')");
   await evaluate(`fetch('/api/v1/auth/me').then(r=>r.json()).then(async me=>{await fetch('/api/v1/auth/logout',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrfToken},body:'{}'});window.dispatchEvent(new Event('focus'));})`);await waitFor("document.querySelector('#auth-email') && document.querySelector('[role=alert]')?.textContent.includes('انتهت الجلسة')");
-  assert.deepEqual(errors,[]);console.info(JSON.stringify({result:'PASS',checks:['real patient register/read/edit/status/search/reload','Arabic RTL desktop/mobile','dialog focus/keyboard accessibility','two clinic identities','late response ignored after switch','doctor cannot register','offline error and retry','localStorage byte-preserved during API work','no API patients or tokens in browser storage','demo appointment/check-in/queue/invoice/payment','logout/expiry','persistent appointment booking/reschedule/confirm/cancel and three calendar views','atomic scheduled check-in and replay','queue transfer/recall/start/complete and appointment consistency','walk-in and historical visits','anonymous public board with SSE updates and withdrawal','doctor own queue and stale queue response isolation','queue/public mobile responsiveness','persistent multi-line draft/edit/issuance and visit linkage','exact partial/full payments and overpayment conflict','refund/full reversal and safe void history','Arabic branded invoice and receipt PDF generation','billing search and mobile layout','integrations & regulatory RTL workspace tabs','doctor finance denial and late financial response isolation','clinic profile private contacts and locked financial/timezone settings','image upload processing and branding preview before publication','managed logo/favicon and independent clinic branding refresh','reserved domains and accurate pending ownership status','Arabic staff controls and last-owner denial','identity audit and responsive settings','privacy rights registration and retention dry-run simulation','stale identity response and previous asset removal on clinic switch','immutable issued invoice after identity changes','inventory foundation catalog/locations/reconciliation tabs','inventory lot tracking and expiry status panel','inventory purchasing suppliers, purchase orders and stocktaking tabs','branded public queue and explicit clinic login without private contacts','doctor-only Arabic clinical history and draft/sign/amend workflow','clinical content absent from browser storage','clinic form template management and version publishing','general consultation order/cancel/critical verify-ack/document upload-download/shared billing journey','structured specialty form required validation/draft/finalize/amend RTL workflow','multi-branch management panel and default main branch','inventory FIFO costing layers and valuation workspace','patient self-service portal RTL landing and authentication views'],runtimeErrors:errors.length,artifacts:artifactDir}));
+  assert.deepEqual(errors,[]);console.info(JSON.stringify({result:'PASS',checks:['real patient register/read/edit/status/search/reload','Arabic RTL desktop/mobile','dialog focus/keyboard accessibility','two clinic identities','late response ignored after switch','doctor cannot register','offline error and retry','localStorage byte-preserved during API work','no API patients or tokens in browser storage','demo appointment/check-in/queue/invoice/payment','logout/expiry','persistent appointment booking/reschedule/confirm/cancel and three calendar views','atomic scheduled check-in and replay','queue transfer/recall/start/complete and appointment consistency','walk-in and historical visits','anonymous public board with SSE updates and withdrawal','doctor own queue and stale queue response isolation','queue/public mobile responsiveness','persistent multi-line draft/edit/issuance and visit linkage','exact partial/full payments and overpayment conflict','refund/full reversal and safe void history','Arabic branded invoice and receipt PDF generation','billing search and mobile layout','integrations & regulatory RTL workspace tabs','doctor finance denial and late financial response isolation','clinic profile private contacts and locked financial/timezone settings','image upload processing and branding preview before publication','managed logo/favicon and independent clinic branding refresh','reserved domains and accurate pending ownership status','Arabic staff controls and last-owner denial','identity audit and responsive settings','privacy rights registration and retention dry-run simulation','stale identity response and previous asset removal on clinic switch','immutable issued invoice after identity changes','inventory foundation catalog/locations/reconciliation tabs','inventory lot tracking and expiry status panel','inventory purchasing suppliers, purchase orders and stocktaking tabs','branded public queue and explicit clinic login without private contacts','doctor-only Arabic clinical history and draft/sign/amend workflow','clinical content absent from browser storage','clinic form template management and version publishing','general consultation order/cancel/critical verify-ack/document upload-download/shared billing journey','structured specialty form required validation/draft/finalize/amend RTL workflow','multi-branch management panel and default main branch','inventory FIFO costing layers and valuation workspace','patient self-service portal RTL landing and authentication views','dentistry odontogram, 6-site periodontal CAL calculation, WCAG table and SHA-256 seal','pediatrics neonatal history, caregiver custody & consent, WHO growth analytics, WCAG table and medication safety preflight'],runtimeErrors:errors.length,artifacts:artifactDir}));
 }finally{
   socket?.close();if(chrome){const exit=new Promise(r=>chrome.once('exit',r));chrome.kill();await Promise.race([exit,pause(2000)]);}if(web)await new Promise(r=>web.httpServer.close(r));if(apiProcess){const exit=new Promise(r=>apiProcess.once('exit',r));apiProcess.kill();await Promise.race([exit,pause(2000)]);}
+  await owner.$transaction(async tx=>{for(const table of ['PediatricGrowthRecord','PatientCaregiverRelationship','PediatricBirthHistory','DentalTreatmentStage','DentalPeriodontalRecord','DentalToothFinding','DentalOdontogram'])await tx.$executeRawUnsafe(`ALTER TABLE public."${table}" DISABLE TRIGGER USER`);await tx.pediatricGrowthRecord.deleteMany({where:{clinicId:{in:clinics}}});await tx.patientCaregiverRelationship.deleteMany({where:{clinicId:{in:clinics}}});await tx.pediatricBirthHistory.deleteMany({where:{clinicId:{in:clinics}}});await tx.dentalTreatmentStage.deleteMany({where:{clinicId:{in:clinics}}});await tx.dentalPeriodontalRecord.deleteMany({where:{clinicId:{in:clinics}}});await tx.dentalToothFinding.deleteMany({where:{clinicId:{in:clinics}}});await tx.dentalOdontogram.deleteMany({where:{clinicId:{in:clinics}}});for(const table of ['PediatricGrowthRecord','PatientCaregiverRelationship','PediatricBirthHistory','DentalTreatmentStage','DentalPeriodontalRecord','DentalToothFinding','DentalOdontogram'])await tx.$executeRawUnsafe(`ALTER TABLE public."${table}" ENABLE TRIGGER USER`);});
   await owner.inventoryAlertAcknowledgment.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryStockCountItem.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryStockCount.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryStockCountCounter.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryGoodsReceiptLine.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryGoodsReceipt.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryGoodsReceiptCounter.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryPurchaseOrderLine.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryPurchaseOrder.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryPurchaseOrderCounter.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventorySupplier.deleteMany({where:{clinicId:{in:clinics}}});
   await owner.inventoryClinicalConsumption.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryBatchBalance.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryStockMovement.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryBatch.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryBalance.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryLocation.deleteMany({where:{clinicId:{in:clinics}}});await owner.inventoryProduct.deleteMany({where:{clinicId:{in:clinics}}});
   await owner.$transaction(async tx=>{for(const table of [tx.financialAuditEvent,tx.paymentReversal,tx.payment,tx.invoiceLine,tx.invoice,tx.clinicInvoiceCounter,tx.clinicBillingProfile,tx.patientExport,tx.privacyRequest,tx.retentionPolicy])await table.deleteMany({where:{clinicId:{in:clinics}}});});

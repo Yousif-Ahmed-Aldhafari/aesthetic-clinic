@@ -81,7 +81,7 @@ export const InteractiveOdontogram: React.FC<InteractiveOdontogramProps> = ({
   };
 
   const getToothFinding = (toothFdi: number) => {
-    return odontogram.findings.find((f) => f.toothNumberFdi === toothFdi);
+    return (odontogram.findings ?? []).find((f) => f.toothNumberFdi === toothFdi);
   };
 
   const getDisplayNumber = (toothFdi: number) => {

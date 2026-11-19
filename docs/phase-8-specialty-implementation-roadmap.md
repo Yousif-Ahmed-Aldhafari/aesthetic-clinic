@@ -119,13 +119,14 @@ To ensure patient safety and regulatory compliance (Saudi MOH, SCFHS, WHO guidel
 - **Security Gates:** Verification of `DENTAL_EXAMINATION_RECORD`, `DENTAL_PROCEDURE_PLAN`, `DENTAL_PROCEDURE_APPROVE`, and `DENTAL_PROCEDURE_PERFORM` clinical privileges; PostgreSQL immutability triggers.
 - **Dependencies:** `ClinicalEncounter`, `GeneralClinicalService`, `PatientConsent`, `Invoice`, `InventoryBatch`.
 
-### Step 8.3 — Pediatrics & Growth Analytics Module
-- **Scope:** Neonatal birth history, legal caregiver/guardian relationship registry, longitudinal pediatric growth tracking (Height, Weight, Head Circumference, BMI) with WHO/CDC Z-scores and percentiles, and weight-based dosing pre-flight safety checks.
-- **Prisma Migration:** `042_pediatrics_growth_caregivers` (`PediatricBirthHistory`, `PatientCaregiverRelationship`, `PediatricGrowthRecord`).
-- **Backend Services:** `PediatricsService`, `GrowthCurveService` (lookup tables for WHO LMS parameters), `PediatricDosingValidator`.
-- **Frontend Workspaces:** Pediatric patient banner, interactive growth charts (Canvas/SVG Z-score curves) in authentic Arabic, and caregiver management panel.
-- **Security Gates:** Verification of `PEDIATRIC_CARE_DOCUMENT` privilege; age validation ($\le 18$ years); parental proxy consent validation.
-- **Dependencies:** `Patient`, `ClinicalObservation`, `MedicationPrescription`.
+### Step 8.3 — Pediatrics & Growth Analytics Module (Implemented)
+- **Scope:** Neonatal birth history, legal caregiver/guardian relationship registry, longitudinal pediatric growth tracking (Height, Weight, Head Circumference, BMI) with WHO 2006 LMS Z-scores and percentiles, prematurity corrected age calculations, recommended stature methods, entered-in-error immutability guards, and medication pre-flight safety checks (weight recency staleness, age-based contraindications, allergy cross-reactivity without unvalidated auto-dosing).
+- **Prisma Migration:** `20261118000200_pediatrics_growth_caregiver` (`PediatricBirthHistory`, `PatientCaregiverRelationship`, `PediatricGrowthRecord`).
+- **Backend Services:** `PediatricsRepository`, `GrowthAnalyticsEngine` (WHO LMS parameters for 0–60 months), `PediatricMedicationSafetyEngine`.
+- **Frontend Workspaces:** Pediatric clinical workspace (`PediatricWorkspace`), interactive SVG growth charts, WCAG 2.1 AA accessible tabular alternative (`AccessibleGrowthTable`), APGAR badges, and caregiver authorization manager.
+- **Security Gates:** Verification of `PEDIATRIC_CARE_DOCUMENT`, `PEDIATRIC_GROWTH_RECORD`, `PEDIATRIC_GROWTH_REVIEW`, `PEDIATRIC_BIRTH_HISTORY_VERIFY` privileges; parental custody/consent validation; PostgreSQL FORCE RLS.
+- **Documentation:** See [docs/pediatrics-and-child-health.md](pediatrics-and-child-health.md) and [docs/phase-8-step-8-3-acceptance.md](phase-8-step-8-3-acceptance.md).
+- **Dependencies:** `Patient`, `ClinicalEncounter`, `PatientAllergy`, `AuditEvent`.
 
 ### Step 8.4 — Obstetrics & Gynecology Module
 - **Scope:** Antenatal care tracking, pregnancy episodes (GTPAL parity, LMP, ultrasound dating scan reconciliation, reconciled EDD), antenatal visit flowsheets (fundal height, FHR, urine dipstick), and sensitive gynecological examinations.

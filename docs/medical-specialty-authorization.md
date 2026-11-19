@@ -124,6 +124,10 @@ The authorization engine evaluates 8 mandatory gates before granting access to c
 | `DENTAL_PROCEDURE_PLAN` | Plan dental procedures | Proposing staged dental treatment plans |
 | `DENTAL_PROCEDURE_APPROVE` | Approve dental treatment plans | Approving staged dental treatment plans |
 | `DENTAL_PROCEDURE_PERFORM` | Perform dental procedures | Performing and completing dental treatment stages and consuming supplies |
+| `PEDIATRIC_CARE_DOCUMENT` | Document pediatric care | Documenting pediatric consultation notes and treatment records |
+| `PEDIATRIC_GROWTH_RECORD` | Record pediatric growth | Recording and entering in error pediatric anthropometric measurements |
+| `PEDIATRIC_GROWTH_REVIEW` | Review pediatric growth | Reviewing and certifying longitudinal growth trajectories and WHO LMS percentiles |
+| `PEDIATRIC_BIRTH_HISTORY_VERIFY` | Verify neonatal birth history | Recording, certifying, and amending neonatal birth and perinatal history records |
 
 ---
 

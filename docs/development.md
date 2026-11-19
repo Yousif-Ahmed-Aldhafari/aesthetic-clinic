@@ -1,5 +1,16 @@
 # Development setup
 
+## Phase 8.3 pediatrics & child health — neonatal records, caregiver authorization, growth analytics & medication safety
+
+Apply `20261118000200_pediatrics_growth_caregiver` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 42.
+- Migration: `apps/api/prisma/migrations/20261118000200_pediatrics_growth_caregiver/migration.sql` creates 3 models: `PediatricBirthHistory`, `PatientCaregiverRelationship`, and `PediatricGrowthRecord` with `FORCE ROW LEVEL SECURITY`, tenant isolation policies, and database trigger in `lamssa_security`:
+  - `pediatric_growth_immutability_guard()`: prevents mutation or deletion of finalized growth records, enforcing explicit transition to `ENTERED_IN_ERROR` (`42501`).
+- Analytics & Safety Engines: `apps/api/src/pediatrics/growth-analytics.ts`, `apps/api/src/pediatrics/who-growth-data.ts`, and `apps/api/src/pediatrics/medication-safety.ts` implementing WHO 2006 LMS parameters (0–60m), prematurity corrected age, stature method recommendation, and pediatric medication safety preflight (weight recency staleness, age-based contraindications, allergy cross-reactivity without unvalidated dosing).
+- Backend Module: `apps/api/src/pediatrics/` providing REST endpoints under `/api/v1/clinics/:clinicId/pediatrics/` guarded by `@RequireSpecialty('PEDIATRICS')` and clinical privilege checks.
+- Frontend Workspace: `apps/web/src/features/pediatrics/` providing `PediatricWorkspace`, `BirthHistorySection`, `CaregiverAuthorizationSection`, `GrowthRecordsSection`, `GrowthChartsSection`, `AccessibleGrowthTable`, and `PediatricMedicationPreflight`.
+- Test suites: `apps/api/test/pediatrics-growth.test.ts` (23 unit tests), `apps/api/test/pediatrics.integration.test.ts` (22 integration tests).
+- Documentation: `docs/pediatrics-and-child-health.md` and `docs/phase-8-step-8-3-acceptance.md`.
+
 ## Phase 8.2 dentistry & oral health — odontograms, periodontal charting, treatment staging & RTL workspace
 
 Apply `20261118000100_dentistry_odontogram_staging` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 41.

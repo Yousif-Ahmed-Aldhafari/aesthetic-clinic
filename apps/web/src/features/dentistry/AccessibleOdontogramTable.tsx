@@ -12,7 +12,7 @@ export const AccessibleOdontogramTable: React.FC<AccessibleOdontogramTableProps>
   numberingSystem = 'FDI_ISO_3950',
 }) => {
   // Sort findings by tooth number
-  const sortedFindings = [...odontogram.findings].sort(
+  const sortedFindings = [...(odontogram.findings ?? [])].sort(
     (a, b) => a.toothNumberFdi - b.toothNumberFdi,
   );
 
@@ -61,7 +61,7 @@ export const AccessibleOdontogramTable: React.FC<AccessibleOdontogramTableProps>
             ) : (
               sortedFindings.map((finding) => {
                 const conf = CONDITION_CONFIG[finding.condition];
-                const perio = odontogram.periodontalRecords.find(
+                const perio = (odontogram.periodontalRecords ?? []).find(
                   (p) => p.toothNumberFdi === finding.toothNumberFdi,
                 );
 
