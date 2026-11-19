@@ -24,12 +24,38 @@ export interface DatingComparisonResult {
   clinicalRationaleEn: string;
 }
 
+export type PreEclampsiaCategory =
+  | 'NORMAL_BLOOD_PRESSURE'
+  | 'CHRONIC_HYPERTENSION_SUSPECTED'
+  | 'GESTATIONAL_HYPERTENSION_RISK'
+  | 'SEVERE_HYPERTENSION_ALERT'
+  | 'SUSPECTED_PREECLAMPSIA_PROTEINURIC'
+  | 'SUSPECTED_PREECLAMPSIA_NON_PROTEINURIC'
+  | 'ISOLATED_PROTEINURIA';
+
+export interface PreEclampsiaScreenOptions {
+  gestationalAgeWeeks?: number;
+  gestationalAgeDays?: number;
+  hasSevereHeadache?: boolean;
+  hasVisualDisturbances?: boolean;
+  hasEpigastricOrRupPain?: boolean;
+  hasPulmonaryEdema?: boolean;
+  hasThrombocytopenia?: boolean;
+  hasImpairedLiverFunction?: boolean;
+  hasRenalInsufficiency?: boolean;
+  isRepeatedMeasurement?: boolean;
+  knownChronicHypertension?: boolean;
+}
+
 export interface PreEclampsiaScreenResult {
   isAlert: boolean;
   severity: 'NONE' | 'MILD_HYPERTENSION' | 'SEVERE_PREECLAMPSIA_RISK';
+  category: PreEclampsiaCategory;
   flags: string[];
   recommendationsAr: string[];
   recommendationsEn: string[];
+  clinicalDisclaimerAr: string;
+  clinicalDisclaimerEn: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,10 +238,16 @@ export function evaluateDatingDiscrepancy(
 // 6. Maternal Vital Signs & Pre-Eclampsia Screening
 // ---------------------------------------------------------------------------
 
+const CLINICAL_DISCLAIMER_AR =
+  'تنبيه دعم سريري استرشادي فقط: هذا التقييم مخصص للمساعدة السريرية ولا يمثل تشخيصاً طبياً نهائياً ولا يصرف أدوية تلقائياً. يجب على الطبيب المعالج تأكيد القياس سريرياً وفحص المريضة وفق المعايير السريرية المعتمدة.';
+const CLINICAL_DISCLAIMER_EN =
+  'Clinical decision support screening alert only: This is an advisory screening indicator and does not constitute an automated diagnosis or initiate medications. Qualified clinician evaluation and repeat measurement are required.';
+
 export function evaluatePreEclampsiaScreen(
   systolicBp: number,
   diastolicBp: number,
   urineProtein?: string | null,
+  options?: PreEclampsiaScreenOptions,
 ): PreEclampsiaScreenResult {
   const flags: string[] = [];
   const recommendationsAr: string[] = [];
@@ -234,47 +266,177 @@ export function evaluatePreEclampsiaScreen(
     urineProtein === 'THREE_PLUS_300MG' ||
     urineProtein === 'FOUR_PLUS_OVER_1000MG';
 
+  const isPlusOneScreenOnly = urineProtein === 'PLUS_1' || urineProtein === 'ONE_PLUS_30MG';
+
+  // Severe non-proteinuric features (ACOG Practice Bulletin No. 222 & ISSHP standard criteria)
+  const severeSymptomsOrLabFeatures: string[] = [];
+  if (options?.hasSevereHeadache) severeSymptomsOrLabFeatures.push('NEW_ONSET_SEVERE_PERSISTENT_HEADACHE');
+  if (options?.hasVisualDisturbances) severeSymptomsOrLabFeatures.push('VISUAL_DISTURBANCES_SCOTOMATA');
+  if (options?.hasEpigastricOrRupPain) severeSymptomsOrLabFeatures.push('SEVERE_EPIGASTRIC_OR_RUQ_PAIN');
+  if (options?.hasPulmonaryEdema) severeSymptomsOrLabFeatures.push('PULMONARY_EDEMA');
+  if (options?.hasThrombocytopenia) severeSymptomsOrLabFeatures.push('THROMBOCYTOPENIA_PLATELETS_UNDER_100K');
+  if (options?.hasImpairedLiverFunction) severeSymptomsOrLabFeatures.push('IMPAIRED_LIVER_TRANSAMINASES_ELEVATED');
+  if (options?.hasRenalInsufficiency) severeSymptomsOrLabFeatures.push('RENAL_INSUFFICIENCY_CREATININE_ELEVATED');
+
+  const hasSevereNonProteinuricFeatures = severeSymptomsOrLabFeatures.length > 0;
+  if (hasSevereNonProteinuricFeatures) {
+    flags.push(...severeSymptomsOrLabFeatures);
+  }
+
+  // Gestational age evaluation: preeclampsia is diagnosed at GA >= 20 weeks (or postpartum)
+  const gaWeeks = options?.gestationalAgeWeeks;
+  const isPreTwentyWeeks = gaWeeks !== undefined && gaWeeks < 20;
+
   if (isSevereBp) {
     flags.push('CRITICAL_SEVERE_MATERNAL_HYPERTENSION');
-    recommendationsAr.push('ضغط دم مرتفع بشدة (>= 160/110)؛ يتطلب تدخلاً طبياً عاجلاً وفحص تسمم الحمل الفوري');
-    recommendationsEn.push('Severe maternal hypertension (>= 160/110 mmHg); requires immediate clinical evaluation');
+    recommendationsAr.push('ضغط دم مرتفع بشدة (>= 160/110 مم زئبق)؛ يتطلب إعادة القياس خلال دقائق واستشارة طبية عاجلة');
+    recommendationsEn.push('Severe-range hypertension (>= 160/110 mmHg); requires immediate repeat measurement and urgent clinical assessment');
   } else if (isElevatedBp) {
     flags.push('ELEVATED_MATERNAL_BLOOD_PRESSURE');
-    recommendationsAr.push('ضغط دم مرتفع (>= 140/90)؛ يتطلب تكرار القياس خلال 15 دقيقة والمراقبة اللصيقة');
-    recommendationsEn.push('Elevated blood pressure (>= 140/90 mmHg); repeat measurement in 15 minutes');
+    recommendationsAr.push('ضغط دم مرتفع (>= 140/90 مم زئبق)؛ يتطلب إعادة القياس بعد 4 ساعات على الأقل للتحقق من الاستمرار');
+    recommendationsEn.push('Elevated blood pressure (>= 140/90 mmHg); requires repeat measurement at least 4 hours apart to verify persistence');
   }
 
   if (hasSignificantProteinuria) {
     flags.push('SIGNIFICANT_PROTEINURIA');
-    recommendationsAr.push('وجود زلال في البول؛ يوصى بفحص نسبة البروتين إلى الكرياتينين في البول (PCR)');
-    recommendationsEn.push('Proteinuria detected; recommend urine protein-to-creatinine ratio (PCR)');
+    if (isPlusOneScreenOnly) {
+      recommendationsAr.push('وجود زلال 1+ في شريط البول يعد مؤشراً استرشادياً؛ يلزم التأكيد الكمي بنسبة البروتين للكرياتينين (UPCR >= 0.3) أو جمع بول 24 ساعة (>= 300 مجم)');
+      recommendationsEn.push('Dipstick 1+ proteinuria is a qualitative screening indicator; quantitative confirmation (UPCR >= 0.3 or 24-hr urine >= 300 mg) is clinically required');
+    } else {
+      recommendationsAr.push('وجود زلال ملحوظ في البول؛ يوصى بفحص نسبة البروتين إلى الكرياتينين في البول (UPCR) وتقييم وظائف الكلى');
+      recommendationsEn.push('Substantial proteinuria detected; recommend urine protein-to-creatinine ratio (UPCR) and renal panel');
+    }
   }
 
-  if (isSevereBp && hasSignificantProteinuria) {
+  // 1. Chronic hypertension boundary (< 20 weeks)
+  if (isPreTwentyWeeks && (isElevatedBp || isSevereBp)) {
+    const category: PreEclampsiaCategory = isSevereBp ? 'SEVERE_HYPERTENSION_ALERT' : 'CHRONIC_HYPERTENSION_SUSPECTED';
+    recommendationsAr.push('ارتفاع ضغط الدم قبل الأسبوع العشرين من الحمل يشير إلى احتمالية وجود ضغط دم مزمن (Chronic Hypertension)؛ يتطلب تقييم القاع القلبي والكلوي المسبق');
+    recommendationsEn.push('Hypertension before 20 weeks gestation suggests pre-existing chronic hypertension; baseline renal and cardiovascular assessment recommended');
     return {
       isAlert: true,
-      severity: 'SEVERE_PREECLAMPSIA_RISK',
+      severity: isSevereBp ? 'SEVERE_PREECLAMPSIA_RISK' : 'MILD_HYPERTENSION',
+      category,
       flags,
       recommendationsAr,
       recommendationsEn,
+      clinicalDisclaimerAr: CLINICAL_DISCLAIMER_AR,
+      clinicalDisclaimerEn: CLINICAL_DISCLAIMER_EN,
     };
   }
 
-  if (isElevatedBp || hasSignificantProteinuria) {
+  // 2. Severe Hypertension Alert (>= 160/110)
+  if (isSevereBp) {
+    let category: PreEclampsiaCategory = 'SEVERE_HYPERTENSION_ALERT';
+    if (hasSignificantProteinuria) {
+      category = 'SUSPECTED_PREECLAMPSIA_PROTEINURIC';
+    } else if (hasSevereNonProteinuricFeatures) {
+      category = 'SUSPECTED_PREECLAMPSIA_NON_PROTEINURIC';
+    }
+
+    if (category !== 'SEVERE_HYPERTENSION_ALERT') {
+      recommendationsAr.push('اشتباه ما قبل الإرجاج مع مظاهر شديدة (Preeclampsia with Severe Features)؛ يوصى بالتقييم التوليدي الفوري ومراقبة الجنين وتجهيز بروتوكول كبريتات المغنيسيوم إذا لزم سريرياً');
+      recommendationsEn.push('Preeclampsia with severe features suspected; immediate obstetric evaluation, fetal monitoring, and clinical readiness required');
+    }
+
     return {
       isAlert: true,
-      severity: 'MILD_HYPERTENSION',
+      severity: 'SEVERE_PREECLAMPSIA_RISK',
+      category,
       flags,
       recommendationsAr,
       recommendationsEn,
+      clinicalDisclaimerAr: CLINICAL_DISCLAIMER_AR,
+      clinicalDisclaimerEn: CLINICAL_DISCLAIMER_EN,
+    };
+  }
+
+  // 3. Elevated Blood Pressure (140-159 / 90-109)
+  if (isElevatedBp) {
+    if (hasSignificantProteinuria) {
+      return {
+        isAlert: true,
+        severity: 'SEVERE_PREECLAMPSIA_RISK',
+        category: 'SUSPECTED_PREECLAMPSIA_PROTEINURIC',
+        flags,
+        recommendationsAr: [
+          ...recommendationsAr,
+          'اشتباه ما قبل الإرجاج المرتفق بالزلال (Preeclampsia with Proteinuria)؛ يلزم تأكيد كمي مخبري ومراقبة العلامات الحيوية وصحة الجنين',
+        ],
+        recommendationsEn: [
+          ...recommendationsEn,
+          'Suspected preeclampsia with proteinuria; quantitative laboratory confirmation and maternal/fetal surveillance required',
+        ],
+        clinicalDisclaimerAr: CLINICAL_DISCLAIMER_AR,
+        clinicalDisclaimerEn: CLINICAL_DISCLAIMER_EN,
+      };
+    }
+
+    if (hasSevereNonProteinuricFeatures) {
+      return {
+        isAlert: true,
+        severity: 'SEVERE_PREECLAMPSIA_RISK',
+        category: 'SUSPECTED_PREECLAMPSIA_NON_PROTEINURIC',
+        flags,
+        recommendationsAr: [
+          ...recommendationsAr,
+          'اشتباه ما قبل الإرجاج بدون زلال بولي لوجود أعراض سريرية/مخبرية حرجة (Non-proteinuric Preeclampsia with Severe Features) وفق معايير ACOG/ISSHP',
+        ],
+        recommendationsEn: [
+          ...recommendationsEn,
+          'Non-proteinuric preeclampsia with severe features suspected due to presence of systemic end-organ signs/symptoms under ACOG/ISSHP criteria',
+        ],
+        clinicalDisclaimerAr: CLINICAL_DISCLAIMER_AR,
+        clinicalDisclaimerEn: CLINICAL_DISCLAIMER_EN,
+      };
+    }
+
+    return {
+      isAlert: true,
+      severity: 'MILD_HYPERTENSION',
+      category: 'GESTATIONAL_HYPERTENSION_RISK',
+      flags,
+      recommendationsAr: [
+        ...recommendationsAr,
+        'احتمالية ارتفاع ضغط الدم الحملي (Gestational Hypertension Risk) دون زلال أو مظاهر شديدة؛ يوصى بالمتابعة اللصيقة واستبعاد التطور لتسمم الحمل',
+      ],
+      recommendationsEn: [
+        ...recommendationsEn,
+        'Gestational hypertension risk without proteinuria or severe end-organ features; close monitoring and symptom education advised',
+      ],
+      clinicalDisclaimerAr: CLINICAL_DISCLAIMER_AR,
+      clinicalDisclaimerEn: CLINICAL_DISCLAIMER_EN,
+    };
+  }
+
+  // 4. Isolated Proteinuria without Hypertension
+  if (hasSignificantProteinuria) {
+    return {
+      isAlert: true,
+      severity: 'MILD_HYPERTENSION',
+      category: 'ISOLATED_PROTEINURIA',
+      flags,
+      recommendationsAr: [
+        ...recommendationsAr,
+        'وجود زلال في البول مع ضغط دم طبيعي؛ يوصى باستبعاد التهاب المسالك البولية والتحقق المخبري من وظائف الكلى',
+      ],
+      recommendationsEn: [
+        ...recommendationsEn,
+        'Isolated proteinuria with normal blood pressure; evaluate for urinary tract infection and renal etiology',
+      ],
+      clinicalDisclaimerAr: CLINICAL_DISCLAIMER_AR,
+      clinicalDisclaimerEn: CLINICAL_DISCLAIMER_EN,
     };
   }
 
   return {
     isAlert: false,
     severity: 'NONE',
+    category: 'NORMAL_BLOOD_PRESSURE',
     flags: [],
     recommendationsAr: [],
     recommendationsEn: [],
+    clinicalDisclaimerAr: CLINICAL_DISCLAIMER_AR,
+    clinicalDisclaimerEn: CLINICAL_DISCLAIMER_EN,
   };
 }

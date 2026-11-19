@@ -100,8 +100,10 @@ export class ObGynRepository {
       if (!patient) {
         throw new NotFoundException(`Patient ${dto.patientId} not found in this clinic`);
       }
-      if (patient.gender === 'MALE') {
-        throw new BadRequestException('Obstetric pregnancy episodes cannot be registered for male patients');
+      if (patient.gender === 'MALE' && (!dto.clinicalEligibilityRationale || dto.clinicalEligibilityRationale.trim().length < 5)) {
+        throw new BadRequestException(
+          'For patients with administrative gender recorded as male, opening an obstetric pregnancy episode requires a clinician-documented anatomical/clinical capability assessment (clinicalEligibilityRationale) of at least 5 characters.',
+        );
       }
 
       // 2. Check if an active pregnancy episode already exists
@@ -165,8 +167,12 @@ export class ObGynRepository {
           datingRationale,
           bloodGroupRh: dto.bloodGroupRh ?? null,
           rhAntibodyScreenPositive: dto.rhAntibodyScreenPositive ?? false,
-          highRiskFlag: dto.highRiskFlag ?? false,
-          highRiskJustification: dto.highRiskJustification ?? null,
+          highRiskFlag: dto.highRiskFlag ?? (dto.clinicalEligibilityRationale ? true : false),
+          highRiskJustification: dto.highRiskJustification
+            ? dto.clinicalEligibilityRationale
+              ? `${dto.highRiskJustification} | Eligibility: ${dto.clinicalEligibilityRationale}`
+              : dto.highRiskJustification
+            : dto.clinicalEligibilityRationale ?? null,
         },
       });
 
@@ -178,7 +184,13 @@ export class ObGynRepository {
           action: 'obgyn.pregnancy_episode.create',
           targetType: 'PregnancyEpisode',
           targetId: episode.id,
-          metadata: { patientId: dto.patientId, episodeNumber: episode.episodeNumber, estimatedDueDate: estimatedDueDate.toISOString(), createdByMembershipId: membershipId },
+          metadata: {
+            patientId: dto.patientId,
+            episodeNumber: episode.episodeNumber,
+            estimatedDueDate: estimatedDueDate.toISOString(),
+            createdByMembershipId: membershipId,
+            hasEligibilityRationale: Boolean(dto.clinicalEligibilityRationale),
+          },
         },
         tx,
       );
@@ -460,7 +472,13 @@ export class ObGynRepository {
       }
 
       // 3. Clinical screening for maternal pre-eclampsia
-      const peScreen = evaluatePreEclampsiaScreen(dto.systolicBp, dto.diastolicBp, dto.urineProtein);
+      const peScreen = evaluatePreEclampsiaScreen(dto.systolicBp, dto.diastolicBp, dto.urineProtein, {
+        gestationalAgeWeeks: dto.gestationalAgeWeeks,
+        gestationalAgeDays: dto.gestationalAgeDays,
+        hasSevereHeadache: dto.hasSevereHeadache,
+        hasVisualDisturbances: dto.hasVisualDisturbances,
+        hasEpigastricOrRupPain: dto.hasEpigastricOrRupPain,
+      });
 
       const visit = await tx.antenatalVisitRecord.create({
         data: {
@@ -530,7 +548,10 @@ export class ObGynRepository {
 
       return visits.map((v) => ({
         ...v,
-        preEclampsiaScreen: evaluatePreEclampsiaScreen(v.systolicBp, v.diastolicBp, v.urineProtein),
+        preEclampsiaScreen: evaluatePreEclampsiaScreen(v.systolicBp, v.diastolicBp, v.urineProtein, {
+          gestationalAgeWeeks: v.gestationalAgeWeeks,
+          gestationalAgeDays: v.gestationalAgeDays,
+        }),
       }));
     });
   }
@@ -735,6 +756,37 @@ export class ObGynRepository {
         });
       }
 
+      // Chaperone governance & clinical consent safeguards
+      let chaperonePresent = dto.chaperonePresent;
+      let chaperoneNameOrId = dto.chaperoneNameOrId?.trim() ?? null;
+
+      if (dto.chaperoneStatus === 'OFFERED_ACCEPTED' || chaperonePresent === true) {
+        chaperonePresent = true;
+        if (!chaperoneNameOrId || chaperoneNameOrId.length < 2) {
+          throw new BadRequestException(
+            'When a chaperone is present, chaperoneNameOrId (name or staff identifier) must be provided.',
+          );
+        }
+      } else if (dto.chaperoneStatus === 'OFFERED_DECLINED' || chaperonePresent === false) {
+        chaperonePresent = false;
+        const declineReason = dto.chaperoneDeclinedReason?.trim() || chaperoneNameOrId;
+        if (!declineReason || declineReason.length < 3) {
+          throw new BadRequestException(
+            'Gynecological examinations conducted without a chaperone require documented patient declination or refusal rationale (chaperoneDeclinedReason).',
+          );
+        }
+        chaperoneNameOrId = `DECLINED: ${declineReason}`.slice(0, 128);
+      } else if (dto.chaperoneStatus === 'NOT_AVAILABLE' || dto.chaperoneStatus === 'EMERGENCY_EXEMPT') {
+        chaperonePresent = false;
+        const justification = dto.chaperoneEmergencyJustification?.trim() || chaperoneNameOrId;
+        if (!justification || justification.length < 3) {
+          throw new BadRequestException(
+            'Emergency or unavailable chaperone exemption requires documented clinical emergency justification.',
+          );
+        }
+        chaperoneNameOrId = `EXEMPT: ${justification}`.slice(0, 128);
+      }
+
       const exam = await tx.gynecologicalExamination.create({
         data: {
           clinicId,
@@ -755,8 +807,8 @@ export class ObGynRepository {
           bimanualExaminationFindings: dto.bimanualExaminationFindings ?? null,
           cervicalScreeningSampleCollected: dto.cervicalScreeningSampleCollected ?? false,
           cervicalScreeningTestType: dto.cervicalScreeningTestType ?? null,
-          chaperonePresent: dto.chaperonePresent,
-          chaperoneNameOrId: dto.chaperoneNameOrId ?? null,
+          chaperonePresent,
+          chaperoneNameOrId,
           clinicalAssessment: dto.clinicalAssessment ?? null,
           managementPlan: dto.managementPlan ?? null,
           consentEvidenceId: dto.consentEvidenceId ?? null,

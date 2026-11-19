@@ -168,24 +168,86 @@ describe('Obstetric Dating & Clinical Antenatal Analytics Engine', () => {
       const screen = evaluatePreEclampsiaScreen(118, 76, 'NEGATIVE');
       assert.equal(screen.isAlert, false);
       assert.equal(screen.severity, 'NONE');
+      assert.equal(screen.category, 'NORMAL_BLOOD_PRESSURE');
       assert.equal(screen.flags.length, 0);
+      assert(screen.clinicalDisclaimerAr.includes('تنبيه دعم سريري استرشادي'));
+      assert(screen.clinicalDisclaimerEn.includes('advisory screening indicator'));
     });
 
-    test('flags mild hypertension when systolic >= 140 or diastolic >= 90', () => {
-      const screen = evaluatePreEclampsiaScreen(144, 88, 'NEGATIVE');
+    test('flags mild hypertension when systolic >= 140 or diastolic >= 90 without proteinuria', () => {
+      const screen = evaluatePreEclampsiaScreen(144, 88, 'NEGATIVE', { gestationalAgeWeeks: 28 });
       assert.equal(screen.isAlert, true);
       assert.equal(screen.severity, 'MILD_HYPERTENSION');
+      assert.equal(screen.category, 'GESTATIONAL_HYPERTENSION_RISK');
       assert(screen.flags.includes('ELEVATED_MATERNAL_BLOOD_PRESSURE'));
-      assert(screen.recommendationsAr[0].includes('تكرار القياس'));
+      assert(screen.recommendationsAr.some((r) => r.includes('إعادة القياس')));
     });
 
     test('flags severe pre-eclampsia risk on severe hypertension (>=160/110) with proteinuria', () => {
-      const screen = evaluatePreEclampsiaScreen(165, 112, 'PLUS_2');
+      const screen = evaluatePreEclampsiaScreen(165, 112, 'PLUS_2', { gestationalAgeWeeks: 34 });
       assert.equal(screen.isAlert, true);
       assert.equal(screen.severity, 'SEVERE_PREECLAMPSIA_RISK');
+      assert.equal(screen.category, 'SUSPECTED_PREECLAMPSIA_PROTEINURIC');
       assert(screen.flags.includes('CRITICAL_SEVERE_MATERNAL_HYPERTENSION'));
       assert(screen.flags.includes('SIGNIFICANT_PROTEINURIA'));
-      assert(screen.recommendationsAr[0].includes('عاجلاً'));
+      assert(screen.recommendationsAr.some((r) => r.includes('عاجلة') || r.includes('عاجلاً')));
+    });
+
+    test('identifies non-proteinuric preeclampsia with severe features (ACOG/ISSHP standards)', () => {
+      // Patient with BP 148/94, NEGATIVE urine dipstick, but new-onset severe headache and visual changes at 32 weeks
+      const screen = evaluatePreEclampsiaScreen(148, 94, 'NEGATIVE', {
+        gestationalAgeWeeks: 32,
+        hasSevereHeadache: true,
+        hasVisualDisturbances: true,
+      });
+
+      assert.equal(screen.isAlert, true);
+      assert.equal(screen.severity, 'SEVERE_PREECLAMPSIA_RISK');
+      assert.equal(screen.category, 'SUSPECTED_PREECLAMPSIA_NON_PROTEINURIC');
+      assert(screen.flags.includes('ELEVATED_MATERNAL_BLOOD_PRESSURE'));
+      assert(screen.flags.includes('NEW_ONSET_SEVERE_PERSISTENT_HEADACHE'));
+      assert(screen.flags.includes('VISUAL_DISTURBANCES_SCOTOMATA'));
+      assert(screen.recommendationsEn.some((r) => r.includes('Non-proteinuric preeclampsia')));
+    });
+
+    test('identifies non-proteinuric preeclampsia with thrombocytopenia or impaired liver function', () => {
+      const screen = evaluatePreEclampsiaScreen(142, 92, 'NEGATIVE', {
+        gestationalAgeWeeks: 28,
+        hasThrombocytopenia: true,
+        hasImpairedLiverFunction: true,
+      });
+
+      assert.equal(screen.isAlert, true);
+      assert.equal(screen.severity, 'SEVERE_PREECLAMPSIA_RISK');
+      assert.equal(screen.category, 'SUSPECTED_PREECLAMPSIA_NON_PROTEINURIC');
+      assert(screen.flags.includes('THROMBOCYTOPENIA_PLATELETS_UNDER_100K'));
+      assert(screen.flags.includes('IMPAIRED_LIVER_TRANSAMINASES_ELEVATED'));
+    });
+
+    test('treats dipstick 1+ as qualitative indicator requiring quantitative UPCR confirmation', () => {
+      const screen = evaluatePreEclampsiaScreen(146, 92, 'PLUS_1', { gestationalAgeWeeks: 30 });
+      assert.equal(screen.isAlert, true);
+      assert.equal(screen.category, 'SUSPECTED_PREECLAMPSIA_PROTEINURIC');
+      assert(screen.recommendationsEn.some((r) => r.includes('UPCR >= 0.3 or 24-hr urine >= 300 mg')));
+      assert(screen.recommendationsAr.some((r) => r.includes('مؤشراً استرشادياً')));
+    });
+
+    test('distinguishes chronic hypertension suspected prior to 20 weeks gestation', () => {
+      // Patient at 14 weeks with elevated blood pressure
+      const screen = evaluatePreEclampsiaScreen(144, 92, 'NEGATIVE', { gestationalAgeWeeks: 14 });
+      assert.equal(screen.isAlert, true);
+      assert.equal(screen.severity, 'MILD_HYPERTENSION');
+      assert.equal(screen.category, 'CHRONIC_HYPERTENSION_SUSPECTED');
+      assert(screen.recommendationsEn.some((r) => r.includes('suggests pre-existing chronic hypertension')));
+      assert(screen.recommendationsAr.some((r) => r.includes('ضغط دم مزمن')));
+    });
+
+    test('identifies isolated proteinuria with normal blood pressure', () => {
+      const screen = evaluatePreEclampsiaScreen(116, 74, 'PLUS_2', { gestationalAgeWeeks: 26 });
+      assert.equal(screen.isAlert, true);
+      assert.equal(screen.category, 'ISOLATED_PROTEINURIA');
+      assert(screen.flags.includes('SIGNIFICANT_PROTEINURIA'));
+      assert(screen.recommendationsEn.some((r) => r.includes('urinary tract infection and renal etiology')));
     });
   });
 });

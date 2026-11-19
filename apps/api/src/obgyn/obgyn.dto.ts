@@ -126,6 +126,11 @@ export class CreatePregnancyEpisodeDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
+  clinicalEligibilityRationale?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(16)
   bloodGroupRh?: string;
 
@@ -330,6 +335,18 @@ export class RecordAntenatalVisitDto {
   @IsString()
   @MaxLength(64)
   peripheralEdema?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  hasSevereHeadache?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hasVisualDisturbances?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hasEpigastricOrRupPain?: boolean;
 
   @IsOptional()
   @IsString()
@@ -579,8 +596,22 @@ export class RecordGynecologicalExamDto {
 
   @IsOptional()
   @IsString()
+  chaperoneStatus?: 'OFFERED_ACCEPTED' | 'OFFERED_DECLINED' | 'NOT_AVAILABLE' | 'EMERGENCY_EXEMPT';
+
+  @IsOptional()
+  @IsString()
   @MaxLength(128)
   chaperoneNameOrId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  chaperoneDeclinedReason?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  chaperoneEmergencyJustification?: string;
 
   @IsOptional()
   @IsString()

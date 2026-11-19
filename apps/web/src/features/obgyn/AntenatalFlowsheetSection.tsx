@@ -45,12 +45,18 @@ export const AntenatalFlowsheetSection: React.FC<AntenatalFlowsheetSectionProps>
   const [clinicalNotes, setClinicalNotes] = useState('');
   const [managementPlan, setManagementPlan] = useState('');
   const [nextWeeks, setNextWeeks] = useState(4);
+  const [hasSevereHeadache, setHasSevereHeadache] = useState(false);
+  const [hasVisualChanges, setHasVisualChanges] = useState(false);
+  const [hasEpigastricPain, setHasEpigastricPain] = useState(false);
 
-  // Pre-eclampsia screening evaluation helper
+  // Pre-eclampsia screening evaluation helper (ACOG Practice Bulletin No. 222 & ISSHP)
   const isHighBp = systolic >= 140 || diastolic >= 90;
   const isSevereBp = systolic >= 160 || diastolic >= 110;
   const hasProteinuria = urineProtein !== 'NEGATIVE' && urineProtein !== 'TRACE';
-  const preeclampsiaAlert = isHighBp && hasProteinuria;
+  const hasSevereSymptoms = hasSevereHeadache || hasVisualChanges || hasEpigastricPain;
+  const isPreTwentyWeeks = Number(gaWeeks) < 20;
+
+  const preeclampsiaAlert = isHighBp || isSevereBp || (hasProteinuria && !isHighBp);
 
   const handleCreateVisit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +86,9 @@ export const AntenatalFlowsheetSection: React.FC<AntenatalFlowsheetSectionProps>
           urineProtein,
           urineGlucose,
           peripheralEdema,
+          hasSevereHeadache: hasSevereHeadache || undefined,
+          hasVisualDisturbances: hasVisualChanges || undefined,
+          hasEpigastricOrRupPain: hasEpigastricPain || undefined,
           clinicalNotes: clinicalNotes.trim() || undefined,
           managementPlan: managementPlan.trim() || undefined,
           nextVisitRecommendedWeeks: Number(nextWeeks),
@@ -150,8 +159,16 @@ export const AntenatalFlowsheetSection: React.FC<AntenatalFlowsheetSectionProps>
           <h4 style={{ margin: '0 0 0.75rem 0', color: '#1e293b' }}>تسجيل زيارة متابعة حمل جديدة</h4>
 
           {preeclampsiaAlert && (
-            <div style={{ backgroundColor: '#fee2e2', border: '1px solid #f87171', color: '#991b1b', padding: '0.5rem', borderRadius: '4px', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
-              🚨 <strong>تنبيه سريري:</strong> {isSevereBp ? 'ارتفاع ضغط دم شديد مع زلال بول (Severe Pre-eclampsia Risk)' : 'اشتباه ما قبل الإرجاج (Pre-eclampsia Alert)'} — ({systolic}/{diastolic}) مع وجود زلال ({urineProtein}).
+            <div style={{ backgroundColor: '#fee2e2', border: '1px solid #f87171', color: '#991b1b', padding: '0.65rem', borderRadius: '4px', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>
+                🚨 {isPreTwentyWeeks ? 'تنبيه: اشتباه ارتفاع ضغط دم مزمن (قبل الأسبوع 20)' : isSevereBp ? 'تنبيه سريري حرج: ارتفاع ضغط دم شديد (>= 160/110 مم زئبق)' : hasProteinuria ? 'تنبيه سريري: اشتباه ما قبل الإرجاج مع زلال' : hasSevereSymptoms ? 'تنبيه سريري: اشتباه ما قبل الإرجاج مع مظاهر شديدة (Non-proteinuric)' : 'تنبيه سريري: ارتفاع ضغط دم حملي محتمل'}
+              </div>
+              <div>
+                القياس: ({systolic}/{diastolic} مم زئبق) — الزلال: ({urineProtein}) {hasSevereSymptoms ? '— مصحوب بأعراض سريرية حرجة' : ''}
+              </div>
+              <div style={{ fontSize: '0.75rem', marginTop: '0.35rem', color: '#7f1d1d', borderTop: '1px dashed #fca5a5', paddingTop: '0.3rem' }}>
+                ℹ️ تنبيه استرشادي لدعم القرار السريري؛ يلزم التأكيد بالقياس المتكرر وفحص الطبيب ولا يعد تشخيصاً تلقائياً أو وصفاً للعلاج.
+              </div>
             </div>
           )}
 
@@ -309,6 +326,39 @@ export const AntenatalFlowsheetSection: React.FC<AntenatalFlowsheetSectionProps>
                   onChange={(e) => setNextWeeks(parseInt(e.target.value, 10))}
                   style={{ width: '100%', padding: '0.35rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                 />
+              </div>
+            </div>
+
+            {/* Severe features check for preeclampsia screening */}
+            <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', padding: '0.6rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#92400e', marginBottom: '0.35rem' }}>
+                تقييم الأعراض والمظاهر الشديدة (Severe Features Evaluation):
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.75rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={hasSevereHeadache}
+                    onChange={(e) => setHasSevereHeadache(e.target.checked)}
+                  />
+                  صداع شديد ومستمر
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={hasVisualChanges}
+                    onChange={(e) => setHasVisualChanges(e.target.checked)}
+                  />
+                  اضطرابات بصرية / وميض
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={hasEpigastricPain}
+                    onChange={(e) => setHasEpigastricPain(e.target.checked)}
+                  />
+                  ألم حاد في فم المعدة / الربع العلوي الأيمن
+                </label>
               </div>
             </div>
 

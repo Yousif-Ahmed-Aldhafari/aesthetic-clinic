@@ -40,6 +40,7 @@ describe('Obstetrics & Gynecology (OB_GYN) Specialty Integration & Security Test
   let patientFemaleAId: string;
   let patientFemale2AId: string;
   let patientFemaleBId: string;
+  let patientMaleAId: string;
 
   let encounterAId: string;
 
@@ -310,6 +311,20 @@ describe('Obstetrics & Gynecology (OB_GYN) Specialty Integration & Security Test
     });
     patientFemaleBId = pat3.id;
 
+    // Patient 4 (Clinic A): Male administrative gender for demographic capability testing
+    const patMale = await owner.patient.create({
+      data: {
+        clinicId: clinicAId,
+        patientNumber: `P-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+        fullName: 'عمر خالد المنصوري',
+        searchName: 'عمر خالد المنصوري',
+        dateOfBirth: new Date(Date.now() - 29 * 365.25 * 86400000),
+        gender: 'MALE',
+        status: 'ACTIVE',
+      },
+    });
+    patientMaleAId = patMale.id;
+
     // Encounter in Clinic A
     const encA = await owner.clinicalEncounter.create({
       data: {
@@ -388,6 +403,36 @@ describe('Obstetrics & Gynecology (OB_GYN) Specialty Integration & Security Test
           }),
         /Patient already has an active pregnancy episode/
       );
+    });
+
+    it('rejects creating pregnancy episode for male administrative gender without clinical eligibility rationale', async () => {
+      const proof = await getProofObgynA();
+      const lmp = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10);
+      await assert.rejects(
+        () =>
+          obgynRepo.createPregnancyEpisode(proof, clinicAId, membershipObgynAId, {
+            patientId: patientMaleAId,
+            gravidity: 1,
+            parity: 0,
+            lastMenstrualPeriodDate: lmp,
+          }),
+        /clinical capability assessment|clinicalEligibilityRationale/i
+      );
+    });
+
+    it('allows creating pregnancy episode for male administrative gender with documented clinical eligibility rationale', async () => {
+      const proof = await getProofObgynA();
+      const lmp = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10);
+      const episode = await obgynRepo.createPregnancyEpisode(proof, clinicAId, membershipObgynAId, {
+        patientId: patientMaleAId,
+        gravidity: 1,
+        parity: 0,
+        lastMenstrualPeriodDate: lmp,
+        clinicalEligibilityRationale: 'Transgender male patient with intact biological uterus and verified viable intrauterine pregnancy',
+      });
+      assert(episode);
+      assert.equal(episode.patientId, patientMaleAId);
+      assert(episode.highRiskJustification?.includes('Transgender male patient'));
     });
 
     it('retrieves the active pregnancy episode accurately', async () => {
@@ -632,6 +677,49 @@ describe('Obstetrics & Gynecology (OB_GYN) Specialty Integration & Security Test
       assert.equal(exam.status, 'FINALIZED');
 
       examId = exam.id;
+    });
+
+    it('rejects gynecological exam when chaperone is marked present but identifier is missing', async () => {
+      const proof = await getProofObgynA();
+      await assert.rejects(
+        () =>
+          obgynRepo.recordGynecologicalExam(proof, clinicAId, membershipObgynAId, {
+            patientId: patientFemale2AId,
+            encounterId: encounterAId,
+            examinationType: 'GENERAL_PELVIC',
+            chaperonePresent: true,
+            chaperoneNameOrId: '',
+          }),
+        /chaperoneNameOrId/i
+      );
+    });
+
+    it('rejects gynecological exam when chaperone is absent without declination or emergency rationale', async () => {
+      const proof = await getProofObgynA();
+      await assert.rejects(
+        () =>
+          obgynRepo.recordGynecologicalExam(proof, clinicAId, membershipObgynAId, {
+            patientId: patientFemale2AId,
+            encounterId: encounterAId,
+            examinationType: 'GENERAL_PELVIC',
+            chaperonePresent: false,
+          }),
+        /chaperone governance|chaperoneDeclinedReason/i
+      );
+    });
+
+    it('records gynecological exam when chaperone is declined with documented patient rationale', async () => {
+      const proof = await getProofObgynA();
+      const exam = await obgynRepo.recordGynecologicalExam(proof, clinicAId, membershipObgynAId, {
+        patientId: patientFemale2AId,
+        encounterId: encounterAId,
+        examinationType: 'GENERAL_PELVIC',
+        chaperonePresent: false,
+        chaperoneStatus: 'OFFERED_DECLINED',
+        chaperoneDeclinedReason: 'Patient declined chaperone following formal clinical offer and explanation of examination scope',
+      });
+      assert.equal(exam.chaperonePresent, false);
+      assert(exam.chaperoneNameOrId?.startsWith('DECLINED:'));
     });
 
     it('privileged OB/GYN doctor retrieves full intimate findings without redaction', async () => {

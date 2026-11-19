@@ -31,8 +31,10 @@ export const ConfidentialGynecologicalSection: React.FC<ConfidentialGynecologica
   // Form state
   const [examType, setExamType] = useState<GynecologicalExamType>('GENERAL_PELVIC');
   const [isConfidential, setIsConfidential] = useState(true);
-  const [chaperonePresent, setChaperonePresent] = useState(true);
+  const [chaperoneOption, setChaperoneOption] = useState<'PRESENT' | 'DECLINED' | 'EMERGENCY_EXEMPT'>('PRESENT');
   const [chaperoneName, setChaperoneName] = useState('');
+  const [chaperoneDeclinedReason, setChaperoneDeclinedReason] = useState('');
+  const [chaperoneEmergencyReason, setChaperoneEmergencyReason] = useState('');
   const [indications, setIndications] = useState('');
   const [lmpDate, setLmpDate] = useState('');
   const [cycleDays, setCycleDays] = useState('28');
@@ -53,11 +55,24 @@ export const ConfidentialGynecologicalSection: React.FC<ConfidentialGynecologica
     setSubmitting(true);
 
     try {
-      if (chaperonePresent && !chaperoneName.trim()) {
+      if (chaperoneOption === 'PRESENT' && !chaperoneName.trim()) {
         throw new Error('يرجى كتابة اسم أو صفة المرافقة / الممرضة الحاضرة أثناء الفحص (Chaperone)');
+      }
+      if (chaperoneOption === 'DECLINED' && !chaperoneDeclinedReason.trim()) {
+        throw new Error('يرجى توثيق سبب رفض المريضة لحضور المرافقة السريرية');
+      }
+      if (chaperoneOption === 'EMERGENCY_EXEMPT' && !chaperoneEmergencyReason.trim()) {
+        throw new Error('يرجى توثيق التبرير السريري الطارئ للاستثناء من حضور المرافقة');
       }
 
       const encounterId = crypto.randomUUID();
+
+      const chaperonePresent = chaperoneOption === 'PRESENT';
+      const chaperoneNameOrId = chaperoneOption === 'PRESENT'
+        ? chaperoneName.trim()
+        : chaperoneOption === 'DECLINED'
+          ? `DECLINED: ${chaperoneDeclinedReason.trim()}`
+          : `EXEMPT: ${chaperoneEmergencyReason.trim()}`;
 
       await recordGynecologicalExam(
         clinicId,
@@ -67,7 +82,10 @@ export const ConfidentialGynecologicalSection: React.FC<ConfidentialGynecologica
           examinationType: examType,
           isConfidential,
           chaperonePresent,
-          chaperoneNameOrId: chaperonePresent ? chaperoneName.trim() : undefined,
+          chaperoneNameOrId,
+          chaperoneStatus: chaperoneOption === 'PRESENT' ? 'OFFERED_ACCEPTED' : chaperoneOption === 'DECLINED' ? 'OFFERED_DECLINED' : 'EMERGENCY_EXEMPT',
+          chaperoneDeclinedReason: chaperoneOption === 'DECLINED' ? chaperoneDeclinedReason.trim() : undefined,
+          chaperoneEmergencyJustification: chaperoneOption === 'EMERGENCY_EXEMPT' ? chaperoneEmergencyReason.trim() : undefined,
           indicationsSymptoms: indications.trim() || undefined,
           lastMenstrualPeriodDate: lmpDate || undefined,
           menstrualCycleDays: cycleDays ? parseInt(cycleDays, 10) : undefined,
@@ -222,15 +240,21 @@ export const ConfidentialGynecologicalSection: React.FC<ConfidentialGynecologica
 
             {/* Chaperone & Confidentiality Safeguards */}
             <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #86efac', padding: '0.75rem', borderRadius: '4px', marginBottom: '0.75rem' }}>
-              <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 600, color: '#166534', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={chaperonePresent}
-                    onChange={(e) => setChaperonePresent(e.target.checked)}
-                  />
-                  حضور مرافقة / ممرضة أثناء الفحص (Chaperone Present) *
-                </label>
+              <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#166534', marginLeft: '0.5rem' }}>
+                    حوكمة المرافقة السريرية (Chaperone Governance) *:
+                  </span>
+                  <select
+                    value={chaperoneOption}
+                    onChange={(e) => setChaperoneOption(e.target.value as 'PRESENT' | 'DECLINED' | 'EMERGENCY_EXEMPT')}
+                    style={{ padding: '0.3rem 0.5rem', borderRadius: '4px', border: '1px solid #86efac', fontSize: '0.8rem' }}
+                  >
+                    <option value="PRESENT">حاضرة أثناء الفحص (Chaperone Present)</option>
+                    <option value="DECLINED">عُرضت ورُفضت من قبل المريضة (Offered & Declined)</option>
+                    <option value="EMERGENCY_EXEMPT">استثناء طارئ سريري / غير متوفرة (Emergency Exemption)</option>
+                  </select>
+                </div>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 600, color: '#1e40af', cursor: 'pointer' }}>
                   <input
@@ -242,7 +266,7 @@ export const ConfidentialGynecologicalSection: React.FC<ConfidentialGynecologica
                 </label>
               </div>
 
-              {chaperonePresent && (
+              {chaperoneOption === 'PRESENT' && (
                 <div style={{ marginTop: '0.5rem' }}>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#166534' }}>
                     اسم المرافقة / الممرضة الحاضرة (أو رقم الكادر) *
@@ -254,6 +278,38 @@ export const ConfidentialGynecologicalSection: React.FC<ConfidentialGynecologica
                     onChange={(e) => setChaperoneName(e.target.value)}
                     placeholder="مثال: الممرضة فاطمة عبد الله (RN)..."
                     style={{ width: '100%', padding: '0.35rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                  />
+                </div>
+              )}
+
+              {chaperoneOption === 'DECLINED' && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#9a3412' }}>
+                    سبب رفض المريضة لحضور المرافقة السريرية (Patient Declination Rationale) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={chaperoneDeclinedReason}
+                    onChange={(e) => setChaperoneDeclinedReason(e.target.value)}
+                    placeholder="تم إعلام المريضة بحقها في المرافقة وفضلت إجراء الفحص دون حضور مرافقة..."
+                    style={{ width: '100%', padding: '0.35rem', borderRadius: '4px', border: '1px solid #fed7aa' }}
+                  />
+                </div>
+              )}
+
+              {chaperoneOption === 'EMERGENCY_EXEMPT' && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#991b1b' }}>
+                    التبرير السريري الطارئ للاستثناء من المرافقة (Emergency Exemption Justification) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={chaperoneEmergencyReason}
+                    onChange={(e) => setChaperoneEmergencyReason(e.target.value)}
+                    placeholder="فحص طارئ عاجل لوقف نزيف حاد، تم توثيق الضرورة السريرية..."
+                    style={{ width: '100%', padding: '0.35rem', borderRadius: '4px', border: '1px solid #fca5a5' }}
                   />
                 </div>
               )}

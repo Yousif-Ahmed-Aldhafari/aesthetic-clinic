@@ -77,6 +77,7 @@ export async function createPregnancyEpisode(
     rhAntibodyScreenPositive?: boolean;
     highRiskFlag?: boolean;
     highRiskJustification?: string;
+    clinicalEligibilityRationale?: string;
   },
   csrfToken?: string,
   onAuthError?: (e?: unknown) => void,
@@ -163,6 +164,9 @@ export async function recordAntenatalVisit(
     urineProtein?: string;
     urineGlucose?: string;
     peripheralEdema?: string;
+    hasSevereHeadache?: boolean;
+    hasVisualDisturbances?: boolean;
+    hasEpigastricOrRupPain?: boolean;
     clinicalNotes?: string;
     managementPlan?: string;
     nextVisitRecommendedWeeks?: number;
@@ -327,6 +331,9 @@ export async function recordGynecologicalExam(
     cervicalScreeningTestType?: string;
     chaperonePresent: boolean;
     chaperoneNameOrId?: string;
+    chaperoneStatus?: 'OFFERED_ACCEPTED' | 'OFFERED_DECLINED' | 'NOT_AVAILABLE' | 'EMERGENCY_EXEMPT';
+    chaperoneDeclinedReason?: string;
+    chaperoneEmergencyJustification?: string;
     clinicalAssessment?: string;
     managementPlan?: string;
     consentEvidenceId?: string;
