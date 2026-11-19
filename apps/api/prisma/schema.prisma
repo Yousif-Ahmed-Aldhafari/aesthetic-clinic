@@ -237,6 +237,10 @@ model Clinic {
   pediatricBirthHistories PediatricBirthHistory[]
   caregiverRelationships PatientCaregiverRelationship[]
   pediatricGrowthRecords PediatricGrowthRecord[]
+  pregnancyEpisodes PregnancyEpisode[]
+  antenatalVisits AntenatalVisitRecord[]
+  obstetricHistories ObstetricHistoryRecord[]
+  gynecologicalExams GynecologicalExamination[]
 
   @@index([status, createdAt])
 }
@@ -530,6 +534,11 @@ model ClinicMembership {
   verifiedBirthHistories PediatricBirthHistory[] @relation("PediatricBirthHistoryVerifier")
   revokedCaregivers PatientCaregiverRelationship[] @relation("CaregiverRevokedBy")
   recordedGrowthRecords PediatricGrowthRecord[] @relation("PediatricGrowthRecordedBy")
+  pregnancyEpisodesReviewed PregnancyEpisode[] @relation("PregnancyDatingReviewer")
+  pregnancyEpisodesFinalized PregnancyEpisode[] @relation("PregnancyEpisodeFinalizer")
+  antenatalVisitsRecorded AntenatalVisitRecord[] @relation("AntenatalVisitRecorder")
+  obstetricHistoriesRecorded ObstetricHistoryRecord[] @relation("ObstetricHistoryRecorder")
+  gynecologicalExamsPerformed GynecologicalExamination[] @relation("GynecologicalExamExaminer")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -698,6 +707,10 @@ model Patient {
   birthHistory PediatricBirthHistory?
   caregivers PatientCaregiverRelationship[]
   growthRecords PediatricGrowthRecord[]
+  pregnancyEpisodes PregnancyEpisode[]
+  antenatalVisits AntenatalVisitRecord[]
+  obstetricHistories ObstetricHistoryRecord[]
+  gynecologicalExams GynecologicalExamination[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -764,6 +777,8 @@ model ClinicalEncounter {
   dentalOdontograms DentalOdontogram[]
   dentalTreatmentStages DentalTreatmentStage[]
   pediatricGrowthRecords PediatricGrowthRecord[]
+  antenatalVisits AntenatalVisitRecord[]
+  gynecologicalExams GynecologicalExamination[]
   @@unique([clinicId,id])
   @@unique([clinicId,visitId])
   @@index([clinicId,patientId,createdAt,id])
@@ -4206,6 +4221,11 @@ enum ClinicalPrivilegeCode {
   PEDIATRIC_GROWTH_RECORD
   PEDIATRIC_GROWTH_REVIEW
   PEDIATRIC_BIRTH_HISTORY_VERIFY
+  ANTENATAL_CARE_DOCUMENT
+  OBSTETRIC_DATING_REVIEW
+  OBSTETRIC_EPISODE_FINALIZE
+  GYNECOLOGICAL_EXAM_PERFORM
+  GYNECOLOGICAL_RECORD_REVIEW
 }
 
 enum PrivilegeScope {
@@ -5765,4 +5785,226 @@ model GrowthReference {
 
   @@unique([standardName, metric, gender, ageMonths])
   @@index([standardName, metric, gender])
+}
+
+// ============================================================================
+// Phase 8.4: Obstetrics & Gynecology (OB_GYN)
+// ============================================================================
+
+enum PregnancyEpisodeStatus {
+  ACTIVE
+  COMPLETED
+  TERMINATED
+  TRANSFERRED_OUT
+  ENTERED_IN_ERROR
+}
+
+enum DatingMethod {
+  LMP_CERTAIN
+  LMP_UNCERTAIN
+  ULTRASOUND_FIRST_TRIMESTER
+  ULTRASOUND_SECOND_TRIMESTER
+  CLINICAL_ESTIMATE
+  ASSISTED_REPRODUCTION
+}
+
+enum FetalPresentation {
+  CEPHALIC
+  BREECH
+  TRANSVERSE
+  OBLIQUE
+  UNSTABLE
+}
+
+enum DeliveryOutcome {
+  LIVE_BIRTH_SPONTANEOUS_VAGINAL
+  LIVE_BIRTH_ASSISTED_VAGINAL
+  LIVE_BIRTH_CESAREAN_PLANNED
+  LIVE_BIRTH_CESAREAN_EMERGENCY
+  STILLBIRTH
+  MISCARRIAGE_EARLY
+  MISCARRIAGE_LATE
+  ECTOPIC_PREGNANCY
+  MOLAR_PREGNANCY
+  MEDICAL_TERMINATION
+  OTHER
+}
+
+enum GynecologicalExamType {
+  GENERAL_PELVIC
+  CERVICAL_SCREENING
+  COLPOSCOPY
+  VULVAR_EXAMINATION
+  ULTRASOUND_TRANSVAGINAL
+  POST_OPERATIVE
+  OTHER
+}
+
+enum ObGynRecordStatus {
+  DRAFT
+  FINALIZED
+  ENTERED_IN_ERROR
+}
+
+model PregnancyEpisode {
+  id                                 String                 @id @default(uuid()) @db.Uuid
+  clinicId                           String                 @db.Uuid
+  patientId                          String                 @db.Uuid
+  episodeNumber                      Int                    @default(1)
+  status                             PregnancyEpisodeStatus @default(ACTIVE)
+  gravidity                          Int
+  parity                             Int
+  termDeliveries                     Int                    @default(0)
+  pretermDeliveries                  Int                    @default(0)
+  abortions                          Int                    @default(0)
+  livingChildren                     Int                    @default(0)
+  multipleGestationCount             Int                    @default(1)
+  lastMenstrualPeriodDate            DateTime?              @db.Date
+  lmpCertainty                       Boolean                @default(true)
+  ultrasoundDatingDate               DateTime?              @db.Date
+  crownRumpLengthMm                  Decimal?               @db.Decimal(5, 1)
+  biparietalDiameterMm               Decimal?               @db.Decimal(5, 1)
+  ultrasoundEstimatedGestationalDays Int?
+  estimatedDueDate                   DateTime               @db.Date
+  datingMethod                       DatingMethod           @default(LMP_CERTAIN)
+  datingRationale                    String?                @db.VarChar(500)
+  datingReviewedByMembershipId       String?                @db.Uuid
+  datingReviewedAt                   DateTime?              @db.Timestamptz(3)
+  isDatingFinalized                  Boolean                @default(false)
+  bloodGroupRh                       String?                @db.VarChar(16)
+  rhAntibodyScreenPositive           Boolean                @default(false)
+  highRiskFlag                       Boolean                @default(false)
+  highRiskJustification              String?                @db.Text
+  outcomeDate                        DateTime?              @db.Date
+  outcomeSummary                     String?                @db.Text
+  finalizedByMembershipId            String?                @db.Uuid
+  finalizedAt                        DateTime?              @db.Timestamptz(3)
+  version                            Int                    @default(1)
+  createdAt                          DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                          DateTime               @updatedAt @db.Timestamptz(3)
+
+  clinic                             Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                            Patient                @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  datingReviewedBy                   ClinicMembership?      @relation("PregnancyDatingReviewer", fields: [clinicId, datingReviewedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  finalizedBy                        ClinicMembership?      @relation("PregnancyEpisodeFinalizer", fields: [clinicId, finalizedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  antenatalVisits                    AntenatalVisitRecord[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, status])
+}
+
+model AntenatalVisitRecord {
+  id                        String             @id @default(uuid()) @db.Uuid
+  clinicId                  String             @db.Uuid
+  patientId                 String             @db.Uuid
+  pregnancyEpisodeId        String             @db.Uuid
+  encounterId               String             @db.Uuid
+  recordedByMembershipId    String             @db.Uuid
+  visitDate                 DateTime           @default(now()) @db.Timestamptz(3)
+  gestationalAgeWeeks       Int
+  gestationalAgeDays        Int                @default(0)
+  systolicBp                Int
+  diastolicBp               Int
+  weightKg                  Decimal?           @db.Decimal(5, 2)
+  fundalHeightCm            Decimal?           @db.Decimal(4, 1)
+  fetalHeartRateBpm         Int?
+  fetalPresentation         FetalPresentation?
+  fetalMovementPresent      Boolean            @default(true)
+  urineProtein              String?            @db.VarChar(32)
+  urineGlucose              String?            @db.VarChar(32)
+  peripheralEdema           String?            @db.VarChar(64)
+  clinicalNotes             String?            @db.Text
+  managementPlan            String?            @db.Text
+  nextVisitRecommendedWeeks Int?               @default(4)
+  diagnosticOrderIds        String[]           @default([])
+  imagingDocumentIds        String[]           @default([])
+  status                    ObGynRecordStatus  @default(FINALIZED)
+  errorReason               String?            @db.Text
+  version                   Int                @default(1)
+  createdAt                 DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt                 DateTime           @updatedAt @db.Timestamptz(3)
+
+  clinic                    Clinic             @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                   Patient            @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  pregnancyEpisode          PregnancyEpisode   @relation(fields: [clinicId, pregnancyEpisodeId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                 ClinicalEncounter  @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  recordedBy                ClinicMembership   @relation("AntenatalVisitRecorder", fields: [clinicId, recordedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, pregnancyEpisodeId, visitDate])
+  @@index([clinicId, patientId])
+  @@index([clinicId, encounterId])
+}
+
+model ObstetricHistoryRecord {
+  id                     String           @id @default(uuid()) @db.Uuid
+  clinicId               String           @db.Uuid
+  patientId              String           @db.Uuid
+  recordedByMembershipId String           @db.Uuid
+  pregnancyNumber        Int
+  yearOfDelivery         Int?
+  gestationalAgeWeeks    Int?
+  deliveryOutcome        DeliveryOutcome  @default(LIVE_BIRTH_SPONTANEOUS_VAGINAL)
+  deliveryMode           DeliveryMode     @default(VAGINAL)
+  birthWeightGrams       Int?
+  babyGender             PatientGender?
+  anesthesiaType         String?          @db.VarChar(64)
+  previousUterineSurgery Boolean          @default(false)
+  uterineSurgeryDetails  String?          @db.VarChar(255)
+  complications          String?          @db.Text
+  neonatalOutcome        String?          @db.Text
+  notes                  String?          @db.Text
+  version                Int              @default(1)
+  createdAt              DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime         @updatedAt @db.Timestamptz(3)
+
+  clinic                 Clinic           @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                Patient          @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  recordedBy             ClinicMembership @relation("ObstetricHistoryRecorder", fields: [clinicId, recordedByMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, pregnancyNumber])
+}
+
+model GynecologicalExamination {
+  id                               String                @id @default(uuid()) @db.Uuid
+  clinicId                         String                @db.Uuid
+  patientId                        String                @db.Uuid
+  encounterId                      String                @db.Uuid
+  examinerMembershipId              String                @db.Uuid
+  examinationDate                  DateTime              @default(now()) @db.Timestamptz(3)
+  examinationType                  GynecologicalExamType @default(GENERAL_PELVIC)
+  isConfidential                   Boolean               @default(true)
+  indicationsSymptoms               String?               @db.Text
+  lastMenstrualPeriodDate          DateTime?             @db.Date
+  menstrualCycleDays               Int?                  @default(28)
+  menstrualFlowDurationDays        Int?                  @default(5)
+  dysmenorrheaReported             Boolean               @default(false)
+  abnormalBleedingPattern          String?               @db.VarChar(128)
+  externalGenitaliaFindings        String?               @db.Text
+  speculumExaminationFindings      String?               @db.Text
+  bimanualExaminationFindings      String?               @db.Text
+  cervicalScreeningSampleCollected Boolean               @default(false)
+  cervicalScreeningTestType        String?               @db.VarChar(64)
+  chaperonePresent                 Boolean               @default(true)
+  chaperoneNameOrId                String?               @db.VarChar(128)
+  clinicalAssessment               String?               @db.Text
+  managementPlan                   String?               @db.Text
+  consentEvidenceId                String?               @db.Uuid
+  linkedDocumentIds                String[]              @default([])
+  status                           ObGynRecordStatus     @default(FINALIZED)
+  errorReason                      String?               @db.Text
+  version                          Int                   @default(1)
+  createdAt                        DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt                        DateTime              @updatedAt @db.Timestamptz(3)
+
+  clinic                           Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                          Patient               @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                        ClinicalEncounter     @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  examiner                         ClinicMembership      @relation("GynecologicalExamExaminer", fields: [clinicId, examinerMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId, examinationDate])
+  @@index([clinicId, encounterId])
+  @@index([clinicId, isConfidential])
 }

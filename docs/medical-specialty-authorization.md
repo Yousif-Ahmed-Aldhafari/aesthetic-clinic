@@ -128,6 +128,11 @@ The authorization engine evaluates 8 mandatory gates before granting access to c
 | `PEDIATRIC_GROWTH_RECORD` | Record pediatric growth | Recording and entering in error pediatric anthropometric measurements |
 | `PEDIATRIC_GROWTH_REVIEW` | Review pediatric growth | Reviewing and certifying longitudinal growth trajectories and WHO LMS percentiles |
 | `PEDIATRIC_BIRTH_HISTORY_VERIFY` | Verify neonatal birth history | Recording, certifying, and amending neonatal birth and perinatal history records |
+| `ANTENATAL_CARE_DOCUMENT` | Document antenatal care | Documenting longitudinal pregnancy episodes, flowsheet visits, and maternal observations |
+| `OBSTETRIC_DATING_REVIEW` | Review pregnancy dating | Reviewing ultrasound vs LMP discrepancies and signing off on confirmed EDD |
+| `OBSTETRIC_EPISODE_FINALIZE` | Finalize pregnancy episodes | Formally finalizing completed or terminated pregnancy episodes |
+| `GYNECOLOGICAL_EXAM_PERFORM` | Perform gynecological exams | Conducting and recording confidential intimate gynecological examinations |
+| `GYNECOLOGICAL_RECORD_REVIEW` | Review gynecological records | Accessing unredacted confidential gynecological records and findings |
 
 ---
 

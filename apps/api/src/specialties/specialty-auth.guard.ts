@@ -62,7 +62,7 @@ export class SpecialtyPrivilegeGuard implements CanActivate {
 
     // Evaluate trusted database state
     const specialtyCode = requiredSpecialty ?? 'GENERAL_MEDICINE';
-    const privilegeCode = requiredPrivilege ?? ('CLINICAL_ENCOUNTER_DOCUMENT' as ClinicalPrivilegeCode);
+    const privilegeCode = requiredPrivilege;
 
     const evaluation = await this.specialtyRepo.evaluatePrivilege(principal, clinicId, {
       practitionerMembershipId: membershipId,

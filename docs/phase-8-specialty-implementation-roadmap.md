@@ -128,13 +128,14 @@ To ensure patient safety and regulatory compliance (Saudi MOH, SCFHS, WHO guidel
 - **Documentation:** See [docs/pediatrics-and-child-health.md](pediatrics-and-child-health.md) and [docs/phase-8-step-8-3-acceptance.md](phase-8-step-8-3-acceptance.md).
 - **Dependencies:** `Patient`, `ClinicalEncounter`, `PatientAllergy`, `AuditEvent`.
 
-### Step 8.4 — Obstetrics & Gynecology Module
-- **Scope:** Antenatal care tracking, pregnancy episodes (GTPAL parity, LMP, ultrasound dating scan reconciliation, reconciled EDD), antenatal visit flowsheets (fundal height, FHR, urine dipstick), and sensitive gynecological examinations.
-- **Prisma Migration:** `043_obgyn_antenatal_care` (`PregnancyEpisode`, `AntenatalVisitRecord`, `GynecologicalExamination`).
-- **Backend Services:** `ObGynService`, `GestationalAgeCalculator` (reconciliation logic with attributed signoff), sensitive record protection middleware.
-- **Frontend Workspaces:** Pregnancy episode timeline, antenatal flowsheet table, trimester milestone tracker, and confidential examination documentation screen.
-- **Security Gates:** Verification of `ANTENATAL_CARE_DOCUMENT` and `GYNECOLOGICAL_EXAM_PERFORM` privileges; confidentiality filters.
-- **Dependencies:** `ClinicalEncounter`, `ClinicalObservation`, `Patient`.
+### Step 8.4 — Obstetrics & Gynecology Module [COMPLETED]
+- **Scope:** Antenatal care tracking, longitudinal pregnancy episodes (GPA/TPAL, Naegele LMP, Robinson-Fleming CRL first-trimester biometrics, ACOG/SOGC discrepancy management), antenatal visit flowsheets (BP, fundal height, FHR, presentation, urine dipstick, automated pre-eclampsia alerts), past obstetric history with uterine surgery/rupture alerts, and confidential gynecological examinations with server-side segregation and chaperone governance.
+- **Prisma Migration:** `043_obgyn_antenatal_care` (`PregnancyEpisode`, `AntenatalVisitRecord`, `ObstetricHistoryRecord`, `GynecologicalExamination`).
+- **Backend Services:** `ObGynController`, `ObGynRepository`, `obgyn-dating.ts` (Naegele, Robinson-Fleming CRL, pre-eclampsia screening engine).
+- **Frontend Workspaces:** Arabic-first RTL Obstetrics & Gynecology workspace (`ObGynWorkspace`), pregnancy episode header with GPA badges, dating review live calculator, antenatal flowsheet table with pre-eclampsia alerts, obstetric history section, and confidential examination documentation screen.
+- **Security Gates:** Verification of `ANTENATAL_CARE_DOCUMENT`, `OBSTETRIC_DATING_REVIEW`, `OBSTETRIC_EPISODE_FINALIZE`, `GYNECOLOGICAL_EXAM_PERFORM`, and `GYNECOLOGICAL_RECORD_REVIEW` privileges; server-side intimate data segregation; trigger-enforced immutability; PostgreSQL FORCE RLS.
+- **Documentation:** See [docs/obstetrics-and-gynecology.md](obstetrics-and-gynecology.md) and [docs/phase-8-step-8-4-acceptance.md](phase-8-step-8-4-acceptance.md).
+- **Dependencies:** `ClinicalEncounter`, `ClinicalObservation`, `ClinicalOrder`, `ClinicalDocument`, `Patient`.
 
 ### Step 8.5 — Ophthalmology & Otolaryngology (ENT) Module
 - **Scope:** Ophthalmic refraction sheet (OD/OS/OU Sphere, Cylinder, Axis, Add, PD, visual acuity scales), intraocular pressure tonometry with timestamp and method, slit-lamp/funduscopy findings, ENT examination (otoscopy, rhinoscopy, pharyngoscopy), and pure-tone audiometry hearing assessment.

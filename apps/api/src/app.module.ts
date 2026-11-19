@@ -42,6 +42,7 @@ import { ClinicalGovernanceModule } from './clinical-governance/clinical-governa
 import { InteroperabilityModule } from './interoperability/interoperability.module.js';
 import { DentistryModule } from './dentistry/dentistry.module.js';
 import { PediatricsModule } from './pediatrics/pediatrics.module.js';
+import { ObGynModule } from './obgyn/obgyn.module.js';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { PediatricsModule } from './pediatrics/pediatrics.module.js';
     InteroperabilityModule,
     DentistryModule,
     PediatricsModule,
+    ObGynModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],
