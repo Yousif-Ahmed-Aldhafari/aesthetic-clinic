@@ -1,5 +1,44 @@
 # Development setup
 
+## Phase 8.7 final multi-specialty clinical integrity, security & release acceptance
+
+All 45 migrations applied across `lamssa_dev` and `lamssa_test`. Total migrations: 45.
+- Acceptance Verification: Full test suite execution:
+  - `npm test`: 400 unit tests passing (374 API, 26 Web).
+  - `npm run test:db`: 486 database integration tests passing (1 intentional CREATEDB skip).
+  - `npm run test:browser`: 51 browser smoke journeys passing.
+  - `npm run check:boundaries`: Zero boundary violations.
+  - `npm run check:deployment`: Zero deployment invariant violations.
+- Licensing Remediation: Outcome questionnaire text (ODI 2.0, QuickDASH) replaced with international copyright notices and direct score entry calculators in `apps/web/src/features/orthopedics-physiotherapy/FunctionalScalesSection.tsx`.
+- Documentation: `docs/phase-8-final-acceptance.md`, `docs/phase-8-clinical-safety-validation-matrix.md`, and `docs/phase-8-specialty-licensing-inventory.md`.
+
+## Phase 8.6 orthopedics & physiotherapy — examinations, range of motion, rehabilitation & outcome tracking
+
+Apply `20261118000500_orthopedics_physiotherapy` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 45.
+- Migration: `apps/api/prisma/migrations/20261118000500_orthopedics_physiotherapy/migration.sql` creates 4 models: `MusculoskeletalExamination`, `JointRangeOfMotionRecord`, `PhysiotherapyRehabilitationEpisode`, and `PhysiotherapySessionRecord` with `FORCE ROW LEVEL SECURITY`, tenant isolation policies, and database triggers.
+- Backend Module: `apps/api/src/orthopedics-physiotherapy/` providing REST endpoints under `/api/v1/clinics/:clinicId/orthopedics-physiotherapy/`.
+- Frontend Workspace: `apps/web/src/features/orthopedics-physiotherapy/` providing `OrthopedicsPhysiotherapyWorkspace`, goniometer visualizer, and rehabilitation episode management.
+- Test suites: `apps/api/test/orthopedics-physiotherapy-analytics.test.ts` (19 tests), `apps/api/test/orthopedics-physiotherapy.integration.test.ts` (15 tests).
+- Documentation: `docs/orthopedics-and-physiotherapy.md` and `docs/phase-8-step-8-6-acceptance.md`.
+
+## Phase 8.5 ophthalmology & ENT — diagnostics, refraction, tonometry & audiometry
+
+Apply `20261118000400_ophthalmology_ent` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 44.
+- Migration: `apps/api/prisma/migrations/20261118000400_ophthalmology_ent/migration.sql` creates 4 models: `OphthalmicRefractionRecord`, `OphthalmicExaminationRecord`, `EntExaminationRecord`, and `AudiometryAssessmentRecord` under `FORCE ROW LEVEL SECURITY`.
+- Backend Module: `apps/api/src/ophthalmology-ent/` providing REST endpoints under `/api/v1/clinics/:clinicId/ophthalmology-ent/`.
+- Frontend Workspace: `apps/web/src/features/ophthalmology-ent/` providing `OphthalmologyEntWorkspace`, interactive SVG audiogram chart, tonometry screening, and refraction panels.
+- Test suites: `apps/api/test/ophthalmology-ent-analytics.test.ts` (28 tests), `apps/api/test/ophthalmology-ent.integration.test.ts` (16 tests).
+- Documentation: `docs/ophthalmology-and-ent.md` and `docs/phase-8-step-8-5-acceptance.md`.
+
+## Phase 8.4 obstetrics & gynecology — pregnancy episodes, antenatal care & sensitive examinations
+
+Apply `20261118000300_obgyn_antenatal_care` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 43.
+- Migration: `apps/api/prisma/migrations/20261118000300_obgyn_antenatal_care/migration.sql` creates 3 models: `PregnancyEpisode`, `AntenatalVisitRecord`, and `GynecologicalExamination` under `FORCE ROW LEVEL SECURITY`.
+- Backend Module: `apps/api/src/obgyn/` providing REST endpoints under `/api/v1/clinics/:clinicId/obgyn/`.
+- Frontend Workspace: `apps/web/src/features/obgyn/` providing `ObgynWorkspace`, antenatal visit flowsheets, ACOG 700 dating calculators, and confidential gynecological exam documentation.
+- Test suites: `apps/api/test/obgyn-dating.test.ts` (16 tests), `apps/api/test/obgyn.integration.test.ts` (18 tests).
+- Documentation: `docs/obstetrics-and-gynecology.md` and `docs/phase-8-step-8-4-acceptance.md`.
+
 ## Phase 8.3 pediatrics & child health — neonatal records, caregiver authorization, growth analytics & medication safety
 
 Apply `20261118000200_pediatrics_growth_caregiver` with `npm run db:migrate`, `npm run db:migrate:test`, then `npm run db:grant`. Total migrations: 42.

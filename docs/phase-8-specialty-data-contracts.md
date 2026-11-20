@@ -1,11 +1,11 @@
 # Lamssa — Phase 8: Advanced Specialty Clinical Data Contracts
 
-**Version:** 1.0.0  
-**Phase:** Phase 8 — Advanced Medical Specialty Modules  
-**Step:** Step 8.1 — Advanced Specialty Architecture & Clinical Data Contracts  
-**Status:** Canonical Data Specification & API Contracts  
-**Date:** 2026-11-18  
-**Language:** English (Technical Specification) with authentic Arabic clinical metadata  
+**Version:** 1.1.0
+**Phase:** Phase 8 — Advanced Medical Specialty Modules
+**Step:** Step 8.7 — Final Multi-Specialty Clinical Integrity, Security & Release Acceptance
+**Status:** Canonical Data Specification & API Contracts (Implemented in Migrations 041–045 & Verified)
+**Date:** 2026-11-20
+**Language:** English (Technical Specification) with authentic Arabic clinical metadata
 
 ---
 
@@ -680,7 +680,7 @@ model EntExaminationRecord {
   clinicId                    String              @db.Uuid
   patientId                   String              @db.Uuid
   encounterId                 String              @db.Uuid
-  
+
   // Otoscopy
   rightEarCanal               String?             @db.VarChar(255)
   rightTympanicMembrane       String?             @db.VarChar(255) // INTACT, PERFORATION_CENTRAL, EFFUSION
@@ -719,7 +719,7 @@ model AudiometryAssessmentRecord {
   patientId                   String          @db.Uuid
   encounterId                 String          @db.Uuid
   orderId                     String?         @db.Uuid // Links to ClinicalOrder
-  
+
   // Right Ear Air Conduction Thresholds (dB HL at 250, 500, 1000, 2000, 4000, 8000 Hz)
   rightAirThresholdsDb        Int[]           // Array of 6 integer values (-10 to 120 dB)
   leftAirThresholdsDb         Int[]           // Array of 6 integer values (-10 to 120 dB)

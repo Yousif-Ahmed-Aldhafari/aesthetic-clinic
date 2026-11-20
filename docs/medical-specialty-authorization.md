@@ -215,3 +215,16 @@ During the Step 6.6 security audit, the clinical authorization matrix was verifi
 - **Administrative Lockout:** Clinic owners, administrators, receptionists, and accountants are strictly denied access to clinical form responses, diagnoses, vitals, prescriptions, and orders.
 - **Revoked Privilege Enforcement:** Revoking a clinical privilege immediately blocks subsequent signing or finalization attempts.
 - Complete audit evidence detailed in [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).
+
+---
+
+## 11. Phase 8 Specialty Privilege Extension & Release Acceptance
+
+In Phase 8 (Steps 8.1–8.7), the Clinical Privilege Engine was extended to govern all seven advanced outpatient specialties:
+- **Dentistry (`DENTISTRY`):** `DENTAL_ODONTOGRAM_MANAGE`, `DENTAL_PERIODONTAL_MANAGE`, `DENTAL_TREATMENT_STAGE_MANAGE`.
+- **Pediatrics (`PEDIATRICS`):** `PEDIATRIC_BIRTH_HISTORY_MANAGE`, `PEDIATRIC_GROWTH_MANAGE`, `PEDIATRIC_CAREGIVER_MANAGE`.
+- **Obstetrics & Gynecology (`OB_GYN`):** `OBGYN_PREGNANCY_EPISODE_MANAGE`, `OBGYN_ANTENATAL_VISIT_MANAGE`, `OBGYN_SENSITIVE_EXAM_PERFORM`.
+- **Ophthalmology & ENT (`OPHTHALMOLOGY`, `ENT`):** `OPHTHALMIC_REFRACTION_MANAGE`, `OPHTHALMIC_EXAM_PERFORM`, `ENT_EXAM_PERFORM`, `ENT_AUDIOMETRY_MANAGE`.
+- **Orthopedics & Physiotherapy (`ORTHOPEDICS`, `PHYSIOTHERAPY`):** `ORTHOPEDIC_EXAM_PERFORM`, `PHYSIOTHERAPY_PLAN_EXECUTE`, `OUTCOME_SCORE_EVALUATE`.
+
+All specialty privilege gates were audited and verified in Step 8.7 under live PostgreSQL `FORCE ROW LEVEL SECURITY`. See [docs/phase-8-final-acceptance.md](phase-8-final-acceptance.md) and [docs/phase-8-clinical-safety-validation-matrix.md](phase-8-clinical-safety-validation-matrix.md).

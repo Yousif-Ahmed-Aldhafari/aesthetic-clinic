@@ -138,3 +138,12 @@ All clinical governance events are centralized in `AuditEvent` with tamper-evide
 - Category: `CLINICAL` (policies, incidents, reviews) and `SECURITY` (break-glass requests and reviews).
 - High-risk governance mutations emit structured JSON logs with IP masking and zero exposure of confidential clinical text.
 - FORCE Row Level Security is active on all 6 governance tables with strict clinic tenant isolation (`lamssa_security.context_allows("clinicId")`).
+
+---
+
+## 7. Phase 8 Multi-Specialty Clinical Decision Support Governance
+
+In Phase 8, the clinical governance framework was extended to oversee all specialty-specific algorithmic rules and clinical decision support systems:
+1. **Clinical Decision Support Validation:** Detailed in [docs/phase-8-clinical-safety-validation-matrix.md](phase-8-clinical-safety-validation-matrix.md).
+2. **Mandatory Production Credentialing Gate:** Live clinical use of automated decision support rules (ACOG 700 obstetric dating, WHO 2006 pediatric growth, pediatric drug contraindications, IOP/CDR ophthalmic alerting, ISO 8253-1 audiometry, and AAOS goniometry) is gated on written ratification by the clinic's Medical Director.
+3. **Independent Release Acceptance:** Verified in [docs/phase-8-final-acceptance.md](phase-8-final-acceptance.md).

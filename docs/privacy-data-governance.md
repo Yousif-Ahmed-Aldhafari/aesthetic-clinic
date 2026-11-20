@@ -329,3 +329,22 @@ All automated verification gates for Step 2.3 passed cleanly:
   - Reading an encounter under break-glass emits `clinical.break-glass.encounter.read` recording the patient, author, encounter status, and reader.
   - Listing patient encounters under break-glass emits `clinical.break-glass.encounters.listed`.
   - All break-glass read actions are tamper-evidently linked to the requesting practitioner and subject to mandatory Medical Director review (`break_glass_guard`). See [docs/clinical-governance-and-safety.md](clinical-governance-and-safety.md) and [docs/phase-7-final-acceptance.md](phase-7-final-acceptance.md).
+
+---
+
+## 13. Phase 8 Advanced Specialty Data Privacy & Governance
+
+### 13.1 Sensitive Examination & Gynecological Privacy (Step 8.4)
+- Gynecological and intimate physical examination findings are classified as `HIGHLY_SENSITIVE_CLINICAL`.
+- Multi-tier access control: non-privileged residents and general clinic staff receive redacted views omitting intimate anatomical findings. Direct unprivileged retrieval fails closed with `403 Forbidden`.
+- Finalized records are sealed with database immutability triggers rejecting in-place modification.
+
+### 13.2 Pediatric Custody & Caregiver Authorization Governance (Step 8.3)
+- Child patient records are governed by `PatientCaregiverRelationship`.
+- Strict legal custody and consent scopes: emergency contacts, medical consent authorities, and patient portal proxy access are distinctly separated.
+- Revoking caregiver authorization immediately cuts off portal proxy access and legal consent authority.
+
+### 13.3 Intellectual Property & Clinical Questionnaire Governance (Step 8.7)
+- In compliance with international intellectual property laws, verbatim proprietary questionnaire items (ODI 2.0 and QuickDASH) are excluded from repository assets.
+- Licensed clinical facilities enter numerical section and item scores directly into mathematical scoring calculators without transmitting unlicensed proprietary text.
+- All 19 Phase 8 specialty models enforce PostgreSQL `FORCE ROW LEVEL SECURITY` with non-nullable `clinicId` foreign keys and zero `DELETE`/`TRUNCATE` runtime role permissions. See [docs/phase-8-final-acceptance.md](phase-8-final-acceptance.md) and [docs/phase-8-specialty-licensing-inventory.md](phase-8-specialty-licensing-inventory.md).
