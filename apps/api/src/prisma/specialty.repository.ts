@@ -896,7 +896,7 @@ export class SpecialtyRepository {
     params: {
       practitionerMembershipId: string;
       specialtyCode: string;
-      privilegeCode: ClinicalPrivilegeCode;
+      privilegeCode?: ClinicalPrivilegeCode;
       branchId?: string | null;
       isAestheticExecution?: boolean;
     },
@@ -981,6 +981,11 @@ export class SpecialtyRepository {
 
       if (qualification.expirationDate && qualification.expirationDate <= now) {
         return { allowed: false, reason: 'Specialty qualification credential has expired' };
+      }
+
+      // If no specific clinical privilege is required (e.g. read-only queries with verified qualification), allow
+      if (!params.privilegeCode) {
+        return { allowed: true };
       }
 
       // Step 7: Active, Approved Clinical Privilege

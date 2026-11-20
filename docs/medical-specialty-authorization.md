@@ -120,6 +120,19 @@ The authorization engine evaluates 8 mandatory gates before granting access to c
 | `CLINICAL_PROCEDURE_PERFORM` | Perform surgical/invasive procedures | Executing clinical and invasive procedures |
 | `MEDICATION_ADMINISTER` | Administer medications | Administering prescribed therapeutic injections |
 | `SEDATION_ADMINISTER` | Administer sedation | Procedural sedation and local anesthesia |
+| `DENTAL_EXAMINATION_RECORD` | Record dental examination | Recording and finalizing dental odontograms and periodontal charts |
+| `DENTAL_PROCEDURE_PLAN` | Plan dental procedures | Proposing staged dental treatment plans |
+| `DENTAL_PROCEDURE_APPROVE` | Approve dental treatment plans | Approving staged dental treatment plans |
+| `DENTAL_PROCEDURE_PERFORM` | Perform dental procedures | Performing and completing dental treatment stages and consuming supplies |
+| `PEDIATRIC_CARE_DOCUMENT` | Document pediatric care | Documenting pediatric consultation notes and treatment records |
+| `PEDIATRIC_GROWTH_RECORD` | Record pediatric growth | Recording and entering in error pediatric anthropometric measurements |
+| `PEDIATRIC_GROWTH_REVIEW` | Review pediatric growth | Reviewing and certifying longitudinal growth trajectories and WHO LMS percentiles |
+| `PEDIATRIC_BIRTH_HISTORY_VERIFY` | Verify neonatal birth history | Recording, certifying, and amending neonatal birth and perinatal history records |
+| `ANTENATAL_CARE_DOCUMENT` | Document antenatal care | Documenting longitudinal pregnancy episodes, flowsheet visits, and maternal observations |
+| `OBSTETRIC_DATING_REVIEW` | Review pregnancy dating | Reviewing ultrasound vs LMP discrepancies and signing off on confirmed EDD |
+| `OBSTETRIC_EPISODE_FINALIZE` | Finalize pregnancy episodes | Formally finalizing completed or terminated pregnancy episodes |
+| `GYNECOLOGICAL_EXAM_PERFORM` | Perform gynecological exams | Conducting and recording confidential intimate gynecological examinations |
+| `GYNECOLOGICAL_RECORD_REVIEW` | Review gynecological records | Accessing unredacted confidential gynecological records and findings |
 
 ---
 
@@ -202,3 +215,16 @@ During the Step 6.6 security audit, the clinical authorization matrix was verifi
 - **Administrative Lockout:** Clinic owners, administrators, receptionists, and accountants are strictly denied access to clinical form responses, diagnoses, vitals, prescriptions, and orders.
 - **Revoked Privilege Enforcement:** Revoking a clinical privilege immediately blocks subsequent signing or finalization attempts.
 - Complete audit evidence detailed in [docs/phase-6-final-acceptance.md](phase-6-final-acceptance.md).
+
+---
+
+## 11. Phase 8 Specialty Privilege Extension & Release Acceptance
+
+In Phase 8 (Steps 8.1–8.7), the Clinical Privilege Engine was extended to govern all seven advanced outpatient specialties:
+- **Dentistry (`DENTISTRY`):** `DENTAL_ODONTOGRAM_MANAGE`, `DENTAL_PERIODONTAL_MANAGE`, `DENTAL_TREATMENT_STAGE_MANAGE`.
+- **Pediatrics (`PEDIATRICS`):** `PEDIATRIC_BIRTH_HISTORY_MANAGE`, `PEDIATRIC_GROWTH_MANAGE`, `PEDIATRIC_CAREGIVER_MANAGE`.
+- **Obstetrics & Gynecology (`OB_GYN`):** `OBGYN_PREGNANCY_EPISODE_MANAGE`, `OBGYN_ANTENATAL_VISIT_MANAGE`, `OBGYN_SENSITIVE_EXAM_PERFORM`.
+- **Ophthalmology & ENT (`OPHTHALMOLOGY`, `ENT`):** `OPHTHALMIC_REFRACTION_MANAGE`, `OPHTHALMIC_EXAM_PERFORM`, `ENT_EXAM_PERFORM`, `ENT_AUDIOMETRY_MANAGE`.
+- **Orthopedics & Physiotherapy (`ORTHOPEDICS`, `PHYSIOTHERAPY`):** `ORTHOPEDIC_EXAM_PERFORM`, `PHYSIOTHERAPY_PLAN_EXECUTE`, `OUTCOME_SCORE_EVALUATE`.
+
+All specialty privilege gates were audited and verified in Step 8.7 under live PostgreSQL `FORCE ROW LEVEL SECURITY`. See [docs/phase-8-final-acceptance.md](phase-8-final-acceptance.md) and [docs/phase-8-clinical-safety-validation-matrix.md](phase-8-clinical-safety-validation-matrix.md).

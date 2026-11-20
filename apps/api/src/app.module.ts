@@ -40,6 +40,11 @@ import { ClinicalFormsModule } from './clinical-forms/clinical-forms.module.js';
 import { KmsModule } from './kms/kms.module.js';
 import { ClinicalGovernanceModule } from './clinical-governance/clinical-governance.module.js';
 import { InteroperabilityModule } from './interoperability/interoperability.module.js';
+import { DentistryModule } from './dentistry/dentistry.module.js';
+import { PediatricsModule } from './pediatrics/pediatrics.module.js';
+import { ObGynModule } from './obgyn/obgyn.module.js';
+import { OphthalmologyEntModule } from './ophthalmology-ent/ophthalmology-ent.module.js';
+import { OrthopedicsPhysiotherapyModule } from './orthopedics-physiotherapy/orthopedics-physiotherapy.module.js';
 
 @Module({
   imports: [
@@ -68,6 +73,11 @@ import { InteroperabilityModule } from './interoperability/interoperability.modu
     KmsModule,
     ClinicalGovernanceModule,
     InteroperabilityModule,
+    DentistryModule,
+    PediatricsModule,
+    ObGynModule,
+    OphthalmologyEntModule,
+    OrthopedicsPhysiotherapyModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],
