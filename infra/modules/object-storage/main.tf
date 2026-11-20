@@ -1,108 +1,98 @@
-# Object Storage Module — Encrypted S3/GCS Buckets, Object Lock WORM, and Private Access
+# Google Cloud Object Storage Module — Encrypted Buckets, Bucket Lock (WORM), CMEK
 
 terraform {
   required_version = ">= 1.8.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.50"
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.30.0"
     }
   }
 }
 
 # 1. Clinical Media & Documents Bucket
-resource "aws_s3_bucket" "clinical_assets" {
-  bucket        = "${var.environment}-lamssa-clinical-assets-${var.account_id}"
-  force_destroy = var.environment == "development" ? true : false
+resource "google_storage_bucket" "clinical_assets" {
+  name                        = "${var.environment}-lamssa-clinical-assets-${var.project_id}"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
 
-  # Enable Object Lock for WORM legal holds
-  object_lock_enabled = true
+  encryption {
+    default_kms_key_name = var.kms_key_name
+  }
 
-  tags = merge(var.tags, {
-    Environment = var.environment
-    DataTier    = "RestrictedClinicalMedia"
+  versioning {
+    enabled = true
+  }
+
+  retention_policy {
+    is_locked        = var.environment == "production" ? true : false
+    retention_period = 315360000 # 10 years (3650 days) in seconds
+  }
+
+  labels = merge(var.tags, {
+    environment = var.environment
+    tier        = "clinical-media"
   })
-}
 
-resource "aws_s3_bucket_public_access_block" "clinical_assets" {
-  bucket = aws_s3_bucket.clinical_assets.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "clinical_assets" {
-  bucket = aws_s3_bucket.clinical_assets.id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      kms_master_key_id = var.kms_key_arn
-      sse_algorithm     = "aws:kms"
-    }
-    bucket_key_enabled = true
-  }
-}
-
-resource "aws_s3_bucket_versioning" "clinical_assets" {
-  bucket = aws_s3_bucket.clinical_assets.id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-# 2. Immutable Disaster Recovery Backups Bucket
-resource "aws_s3_bucket" "dr_backups" {
-  bucket        = "${var.environment}-lamssa-dr-backups-${var.account_id}"
   force_destroy = var.environment == "development" ? true : false
+}
 
-  object_lock_enabled = true
+# 2. Immutable Audit & Financial Event Logs Bucket
+resource "google_storage_bucket" "audit_archives" {
+  name                        = "${var.environment}-lamssa-audit-archives-${var.project_id}"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
 
-  tags = merge(var.tags, {
-    Environment = var.environment
-    DataTier    = "DisasterRecoveryBackups"
+  encryption {
+    default_kms_key_name = var.kms_key_name
+  }
+
+  versioning {
+    enabled = true
+  }
+
+  retention_policy {
+    is_locked        = var.environment == "production" ? true : false
+    retention_period = 315360000 # 10 years
+  }
+
+  labels = merge(var.tags, {
+    environment = var.environment
+    tier        = "audit-archives"
   })
+
+  force_destroy = var.environment == "development" ? true : false
 }
 
-resource "aws_s3_bucket_public_access_block" "dr_backups" {
-  bucket = aws_s3_bucket.dr_backups.id
+# 3. Encrypted Disaster Recovery Database Backups Bucket
+resource "google_storage_bucket" "backup_vault" {
+  name                        = "${var.environment}-lamssa-backup-vault-${var.project_id}"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
 
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "dr_backups" {
-  bucket = aws_s3_bucket.dr_backups.id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      kms_master_key_id = var.kms_key_arn
-      sse_algorithm     = "aws:kms"
-    }
-    bucket_key_enabled = true
+  encryption {
+    default_kms_key_name = var.kms_key_name
   }
-}
 
-resource "aws_s3_bucket_versioning" "dr_backups" {
-  bucket = aws_s3_bucket.dr_backups.id
-
-  versioning_configuration {
-    status = "Enabled"
+  versioning {
+    enabled = true
   }
-}
 
-resource "aws_s3_bucket_object_lock_configuration" "dr_backups" {
-  count  = var.environment == "production" ? 1 : 0
-  bucket = aws_s3_bucket.dr_backups.id
-
-  rule {
-    default_retention {
-      mode = "COMPLIANCE" # Cannot be bypassed by any cloud administrator
-      days = var.backup_worm_retention_days
-    }
+  retention_policy {
+    is_locked        = var.environment == "production" ? true : false
+    retention_period = 2592000 # 30 days
   }
+
+  labels = merge(var.tags, {
+    environment = var.environment
+    tier        = "dr-backups"
+  })
+
+  force_destroy = var.environment == "development" ? true : false
 }

@@ -1,29 +1,38 @@
+variable "environment" {
+  type    = string
+  default = "production"
+}
+
 variable "region" {
   type        = string
-  description = "Target in-country sovereign region"
-  default     = "me-central2" # Dammam, Saudi Arabia
+  description = "Target Google Cloud region: Dammam, Saudi Arabia"
+  default     = "me-central2"
 }
 
-variable "vpc_cidr" {
+variable "project_id" {
   type        = string
-  description = "VPC CIDR block"
-  default     = "10.200.0.0/16"
+  description = "Google Cloud Project ID for Production"
+  default     = "lamssa-production-sa"
 }
 
-variable "availability_zones" {
-  type        = list(string)
-  description = "Availability Zones list"
-  default     = ["me-central2a", "me-central2b", "me-central2c"]
+variable "app_db_password" {
+  type      = string
+  sensitive = true
+  default   = "PROD_APP_PLACEHOLDER_SET_VIA_ENV"
 }
 
-variable "db_instance_class" {
-  type        = string
-  description = "Database instance class"
-  default     = "db.r6g.xlarge"
+variable "migrator_db_password" {
+  type      = string
+  sensitive = true
+  default   = "PROD_MIGRATOR_PLACEHOLDER_SET_VIA_ENV"
+}
+
+variable "alert_email" {
+  type    = string
+  default = "sre-prod@lamssa.sa"
 }
 
 variable "tags" {
-  type        = map(string)
-  description = "Resource tags"
-  default     = {}
+  type    = map(string)
+  default = {}
 }

@@ -1,130 +1,109 @@
-# Production Environment — Main Orchestration
+# Production Environment — Main Google Cloud Orchestration (me-central2 / Dammam, Saudi Arabia)
 
 terraform {
   required_version = ">= 1.8.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.50"
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.30.0"
     }
   }
 
-  backend "s3" {
-    bucket         = "lamssa-prod-tfstate"
-    key            = "production/terraform.tfstate"
-    region         = "me-central2" # In-country region: Dammam, Saudi Arabia
-    encrypt        = true
-    dynamodb_table = "lamssa-prod-tflock"
+  backend "gcs" {
+    bucket = "lamssa-prod-tfstate"
+    prefix = "production"
   }
 }
 
-provider "aws" {
-  region = var.region
+provider "google" {
+  project = var.project_id
+  region  = var.region
 
-  default_tags {
-    tags = {
-      Project     = "Lamssa"
-      Environment = "production"
-      ManagedBy   = "OpenTofu"
-      Compliance  = "Saudi-PDPL-NCA-ECC"
-    }
+  default_labels = {
+    project     = "lamssa"
+    environment = "production"
+    managed_by  = "opentofu"
+    compliance  = "saudi-pdpl-moh"
   }
 }
 
-data "aws_caller_identity" "current" {}
-
-# 1. KMS Root Keys
+# 1. KMS Root Keys (KeyRing and Cloud HSM KEKs)
 module "kms" {
   source      = "../../modules/kms"
   environment = "production"
+  region      = var.region
   tags        = var.tags
 }
 
-# 2. Multi-AZ Isolated Networking
+# 2. Multi-Zone Zero-Trust VPC Networking & Cloud NAT
 module "networking" {
-  source             = "../../modules/networking"
-  environment        = "production"
-  region             = var.region
-  vpc_cidr           = var.vpc_cidr
-  availability_zones = var.availability_zones
-  tags               = var.tags
-}
-
-# 3. Encrypted Object Storage with Object Lock WORM
-module "object_storage" {
-  source                     = "../../modules/object-storage"
-  environment                = "production"
-  account_id                 = data.aws_caller_identity.current.account_id
-  kms_key_arn                = module.kms.object_storage_kms_key_arn
-  backup_worm_retention_days = 30
-  tags                       = var.tags
-}
-
-# 4. Secrets Containers
-module "secrets" {
-  source      = "../../modules/secrets"
+  source      = "../../modules/networking"
   environment = "production"
-  kms_key_arn = module.kms.database_kms_key_arn
+  region      = var.region
   tags        = var.tags
 }
 
-# 5. Multi-AZ PostgreSQL HA Cluster
-module "postgres" {
-  source                     = "../../modules/postgres"
-  environment                = "production"
-  database_subnet_ids        = module.networking.database_subnet_ids
-  database_security_group_id = module.networking.database_security_group_id
-  kms_key_arn                = module.kms.database_kms_key_arn
-  instance_class             = var.db_instance_class
-  allocated_storage_gb       = 100
-  max_allocated_storage_gb   = 1000
-  enable_multi_az            = true
-  backup_retention_days      = 30
-  admin_password_secret_ref  = "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:production/lamssa/database/admin_password"
-  tags                       = var.tags
+# 3. Encrypted Clinical & Audit Object Storage (CMEK & WORM Bucket Lock)
+module "object_storage" {
+  source       = "../../modules/object-storage"
+  environment  = "production"
+  region       = var.region
+  project_id   = var.project_id
+  kms_key_name = module.kms.clinical_assets_kek_name
+  tags         = var.tags
 }
 
-# 6. Kubernetes Cluster
-module "kubernetes" {
-  source                    = "../../modules/kubernetes"
-  environment               = "production"
-  kubernetes_version        = "1.30"
-  subnet_ids                = module.networking.application_subnet_ids
-  cluster_security_group_id = module.networking.app_compute_security_group_id
-  cluster_role_arn          = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/lamssa-prod-eks-cluster-role"
-  node_role_arn             = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/lamssa-prod-eks-node-role"
-  enable_public_api_endpoint = false # Private control plane
-  node_instance_types       = ["m6i.xlarge"]
-  node_desired_count        = 4
-  node_min_count            = 3
-  node_max_count            = 12
-  tags                      = var.tags
+# 4. Secret Manager Secrets (CMEK-Encrypted)
+module "secrets" {
+  source       = "../../modules/secrets"
+  environment  = "production"
+  region       = var.region
+  kms_key_name = module.kms.secrets_kek_name
+  tags         = var.tags
 }
 
-# 7. Workload Identity & Least Privilege IAM
+# 5. Dedicated Workload Identity IAM & Least Privilege Service Accounts
 module "iam" {
-  source                     = "../../modules/iam"
-  environment                = "production"
-  oidc_provider_arn          = module.kubernetes.oidc_provider_arn
-  oidc_issuer                = module.kubernetes.oidc_issuer
-  clinical_assets_bucket_arn = module.object_storage.clinical_assets_bucket_arn
-  clinical_media_kms_key_arn = module.kms.clinical_media_kms_key_arn
-  runtime_secret_arns = [
-    module.secrets.app_db_password_secret_arn,
-    module.secrets.auth_csrf_secret_arn,
-    module.secrets.mfa_encryption_key_arn,
-    module.secrets.clinical_media_key_arn,
-    module.secrets.metrics_secret_key_arn
-  ]
-  migrator_secret_arn = module.secrets.migrator_db_password_secret_arn
-  tags                = var.tags
+  source                      = "../../modules/iam"
+  environment                 = "production"
+  project_id                  = var.project_id
+  clinical_assets_kek_name    = module.kms.clinical_assets_kek_name
+  clinical_assets_bucket_name = module.object_storage.clinical_assets_bucket_name
 }
 
-# 8. Monitoring & Telemetry
+# 6. Multi-Zone High Availability Cloud SQL PostgreSQL 16
+module "postgres" {
+  source                = "../../modules/postgres"
+  environment           = "production"
+  region                = var.region
+  network_id            = module.networking.network_id
+  private_connection_id = module.networking.private_connection_id
+  kms_key_name          = module.kms.database_kek_name
+  allocated_storage_gb  = 100
+  app_password          = var.app_db_password
+  migrator_password     = var.migrator_db_password
+  tags                  = var.tags
+}
+
+# 7. Private GKE Cluster & Node Pools with Calico Network Policies
+module "kubernetes" {
+  source               = "../../modules/kubernetes"
+  environment          = "production"
+  region               = var.region
+  project_id           = var.project_id
+  network_id           = module.networking.network_id
+  app_subnet_id        = module.networking.app_subnet_id
+  kms_key_name         = module.kms.secrets_kek_name
+  node_service_account = module.iam.gke_nodes_service_account_email
+  min_node_count       = 3
+  max_node_count       = 12
+}
+
+# 8. Observability & Centralized Audit Log Sink
 module "monitoring" {
-  source             = "../../modules/monitoring"
-  environment        = "production"
-  kms_key_arn        = module.kms.database_kms_key_arn
-  log_retention_days = 90
-  tags               = var.tags
+  source            = "../../modules/monitoring"
+  environment       = "production"
+  alert_email       = var.alert_email
+  audit_bucket_name = module.object_storage.audit_archives_bucket_name
+  tags              = var.tags
 }

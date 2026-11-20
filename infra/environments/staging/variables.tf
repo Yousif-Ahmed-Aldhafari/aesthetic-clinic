@@ -1,29 +1,38 @@
+variable "environment" {
+  type    = string
+  default = "staging"
+}
+
 variable "region" {
   type        = string
-  description = "Target in-country sovereign region"
+  description = "Target Google Cloud region: Dammam, Saudi Arabia"
   default     = "me-central2"
 }
 
-variable "vpc_cidr" {
+variable "project_id" {
   type        = string
-  description = "VPC CIDR block"
-  default     = "10.100.0.0/16"
+  description = "Google Cloud Project ID for Staging"
+  default     = "lamssa-staging-sa"
 }
 
-variable "availability_zones" {
-  type        = list(string)
-  description = "Availability Zones list"
-  default     = ["me-central2a", "me-central2b"]
+variable "app_db_password" {
+  type      = string
+  sensitive = true
+  default   = "STAGING_APP_PLACEHOLDER_SET_VIA_ENV"
 }
 
-variable "db_instance_class" {
-  type        = string
-  description = "Database instance class"
-  default     = "db.t4g.large"
+variable "migrator_db_password" {
+  type      = string
+  sensitive = true
+  default   = "STAGING_MIGRATOR_PLACEHOLDER_SET_VIA_ENV"
+}
+
+variable "alert_email" {
+  type    = string
+  default = "sre-staging@lamssa.sa"
 }
 
 variable "tags" {
-  type        = map(string)
-  description = "Resource tags"
-  default     = {}
+  type    = map(string)
+  default = {}
 }

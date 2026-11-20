@@ -1,49 +1,51 @@
-# Monitoring Module — Telemetry Log Groups, Metrics Alarms, and Notification Topics
+# Google Cloud Monitoring Module — Alert Policies & Audit Log Routing
 
 terraform {
   required_version = ">= 1.8.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.50"
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.30.0"
     }
   }
 }
 
-resource "aws_cloudwatch_log_group" "api_logs" {
-  name              = "/lamssa/${var.environment}/api"
-  retention_in_days = var.log_retention_days
-  kms_key_id        = var.kms_key_arn
+resource "google_monitoring_notification_channel" "pager" {
+  display_name = "Lamssa On-Call Alert Notification (${var.environment})"
+  type         = "email"
 
-  tags = var.tags
+  labels = {
+    email_address = var.alert_email
+  }
 }
 
-resource "aws_cloudwatch_log_group" "audit_logs" {
-  name              = "/lamssa/${var.environment}/audit-trail"
-  retention_in_days = 3650 # 10 years for statutory compliance
-  kms_key_id        = var.kms_key_arn
+# Alert on High HTTP 5xx Error Rate
+resource "google_monitoring_alert_policy" "high_error_rate" {
+  display_name = "${var.environment}-lamssa-high-5xx-rate"
+  combiner     = "OR"
 
-  tags = var.tags
+  conditions {
+    display_name = "HTTP 5xx error rate > 1%"
+    condition_threshold {
+      filter          = "resource.type = \"k8s_container\" AND metric.type = \"logging.googleapis.com/user/http_5xx_count\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0.01
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_RATE"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.pager.name]
 }
 
-resource "aws_sns_topic" "alerts_critical" {
-  name              = "${var.environment}-lamssa-critical-alerts"
-  kms_master_key_id = var.kms_key_arn
+# Audit Log Sink routing to Audit Storage Bucket
+resource "google_logging_project_sink" "audit_sink" {
+  name        = "${var.environment}-lamssa-audit-sink"
+  destination = "storage.googleapis.com/${var.audit_bucket_name}"
+  filter      = "logName:\"logs/cloudaudit.googleapis.com\""
 
-  tags = var.tags
-}
-
-resource "aws_cloudwatch_metric_alarm" "high_5xx_errors" {
-  alarm_name          = "${var.environment}-high-5xx-error-rate"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "5XXError"
-  namespace           = "AWS/ApplicationELB"
-  period              = 60
-  statistic           = "Sum"
-  threshold           = 10
-  alarm_description   = "Triggered when 5xx internal server errors exceed threshold"
-  alarm_actions       = [aws_sns_topic.alerts_critical.arn]
-
-  tags = var.tags
+  unique_writer_identity = true
 }

@@ -1,14 +1,15 @@
-output "database_kms_key_arn" {
-  value       = aws_kms_key.database.arn
-  description = "ARN of KMS key for PostgreSQL database storage encryption"
+output "key_ring_id" {
+  value = google_kms_key_ring.main.id
 }
 
-output "clinical_media_kms_key_arn" {
-  value       = aws_kms_key.clinical_media.arn
-  description = "ARN of KMS key for clinical media envelope encryption"
+output "database_kek_name" {
+  value = google_kms_crypto_key.database_kek.id
 }
 
-output "object_storage_kms_key_arn" {
-  value       = aws_kms_key.object_storage.arn
-  description = "ARN of KMS key for S3 bucket server-side encryption"
+output "clinical_assets_kek_name" {
+  value = google_kms_crypto_key.clinical_assets_kek.id
+}
+
+output "secrets_kek_name" {
+  value = google_kms_crypto_key.secrets_kek.id
 }

@@ -1,21 +1,17 @@
 variable "environment" {
-  type        = string
-  description = "Target deployment environment"
+  type = string
 }
 
-variable "kms_key_arn" {
-  type        = string
-  description = "Customer Managed KMS Key ARN for log encryption"
+variable "alert_email" {
+  type    = string
+  default = "sre-alerts@lamssa.internal"
 }
 
-variable "log_retention_days" {
-  type        = number
-  description = "Operational log retention period in days"
-  default     = 90
+variable "audit_bucket_name" {
+  type = string
 }
 
 variable "tags" {
-  type        = map(string)
-  description = "Resource tags"
-  default     = {}
+  type    = map(string)
+  default = {}
 }

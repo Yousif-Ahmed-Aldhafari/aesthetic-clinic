@@ -1,15 +1,17 @@
 variable "environment" {
-  type        = string
-  description = "Target deployment environment"
+  type = string
 }
 
-variable "kms_key_arn" {
-  type        = string
-  description = "Customer Managed KMS Key ARN for secret encryption"
+variable "region" {
+  type    = string
+  default = "me-central2"
+}
+
+variable "kms_key_name" {
+  type = string
 }
 
 variable "tags" {
-  type        = map(string)
-  description = "Resource tags"
-  default     = {}
+  type    = map(string)
+  default = {}
 }

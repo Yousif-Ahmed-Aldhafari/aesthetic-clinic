@@ -1,10 +1,13 @@
 variable "environment" {
-  type        = string
-  description = "Target deployment environment"
+  type = string
+}
+
+variable "region" {
+  type    = string
+  default = "me-central2"
 }
 
 variable "tags" {
-  type        = map(string)
-  description = "Resource tags"
-  default     = {}
+  type    = map(string)
+  default = {}
 }

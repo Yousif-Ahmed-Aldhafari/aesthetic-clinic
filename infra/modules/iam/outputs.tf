@@ -1,9 +1,11 @@
-output "api_runtime_role_arn" {
-  value       = aws_iam_role.api_runtime.arn
-  description = "IAM Role ARN for API runtime service account"
+output "api_service_account_email" {
+  value = google_service_account.api_sa.email
 }
 
-output "migration_runner_role_arn" {
-  value       = aws_iam_role.migration_runner.arn
-  description = "IAM Role ARN for database migration service account"
+output "migrator_service_account_email" {
+  value = google_service_account.migrator_sa.email
+}
+
+output "gke_nodes_service_account_email" {
+  value = google_service_account.gke_nodes_sa.email
 }

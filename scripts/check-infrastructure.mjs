@@ -13,7 +13,7 @@ function pass(msg) {
   console.info(`\x1b[32m[PASS]\x1b[0m ${msg}`);
 }
 
-console.info('=== Lamssa Phase 9 Step 9.2: Infrastructure & Kubernetes Policy-as-Code Validator ===\n');
+console.info('=== Lamssa Phase 9 Step 9.3: Infrastructure & Kubernetes Policy-as-Code Validator ===\n');
 
 // 1. Audit IaC Module Structure
 const expectedModules = [
@@ -45,31 +45,37 @@ for (const env of expectedEnvs) {
 }
 pass('All 3 environments (development, staging, production) are configured');
 
-// 3. Security Policy-as-Code: OpenTofu Database Security Invariants
+// 3. Security Policy-as-Code: Google Cloud PostgreSQL Security Invariants
 const postgresMain = readFileSync(resolve(root, 'infra/modules/postgres/main.tf'), 'utf8');
-if (!postgresMain.includes('publicly_accessible         = false')) {
-  fail('PostgreSQL module MUST enforce publicly_accessible = false');
+if (!postgresMain.includes('ipv4_enabled                                  = false')) {
+  fail('PostgreSQL module MUST enforce private IP only (ipv4_enabled = false)');
 }
-if (!postgresMain.includes('storage_encrypted           = true')) {
-  fail('PostgreSQL module MUST enforce storage_encrypted = true');
+if (!postgresMain.includes('require_ssl                                   = true') || !postgresMain.includes('ENCRYPTED_ONLY')) {
+  fail('PostgreSQL module MUST enforce require_ssl = true and ssl_mode = ENCRYPTED_ONLY');
 }
-if (!postgresMain.includes('rds.force_ssl') || !postgresMain.includes('scram-sha-256')) {
-  fail('PostgreSQL parameter group MUST enforce SSL and scram-sha-256');
+if (!postgresMain.includes('scram-sha-256')) {
+  fail('PostgreSQL database flags MUST enforce scram-sha-256 password encryption');
 }
-pass('PostgreSQL module strictly enforces private access, storage encryption, SSL, and SCRAM-SHA-256');
+if (!postgresMain.includes('encryption_key_name = var.kms_key_name')) {
+  fail('PostgreSQL module MUST enforce CMEK disk encryption');
+}
+pass('PostgreSQL Cloud SQL module strictly enforces private IP, storage CMEK, SSL, and SCRAM-SHA-256');
 
-// 4. Security Policy-as-Code: S3 Object Storage Invariants
+// 4. Security Policy-as-Code: Google Cloud Storage Object Storage Invariants
 const storageMain = readFileSync(resolve(root, 'infra/modules/object-storage/main.tf'), 'utf8');
-if (!storageMain.includes('block_public_acls       = true') || !storageMain.includes('restrict_public_buckets = true')) {
-  fail('Object storage module MUST enforce strict public access blocks');
+if (!storageMain.includes('public_access_prevention    = "enforced"')) {
+  fail('Object storage module MUST enforce public_access_prevention = "enforced"');
 }
-if (!storageMain.includes('sse_algorithm     = "aws:kms"')) {
-  fail('Object storage module MUST enforce SSE-KMS with Customer Managed Key');
+if (!storageMain.includes('uniform_bucket_level_access = true')) {
+  fail('Object storage module MUST enforce uniform_bucket_level_access = true');
 }
-if (!storageMain.includes('object_lock_enabled = true')) {
-  fail('Object storage module MUST enable Object Lock for WORM immutability');
+if (!storageMain.includes('default_kms_key_name = var.kms_key_name')) {
+  fail('Object storage module MUST enforce CMEK encryption with Customer Managed Key');
 }
-pass('Object storage module enforces public access blocks, SSE-KMS, and Object Lock WORM');
+if (!storageMain.includes('retention_policy') || !storageMain.includes('is_locked')) {
+  fail('Object storage module MUST enforce Bucket Lock for WORM immutability');
+}
+pass('Object storage module enforces public access prevention, uniform access, CMEK, and Bucket Lock WORM');
 
 // 5. Security Policy-as-Code: Cloud Region Invariants
 const prodTfvars = readFileSync(resolve(root, 'infra/environments/production/terraform.tfvars'), 'utf8');

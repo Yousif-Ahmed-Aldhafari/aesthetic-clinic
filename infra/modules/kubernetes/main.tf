@@ -1,71 +1,109 @@
-# Kubernetes Module — Private Cluster, Node Groups, OIDC, and Pod Security
+# Google Cloud Kubernetes Module — Private GKE Cluster, Node Pools, Workload Identity
 
 terraform {
   required_version = ">= 1.8.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.50"
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.30.0"
     }
   }
 }
 
-resource "aws_eks_cluster" "cluster" {
-  name     = "${var.environment}-lamssa-k8s"
-  role_arn = var.cluster_role_arn
-  version  = var.kubernetes_version
+resource "google_container_cluster" "primary" {
+  name     = "${var.environment}-lamssa-gke"
+  location = var.region
 
-  vpc_config {
-    subnet_ids              = var.subnet_ids
-    security_group_ids      = [var.cluster_security_group_id]
-    endpoint_private_access = true
-    endpoint_public_access  = var.enable_public_api_endpoint
-    public_access_cidrs     = var.allowed_management_cidrs
+  network    = var.network_id
+  subnetwork = var.app_subnet_id
+
+  remove_default_node_pool = true
+  initial_node_count       = 1
+
+  ip_allocation_policy {
+    cluster_secondary_range_name  = "gke-pods"
+    services_secondary_range_name = "gke-services"
   }
 
-  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
-
-  tags = merge(var.tags, {
-    Environment = var.environment
-    Compliance  = "Healthcare-NCA-ECC"
-  })
-}
-
-resource "aws_eks_node_group" "app_nodes" {
-  cluster_name    = aws_eks_cluster.cluster.name
-  node_group_name = "${var.environment}-lamssa-app-nodes"
-  node_role_arn   = var.node_role_arn
-  subnet_ids      = var.subnet_ids
-
-  scaling_config {
-    desired_size = var.node_desired_count
-    max_size     = var.node_max_count
-    min_size     = var.node_min_count
+  private_cluster_config {
+    enable_private_nodes    = true
+    enable_private_endpoint = true
+    master_ipv4_cidr_block  = var.master_ipv4_cidr
   }
 
-  instance_types = var.node_instance_types
-  capacity_type  = "ON_DEMAND"
-
-  # Enforce encrypted EBS root volumes for nodes
-  disk_size = var.node_disk_size_gb
-
-  labels = {
-    Environment = var.environment
-    Workload    = "StatelessApp"
+  master_authorized_networks_config {
+    dynamic "cidr_blocks" {
+      for_each = var.allowed_management_cidrs
+      content {
+        cidr_block   = cidr_blocks.value
+        display_name = "management-allowlist"
+      }
+    }
   }
 
-  tags = var.tags
+  workload_identity_config {
+    workload_pool = "${var.project_id}.svc.id.goog"
+  }
+
+  network_policy {
+    enabled  = true
+    provider = "CALICO"
+  }
+
+  addons_config {
+    network_policy_config {
+      disabled = false
+    }
+    http_load_balancing {
+      disabled = false
+    }
+  }
+
+  database_encryption {
+    state    = "ENCRYPTED"
+    key_name = var.kms_key_name
+  }
+
+  enable_shielded_nodes = true
+
+  release_channel {
+    channel = "REGULAR"
+  }
 }
 
-# OIDC Provider for Kubernetes Workload Identity (IAM Roles for Service Accounts)
-data "tls_certificate" "cluster" {
-  url = aws_eks_cluster.cluster.identity[0].oidc[0].issuer
-}
+resource "google_container_node_pool" "app_nodes" {
+  name       = "${var.environment}-lamssa-app-nodes"
+  location   = var.region
+  cluster    = google_container_cluster.primary.name
+  node_count = var.min_node_count
 
-resource "aws_iam_openid_connect_provider" "oidc" {
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.cluster.certificates[0].sha1_fingerprint]
-  url             = aws_eks_cluster.cluster.identity[0].oidc[0].issuer
+  autoscaling {
+    min_node_count = var.min_node_count
+    max_node_count = var.max_node_count
+  }
 
-  tags = var.tags
+  node_config {
+    machine_type = var.node_machine_type
+    disk_type    = "pd-ssd"
+    disk_size_gb = 50
+
+    service_account = var.node_service_account
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    shielded_instance_config {
+      enable_secure_boot          = true
+      enable_integrity_monitoring = true
+    }
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+
+    labels = {
+      environment = var.environment
+      workload    = "lamssa-healthcare"
+    }
+
+    tags = ["lamssa-gke-node"]
+  }
 }

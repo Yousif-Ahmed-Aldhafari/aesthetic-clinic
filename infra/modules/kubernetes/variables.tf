@@ -1,78 +1,53 @@
 variable "environment" {
-  type        = string
-  description = "Target deployment environment"
+  type = string
 }
 
-variable "kubernetes_version" {
-  type        = string
-  description = "Kubernetes control plane version"
-  default     = "1.30"
+variable "region" {
+  type    = string
+  default = "me-central2"
 }
 
-variable "subnet_ids" {
-  type        = list(string)
-  description = "Subnet IDs for cluster and node groups"
+variable "project_id" {
+  type = string
 }
 
-variable "cluster_security_group_id" {
-  type        = string
-  description = "Security group ID for cluster control plane"
+variable "network_id" {
+  type = string
 }
 
-variable "cluster_role_arn" {
-  type        = string
-  description = "IAM Role ARN for the EKS Cluster control plane"
+variable "app_subnet_id" {
+  type = string
 }
 
-variable "node_role_arn" {
-  type        = string
-  description = "IAM Role ARN for worker node instances"
-}
-
-variable "enable_public_api_endpoint" {
-  type        = bool
-  description = "Whether to enable public API server endpoint (false for production)"
-  default     = false
+variable "master_ipv4_cidr" {
+  type    = string
+  default = "172.16.0.0/28"
 }
 
 variable "allowed_management_cidrs" {
-  type        = list(string)
-  description = "CIDR blocks allowed to access cluster API endpoint when public"
-  default     = []
+  type    = list(string)
+  default = ["10.0.0.0/8"]
 }
 
-variable "node_instance_types" {
-  type        = list(string)
-  description = "EC2 instance types for application worker nodes"
-  default     = ["t3.xlarge"]
+variable "kms_key_name" {
+  type = string
 }
 
-variable "node_desired_count" {
-  type        = number
-  description = "Desired number of worker nodes"
-  default     = 3
+variable "node_machine_type" {
+  type    = string
+  default = "e2-standard-4"
 }
 
-variable "node_min_count" {
-  type        = number
-  description = "Minimum number of worker nodes"
-  default     = 2
+variable "min_node_count" {
+  type    = number
+  default = 2
 }
 
-variable "node_max_count" {
-  type        = number
-  description = "Maximum number of worker nodes for auto-scaling"
-  default     = 10
+variable "max_node_count" {
+  type    = number
+  default = 10
 }
 
-variable "node_disk_size_gb" {
-  type        = number
-  description = "Disk size in GB for node root volume"
-  default     = 80
-}
-
-variable "tags" {
-  type        = map(string)
-  description = "Resource tags"
-  default     = {}
+variable "node_service_account" {
+  type = string
 }

@@ -1,62 +1,70 @@
-# KMS Module — Customer-Managed KEKs, FIPS 140-2 Level 3 HSM, and Rotation Policies
+# Google Cloud KMS Module — KeyRing, Cloud HSM KEKs, Rotation Policies
 
 terraform {
   required_version = ">= 1.8.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.50"
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.30.0"
     }
   }
 }
 
-# 1. Primary Database Storage KEK
-resource "aws_kms_key" "database" {
-  description             = "KEK for Lamssa PostgreSQL storage encryption"
-  deletion_window_in_days = 30
-  enable_key_rotation     = true
+resource "google_kms_key_ring" "main" {
+  name     = "${var.environment}-lamssa-keyring"
+  location = var.region
+}
 
-  tags = merge(var.tags, {
-    Environment = var.environment
-    Domain      = "DatabaseStorage"
+# 1. Primary Database KEK
+resource "google_kms_crypto_key" "database_kek" {
+  name            = "${var.environment}-lamssa-database-kek"
+  key_ring        = google_kms_key_ring.main.id
+  purpose         = "ENCRYPT_DECRYPT"
+  rotation_period = "7776000s" # 90 days
+
+  version_template {
+    algorithm        = "GOOGLE_SYMMETRIC_ENCRYPTION"
+    protection_level = "HSM"
+  }
+
+  labels = merge(var.tags, {
+    environment = var.environment
+    domain      = "database-storage"
   })
 }
 
-resource "aws_kms_alias" "database" {
-  name          = "alias/${var.environment}-lamssa-database-kek"
-  target_key_id = aws_kms_key.database.key_id
-}
+# 2. Clinical Assets & Documents KEK
+resource "google_kms_crypto_key" "clinical_assets_kek" {
+  name            = "${var.environment}-lamssa-clinical-assets-kek"
+  key_ring        = google_kms_key_ring.main.id
+  purpose         = "ENCRYPT_DECRYPT"
+  rotation_period = "7776000s" # 90 days
 
-# 2. Clinical Media & Documents KEK (Envelope Encryption Root)
-resource "aws_kms_key" "clinical_media" {
-  description             = "KEK for wrapping tenant DEKs for clinical media and documents"
-  deletion_window_in_days = 30
-  enable_key_rotation     = true
+  version_template {
+    algorithm        = "GOOGLE_SYMMETRIC_ENCRYPTION"
+    protection_level = "HSM"
+  }
 
-  tags = merge(var.tags, {
-    Environment = var.environment
-    Domain      = "ClinicalMediaEnvelope"
+  labels = merge(var.tags, {
+    environment = var.environment
+    domain      = "clinical-media"
   })
 }
 
-resource "aws_kms_alias" "clinical_media" {
-  name          = "alias/${var.environment}-lamssa-clinical-media-kek"
-  target_key_id = aws_kms_key.clinical_media.key_id
-}
+# 3. Secret Manager Envelope KEK
+resource "google_kms_crypto_key" "secrets_kek" {
+  name            = "${var.environment}-lamssa-secrets-kek"
+  key_ring        = google_kms_key_ring.main.id
+  purpose         = "ENCRYPT_DECRYPT"
+  rotation_period = "7776000s" # 90 days
 
-# 3. Object Storage SSE-KMS Key
-resource "aws_kms_key" "object_storage" {
-  description             = "KEK for S3 bucket default server-side encryption"
-  deletion_window_in_days = 30
-  enable_key_rotation     = true
+  version_template {
+    algorithm        = "GOOGLE_SYMMETRIC_ENCRYPTION"
+    protection_level = "HSM"
+  }
 
-  tags = merge(var.tags, {
-    Environment = var.environment
-    Domain      = "ObjectStorage"
+  labels = merge(var.tags, {
+    environment = var.environment
+    domain      = "secret-vault"
   })
-}
-
-resource "aws_kms_alias" "object_storage" {
-  name          = "alias/${var.environment}-lamssa-storage-kek"
-  target_key_id = aws_kms_key.object_storage.key_id
 }

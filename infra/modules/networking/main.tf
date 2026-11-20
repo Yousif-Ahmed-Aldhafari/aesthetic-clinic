@@ -1,244 +1,133 @@
-# Networking Module — Multi-AZ VPC, Private Subnets, and Network Security Groups
+# Google Cloud Networking Module — VPC, Private Subnets, Cloud NAT, and Firewall Rules
 
 terraform {
   required_version = ">= 1.8.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.50"
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.30.0"
     }
   }
 }
 
-resource "aws_vpc" "main" {
-  cidr_block           = var.vpc_cidr
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = merge(var.tags, {
-    Name        = "${var.environment}-lamssa-vpc"
-    Environment = var.environment
-  })
+resource "google_compute_network" "main" {
+  name                    = "${var.environment}-lamssa-vpc"
+  auto_create_subnetworks = false
+  routing_mode            = "REGIONAL"
+  description             = "Dedicated zero-trust VPC for Lamssa ${var.environment}"
 }
 
-# Public Edge Subnets (Ingress Load Balancers only)
-resource "aws_subnet" "public" {
-  count                   = length(var.availability_zones)
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(var.vpc_cidr, 4, count.index)
-  availability_zone       = var.availability_zones[count.index]
-  map_public_ip_on_launch = false
-
-  tags = merge(var.tags, {
-    Name        = "${var.environment}-public-edge-${var.availability_zones[count.index]}"
-    Tier        = "PublicEdge"
-    Environment = var.environment
-  })
+# 1. Edge Ingress Subnet (Load Balancer & Proxy)
+resource "google_compute_subnetwork" "public" {
+  name                     = "${var.environment}-lamssa-public-subnet"
+  ip_cidr_range            = var.public_subnet_cidr
+  region                   = var.region
+  network                  = google_compute_network.main.id
+  private_ip_google_access = true
 }
 
-# Private Application Subnets (Stateless Compute Pods)
-resource "aws_subnet" "application" {
-  count             = length(var.availability_zones)
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = cidrsubnet(var.vpc_cidr, 4, count.index + 4)
-  availability_zone = var.availability_zones[count.index]
+# 2. Private Application Compute Subnet (GKE Workloads)
+resource "google_compute_subnetwork" "app" {
+  name                     = "${var.environment}-lamssa-app-subnet"
+  ip_cidr_range            = var.app_subnet_cidr
+  region                   = var.region
+  network                  = google_compute_network.main.id
+  private_ip_google_access = true
 
-  tags = merge(var.tags, {
-    Name        = "${var.environment}-private-app-${var.availability_zones[count.index]}"
-    Tier        = "Application"
-    Environment = var.environment
-  })
-}
-
-# Private Database Subnets (PostgreSQL HA Cluster — No Internet Egress)
-resource "aws_subnet" "database" {
-  count             = length(var.availability_zones)
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = cidrsubnet(var.vpc_cidr, 4, count.index + 8)
-  availability_zone = var.availability_zones[count.index]
-
-  tags = merge(var.tags, {
-    Name        = "${var.environment}-private-db-${var.availability_zones[count.index]}"
-    Tier        = "Database"
-    Environment = var.environment
-  })
-}
-
-# Internet Gateway for Public Edge
-resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.main.id
-
-  tags = merge(var.tags, {
-    Name        = "${var.environment}-lamssa-igw"
-    Environment = var.environment
-  })
-}
-
-# Elastic IP and NAT Gateway for Controlled Outbound (APIs / Regulators)
-resource "aws_eip" "nat" {
-  domain = "vpc"
-
-  tags = merge(var.tags, {
-    Name        = "${var.environment}-lamssa-nat-eip"
-    Environment = var.environment
-  })
-}
-
-resource "aws_nat_gateway" "nat" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public[0].id
-
-  tags = merge(var.tags, {
-    Name        = "${var.environment}-lamssa-nat-gw"
-    Environment = var.environment
-  })
-}
-
-# Route Tables
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
+  secondary_ip_range {
+    range_name    = "gke-pods"
+    ip_cidr_range = var.pods_cidr
   }
 
-  tags = merge(var.tags, {
-    Name = "${var.environment}-public-rt"
-  })
+  secondary_ip_range {
+    range_name    = "gke-services"
+    ip_cidr_range = var.services_cidr
+  }
 }
 
-resource "aws_route_table" "application" {
-  vpc_id = aws_vpc.main.id
+# 3. Isolated Data Subnet (PostgreSQL & Cache — Zero Internet Routing)
+resource "google_compute_subnetwork" "data" {
+  name                     = "${var.environment}-lamssa-data-subnet"
+  ip_cidr_range            = var.data_subnet_cidr
+  region                   = var.region
+  network                  = google_compute_network.main.id
+  private_ip_google_access = true
+}
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.nat.id
+# Cloud Router & NAT for Outbound Egress from Private App Subnet Only
+resource "google_compute_router" "router" {
+  name    = "${var.environment}-lamssa-router"
+  region  = var.region
+  network = google_compute_network.main.id
+}
+
+resource "google_compute_router_nat" "nat" {
+  name                               = "${var.environment}-lamssa-nat"
+  router                             = google_compute_router.router.name
+  region                             = var.region
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
+
+  subnetwork {
+    name                    = google_compute_subnetwork.app.id
+    source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
+  }
+}
+
+# Private Service Access for Managed Services (Cloud SQL Private IP)
+resource "google_compute_global_address" "private_ip_alloc" {
+  name          = "${var.environment}-lamssa-private-ip"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 16
+  network       = google_compute_network.main.id
+}
+
+resource "google_service_networking_connection" "private_vpc_connection" {
+  network                 = google_compute_network.main.id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_ip_alloc.name]
+}
+
+# Firewalls: Deny All Ingress by Default, Whitelist App & Health Checks
+resource "google_compute_firewall" "deny_all_ingress" {
+  name      = "${var.environment}-lamssa-deny-all"
+  network   = google_compute_network.main.name
+  priority  = 65534
+  direction = "INGRESS"
+
+  deny {
+    protocol = "all"
   }
 
-  tags = merge(var.tags, {
-    Name = "${var.environment}-app-rt"
-  })
+  source_ranges = ["0.0.0.0/0"]
 }
 
-# Database Route Table: Strictly Isolated, Zero Internet Route (No 0.0.0.0/0 route)
-resource "aws_route_table" "database" {
-  vpc_id = aws_vpc.main.id
+resource "google_compute_firewall" "allow_internal" {
+  name      = "${var.environment}-lamssa-allow-internal"
+  network   = google_compute_network.main.name
+  priority  = 1000
+  direction = "INGRESS"
 
-  tags = merge(var.tags, {
-    Name = "${var.environment}-db-rt-isolated"
-  })
-}
-
-resource "aws_route_table_association" "public" {
-  count          = length(aws_subnet.public)
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
-}
-
-resource "aws_route_table_association" "application" {
-  count          = length(aws_subnet.application)
-  subnet_id      = aws_subnet.application[count.index].id
-  route_table_id = aws_route_table.application.id
-}
-
-resource "aws_route_table_association" "database" {
-  count          = length(aws_subnet.database)
-  subnet_id      = aws_subnet.database[count.index].id
-  route_table_id = aws_route_table.database.id
-}
-
-# Security Groups: Tiered Ingress and Egress
-resource "aws_security_group" "edge_alb" {
-  name        = "${var.environment}-edge-alb-sg"
-  description = "Allows inbound HTTPS to edge reverse proxy load balancer"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "HTTPS from Internet"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  allow {
+    protocol = "tcp"
+    ports    = ["3000", "8080", "5432", "6432"]
   }
 
-  egress {
-    description = "Forward to Application Tier"
-    from_port   = 3000
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
-  tags = var.tags
+  source_ranges = [var.app_subnet_cidr, var.data_subnet_cidr]
 }
 
-resource "aws_security_group" "app_compute" {
-  name        = "${var.environment}-app-compute-sg"
-  description = "Security group for stateless NestJS API and Web Nginx pods"
-  vpc_id      = aws_vpc.main.id
+resource "google_compute_firewall" "allow_health_checks" {
+  name      = "${var.environment}-lamssa-allow-health-checks"
+  network   = google_compute_network.main.name
+  priority  = 900
+  direction = "INGRESS"
 
-  ingress {
-    description     = "Traffic from Edge ALB"
-    from_port       = 3000
-    to_port         = 8080
-    protocol        = "tcp"
-    security_groups = [aws_security_group.edge_alb.id]
+  allow {
+    protocol = "tcp"
+    ports    = ["8080", "3000"]
   }
 
-  egress {
-    description = "mTLS to PgBouncer / PostgreSQL"
-    from_port   = 5432
-    to_port     = 6432
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
-  egress {
-    description = "Outbound HTTPS for private VPC endpoints and NAT"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = var.tags
-}
-
-resource "aws_security_group" "database" {
-  name        = "${var.environment}-database-sg"
-  description = "Security group for PostgreSQL and PgBouncer — No direct internet ingress"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description     = "PostgreSQL from App Compute only"
-    from_port       = 5432
-    to_port         = 6432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.app_compute.id]
-  }
-
-  egress {
-    description = "Inter-node replication within database subnets"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    self        = true
-  }
-
-  tags = var.tags
-}
-
-# Private VPC Endpoints for S3 and KMS (Traffic never traverses public internet)
-resource "aws_vpc_endpoint" "s3" {
-  vpc_id       = aws_vpc.main.id
-  service_name = "com.amazonaws.${var.region}.s3"
-  route_table_ids = [
-    aws_route_table.application.id,
-    aws_route_table.database.id
-  ]
-
-  tags = merge(var.tags, {
-    Name = "${var.environment}-s3-vpc-endpoint"
-  })
+  # Google Cloud Load Balancer and Health Check IP ranges
+  source_ranges = ["35.191.0.0/16", "130.211.0.0/22"]
 }

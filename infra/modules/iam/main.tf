@@ -1,127 +1,84 @@
-# IAM Module — Workload Identity and Least-Privilege Service Account Roles
+# Google Cloud IAM Module — Dedicated Service Accounts & Workload Identity Federation
 
 terraform {
   required_version = ">= 1.8.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.50"
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.30.0"
     }
   }
 }
 
-# 1. API Runtime Role (IRSA for lamssa-api)
-data "aws_iam_policy_document" "api_assume_role" {
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-    effect  = "Allow"
-
-    condition {
-      test     = "StringEquals"
-      variable = "${replace(var.oidc_issuer, "https://", "")}:sub"
-      values   = ["system:serviceaccount:lamssa-${var.environment}:lamssa-api-sa"]
-    }
-
-    principals {
-      identifiers = [var.oidc_provider_arn]
-      type        = "Federated"
-    }
-  }
+# 1. API Runtime Service Account
+resource "google_service_account" "api_sa" {
+  account_id   = "${var.environment}-lamssa-api"
+  display_name = "Lamssa API Workload Identity Service Account (${var.environment})"
+  description  = "Least-privilege identity for NestJS API pods"
 }
 
-resource "aws_iam_role" "api_runtime" {
-  name               = "${var.environment}-lamssa-api-runtime-role"
-  assume_role_policy = data.aws_iam_policy_document.api_assume_role.json
-  tags               = var.tags
+# Bind GKE ServiceAccount to Google Service Account via Workload Identity
+resource "google_service_account_iam_member" "api_workload_identity" {
+  service_account_id = google_service_account.api_sa.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[lamssa-system/lamssa-api-sa]"
 }
 
-resource "aws_iam_policy" "api_runtime" {
-  name        = "${var.environment}-lamssa-api-runtime-policy"
-  description = "Least-privilege policy for NestJS API container runtime"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "S3ClinicalAssetAccess"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject"
-        ]
-        Resource = "${var.clinical_assets_bucket_arn}/*"
-      },
-      {
-        Sid    = "KmsEnvelopeCrypto"
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey"
-        ]
-        Resource = [var.clinical_media_kms_key_arn]
-      },
-      {
-        Sid    = "SecretsManagerRuntimeRead"
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = var.runtime_secret_arns
-      }
-    ]
-  })
+# 2. Database Migrator Service Account
+resource "google_service_account" "migrator_sa" {
+  account_id   = "${var.environment}-lamssa-migrator"
+  display_name = "Lamssa Database Migration Service Account (${var.environment})"
+  description  = "Ephemeral migration Job identity"
 }
 
-resource "aws_iam_role_policy_attachment" "api_runtime" {
-  role       = aws_iam_role.api_runtime.name
-  policy_arn = aws_iam_policy.api_runtime.arn
+resource "google_service_account_iam_member" "migrator_workload_identity" {
+  service_account_id = google_service_account.migrator_sa.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[lamssa-system/lamssa-migration-sa]"
 }
 
-# 2. Database Migration Runner Role (IRSA for pre-deployment migration job)
-data "aws_iam_policy_document" "migration_assume_role" {
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-    effect  = "Allow"
-
-    condition {
-      test     = "StringEquals"
-      variable = "${replace(var.oidc_issuer, "https://", "")}:sub"
-      values   = ["system:serviceaccount:lamssa-${var.environment}:lamssa-migration-sa"]
-    }
-
-    principals {
-      identifiers = [var.oidc_provider_arn]
-      type        = "Federated"
-    }
-  }
+# 3. GKE Node Service Account
+resource "google_service_account" "gke_nodes_sa" {
+  account_id   = "${var.environment}-lamssa-gke-nodes"
+  display_name = "Lamssa GKE Node Pool Service Account (${var.environment})"
+  description  = "Minimal permissions for GKE compute nodes"
 }
 
-resource "aws_iam_role" "migration_runner" {
-  name               = "${var.environment}-lamssa-migration-runner-role"
-  assume_role_policy = data.aws_iam_policy_document.migration_assume_role.json
-  tags               = var.tags
+# Least-privilege IAM grants for GKE nodes
+resource "google_project_iam_member" "node_log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.gke_nodes_sa.email}"
 }
 
-resource "aws_iam_policy" "migration_runner" {
-  name        = "${var.environment}-lamssa-migration-runner-policy"
-  description = "Access to migration database credentials for schema DDL execution"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "ReadMigratorSecret"
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = [var.migrator_secret_arn]
-      }
-    ]
-  })
+resource "google_project_iam_member" "node_metric_writer" {
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.gke_nodes_sa.email}"
 }
 
-resource "aws_iam_role_policy_attachment" "migration_runner" {
-  role       = aws_iam_role.migration_runner.name
-  policy_arn = aws_iam_policy.migration_runner.arn
+# API Runtime permissions: Cloud SQL Client, KMS Encrypter/Decrypter on Assets, Secret Accessor, Storage Object User
+resource "google_project_iam_member" "api_cloudsql" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.api_sa.email}"
+}
+
+resource "google_kms_crypto_key_iam_member" "api_kms_assets" {
+  crypto_key_id = var.clinical_assets_kek_name
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${google_service_account.api_sa.email}"
+}
+
+resource "google_storage_bucket_iam_member" "api_storage_assets" {
+  bucket = var.clinical_assets_bucket_name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.api_sa.email}"
+}
+
+# Migrator permissions: Cloud SQL Client
+resource "google_project_iam_member" "migrator_cloudsql" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.migrator_sa.email}"
 }

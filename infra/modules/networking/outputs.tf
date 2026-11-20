@@ -1,34 +1,29 @@
-output "vpc_id" {
-  value       = aws_vpc.main.id
-  description = "Identifier of the provisioned VPC"
+output "network_id" {
+  value       = google_compute_network.main.id
+  description = "VPC Network ID"
 }
 
-output "public_subnet_ids" {
-  value       = aws_subnet.public[*].id
-  description = "Identifiers of public edge subnets"
+output "network_name" {
+  value       = google_compute_network.main.name
+  description = "VPC Network Name"
 }
 
-output "application_subnet_ids" {
-  value       = aws_subnet.application[*].id
-  description = "Identifiers of private application subnets"
+output "public_subnet_id" {
+  value       = google_compute_subnetwork.public.id
+  description = "Public Edge Subnet ID"
 }
 
-output "database_subnet_ids" {
-  value       = aws_subnet.database[*].id
-  description = "Identifiers of isolated private database subnets"
+output "app_subnet_id" {
+  value       = google_compute_subnetwork.app.id
+  description = "Application Compute Subnet ID"
 }
 
-output "edge_alb_security_group_id" {
-  value       = aws_security_group.edge_alb.id
-  description = "Security group for edge load balancing"
+output "data_subnet_id" {
+  value       = google_compute_subnetwork.data.id
+  description = "Isolated Data Subnet ID"
 }
 
-output "app_compute_security_group_id" {
-  value       = aws_security_group.app_compute.id
-  description = "Security group for application compute"
-}
-
-output "database_security_group_id" {
-  value       = aws_security_group.database.id
-  description = "Security group for PostgreSQL and PgBouncer"
+output "private_connection_id" {
+  value       = google_service_networking_connection.private_vpc_connection.id
+  description = "Service Networking Peering Connection ID for Cloud SQL"
 }

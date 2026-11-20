@@ -1,24 +1,15 @@
-output "endpoint" {
-  value       = aws_db_instance.primary.endpoint
-  description = "Connection endpoint for primary PostgreSQL instance"
+output "instance_name" {
+  value = google_sql_database_instance.primary.name
 }
 
-output "address" {
-  value       = aws_db_instance.primary.address
-  description = "Hostname of primary PostgreSQL instance"
+output "private_ip_address" {
+  value = google_sql_database_instance.primary.private_ip_address
 }
 
-output "port" {
-  value       = aws_db_instance.primary.port
-  description = "Port number of primary PostgreSQL instance"
+output "database_name" {
+  value = google_sql_database.database.name
 }
 
-output "db_name" {
-  value       = aws_db_instance.primary.db_name
-  description = "Database name"
-}
-
-output "resource_id" {
-  value       = aws_db_instance.primary.resource_id
-  description = "RDS resource identifier"
+output "connection_name" {
+  value = google_sql_database_instance.primary.connection_name
 }
