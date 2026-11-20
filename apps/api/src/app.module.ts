@@ -44,6 +44,7 @@ import { DentistryModule } from './dentistry/dentistry.module.js';
 import { PediatricsModule } from './pediatrics/pediatrics.module.js';
 import { ObGynModule } from './obgyn/obgyn.module.js';
 import { OphthalmologyEntModule } from './ophthalmology-ent/ophthalmology-ent.module.js';
+import { OrthopedicsPhysiotherapyModule } from './orthopedics-physiotherapy/orthopedics-physiotherapy.module.js';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { OphthalmologyEntModule } from './ophthalmology-ent/ophthalmology-ent.mo
     PediatricsModule,
     ObGynModule,
     OphthalmologyEntModule,
+    OrthopedicsPhysiotherapyModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
   providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],

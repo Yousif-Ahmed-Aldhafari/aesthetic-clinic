@@ -245,6 +245,10 @@ model Clinic {
   ophthalmicExams OphthalmicExaminationRecord[]
   entExams EntExaminationRecord[]
   audiometryAssessments AudiometryAssessmentRecord[]
+  musculoskeletalExaminations MusculoskeletalExamination[]
+  jointRangeOfMotionRecords JointRangeOfMotionRecord[]
+  physiotherapyRehabilitationEpisodes PhysiotherapyRehabilitationEpisode[]
+  physiotherapySessionRecords PhysiotherapySessionRecord[]
 
   @@index([status, createdAt])
 }
@@ -547,6 +551,11 @@ model ClinicMembership {
   ophthalmicExamsPerformed OphthalmicExaminationRecord[] @relation("OphthalmicExaminationExaminer")
   entExamsPerformed EntExaminationRecord[] @relation("EntExaminationExaminer")
   audiometryAssessmentsPerformed AudiometryAssessmentRecord[] @relation("AudiometryAssessmentAudiologist")
+  conductedMskExaminations MusculoskeletalExamination[] @relation("MusculoskeletalExaminationExaminer")
+  conductedRomExaminations JointRangeOfMotionRecord[] @relation("JointRangeOfMotionExaminer")
+  referredPtEpisodes PhysiotherapyRehabilitationEpisode[] @relation("PhysiotherapyEpisodeReferringClinician")
+  managedPtEpisodes PhysiotherapyRehabilitationEpisode[] @relation("PhysiotherapyEpisodeTherapist")
+  conductedPtSessions PhysiotherapySessionRecord[] @relation("PhysiotherapySessionTherapist")
 
   // One current role per user/clinic; the same user can join many clinics.
   @@unique([clinicId, userId])
@@ -723,6 +732,10 @@ model Patient {
   ophthalmicExams OphthalmicExaminationRecord[]
   entExams EntExaminationRecord[]
   audiometryAssessments AudiometryAssessmentRecord[]
+  musculoskeletalExaminations MusculoskeletalExamination[]
+  jointRangeOfMotionRecords JointRangeOfMotionRecord[]
+  physiotherapyRehabilitationEpisodes PhysiotherapyRehabilitationEpisode[]
+  physiotherapySessionRecords PhysiotherapySessionRecord[]
 
   @@unique([clinicId, patientNumber])
   @@index([clinicId, createdAt, id])
@@ -795,6 +808,10 @@ model ClinicalEncounter {
   ophthalmicExams OphthalmicExaminationRecord[]
   entExams EntExaminationRecord[]
   audiometryAssessments AudiometryAssessmentRecord[]
+  musculoskeletalExaminations MusculoskeletalExamination[]
+  jointRangeOfMotionRecords JointRangeOfMotionRecord[]
+  physiotherapyRehabilitationEpisodes PhysiotherapyRehabilitationEpisode[]
+  physiotherapySessionRecords PhysiotherapySessionRecord[]
   @@unique([clinicId,id])
   @@unique([clinicId,visitId])
   @@index([clinicId,patientId,createdAt,id])
@@ -4248,6 +4265,13 @@ enum ClinicalPrivilegeCode {
   ENT_EXAM_DOCUMENT
   AUDIOMETRY_RECORD
   ENT_PROCEDURE_PERFORM
+  ORTHOPEDIC_EXAM_PERFORM
+  ORTHOPEDIC_RECORD_FINALIZE
+  JOINT_ROM_MEASURE
+  PHYSIOTHERAPY_PLAN_CREATE
+  PHYSIOTHERAPY_PLAN_APPROVE
+  PHYSIOTHERAPY_PLAN_EXECUTE
+  PHYSIOTHERAPY_SESSION_DOCUMENT
 }
 
 enum PrivilegeScope {
@@ -6258,4 +6282,203 @@ model AudiometryAssessmentRecord {
   @@unique([clinicId, id])
   @@index([clinicId, patientId])
   @@index([clinicId, encounterId])
+}
+
+enum AnatomicalRegion {
+  CERVICAL_SPINE
+  THORACIC_SPINE
+  LUMBAR_SPINE
+  SACROILIAC_PELVIS
+  SHOULDER
+  ELBOW
+  WRIST_HAND
+  HIP
+  KNEE
+  ANKLE_FOOT
+}
+
+enum JointLaterality {
+  LEFT
+  RIGHT
+  BILATERAL
+  AXIAL
+}
+
+enum JointMovement {
+  FLEXION
+  EXTENSION
+  ABDUCTION
+  ADDUCTION
+  INTERNAL_ROTATION
+  EXTERNAL_ROTATION
+  PRONATION
+  SUPINATION
+  INVERSION
+  EVERSION
+  DORSIFLEXION
+  PLANTARFLEXION
+  LATERAL_FLEXION
+  ELEVATION
+  DEPRESSION
+}
+
+enum RangeOfMotionType {
+  ACTIVE
+  PASSIVE
+  ACTIVE_ASSISTED
+}
+
+enum RehabilitationEpisodeStatus {
+  ACTIVE
+  COMPLETED
+  SUSPENDED
+  DISCHARGED
+  CANCELLED
+}
+
+enum PhysiotherapyRecordStatus {
+  DRAFT
+  FINALIZED
+  ENTERED_IN_ERROR
+}
+
+model MusculoskeletalExamination {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  clinicId              String                    @db.Uuid
+  patientId             String                    @db.Uuid
+  encounterId           String                    @db.Uuid
+  examinationDate       DateTime                  @default(now()) @db.Timestamptz(3)
+  anatomicalRegion      AnatomicalRegion
+  joint                 String                    @db.VarChar(100)
+  laterality            JointLaterality
+  reasonForExam         String                    @db.VarChar(255)
+  historyOfInjury       String?                   @db.Text
+  tendernessLocations   String[]                  @default([])
+  swellingGrade         String                    @default("NONE") @db.VarChar(32)
+  deformityNotes        String?                   @db.Text
+  neurovascularIntact   Boolean                   @default(true)
+  motorStrengthMrcScale Int?
+  sensationFindings     String?                   @db.VarChar(255)
+  specialManeuvers      Json?
+  clinicalAssessment    String?                   @db.Text
+  examinerMembershipId  String                    @db.Uuid
+  status                PhysiotherapyRecordStatus @default(FINALIZED)
+  errorReason           String?                   @db.Text
+  version               Int                       @default(1)
+  createdAt             DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic                Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient               Patient                   @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter             ClinicalEncounter         @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  examiner              ClinicMembership          @relation("MusculoskeletalExaminationExaminer", fields: [clinicId, examinerMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  jointRangeOfMotionRecords JointRangeOfMotionRecord[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, encounterId])
+}
+
+model JointRangeOfMotionRecord {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  clinicId              String                    @db.Uuid
+  patientId             String                    @db.Uuid
+  encounterId           String                    @db.Uuid
+  examId                String?                   @db.Uuid
+  anatomicalJoint       String                    @db.VarChar(100)
+  movement              JointMovement
+  laterality            JointLaterality
+  motionType            RangeOfMotionType         @default(ACTIVE)
+  startingDegrees       Decimal                   @default(0.0) @db.Decimal(5, 1)
+  endingDegrees         Decimal                   @db.Decimal(5, 1)
+  measurementMethod     String                    @default("UNIVERSAL_GONIOMETER") @db.VarChar(64)
+  goniometerDevice      String?                   @db.VarChar(100)
+  painOnsetDegrees      Decimal?                  @db.Decimal(5, 1)
+  painScaleVas          Int?
+  contralateralDegrees  Decimal?                  @db.Decimal(5, 1)
+  notes                 String?                   @db.Text
+  examinerMembershipId  String                    @db.Uuid
+  status                PhysiotherapyRecordStatus @default(FINALIZED)
+  errorReason           String?                   @db.Text
+  version               Int                       @default(1)
+  createdAt             DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                  @updatedAt @db.Timestamptz(3)
+
+  clinic                Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient               Patient                   @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter             ClinicalEncounter         @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  exam                  MusculoskeletalExamination? @relation(fields: [clinicId, examId], references: [clinicId, id], onDelete: SetNull, onUpdate: Restrict)
+  examiner              ClinicMembership          @relation("JointRangeOfMotionExaminer", fields: [clinicId, examinerMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, encounterId])
+  @@index([clinicId, examId])
+}
+
+model PhysiotherapyRehabilitationEpisode {
+  id                            String                      @id @default(uuid()) @db.Uuid
+  clinicId                      String                      @db.Uuid
+  patientId                     String                      @db.Uuid
+  encounterId                   String?                     @db.Uuid
+  referringClinicianMembershipId String?                    @db.Uuid
+  rehabilitationGoal            String                      @db.Text
+  functionalBaseline            String                      @db.Text
+  startDate                     DateTime                    @db.Date
+  targetEndDate                 DateTime?                   @db.Date
+  actualEndDate                 DateTime?                   @db.Date
+  planVersion                   Int                         @default(1)
+  visitFrequencyPerWeek         Int                         @default(2)
+  plannedInterventions          String[]                    @default([])
+  status                        RehabilitationEpisodeStatus @default(ACTIVE)
+  dischargeSummary              String?                     @db.Text
+  therapistMembershipId         String                      @db.Uuid
+  version                       Int                         @default(1)
+  createdAt                     DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt                     DateTime                    @updatedAt @db.Timestamptz(3)
+
+  clinic                        Clinic                      @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                       Patient                     @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  encounter                     ClinicalEncounter?          @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: SetNull, onUpdate: Restrict)
+  referringClinician            ClinicMembership?           @relation("PhysiotherapyEpisodeReferringClinician", fields: [clinicId, referringClinicianMembershipId], references: [clinicId, id], onDelete: SetNull, onUpdate: Restrict)
+  therapist                     ClinicMembership            @relation("PhysiotherapyEpisodeTherapist", fields: [clinicId, therapistMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  sessions                      PhysiotherapySessionRecord[]
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, status])
+}
+
+model PhysiotherapySessionRecord {
+  id                       String                      @id @default(uuid()) @db.Uuid
+  clinicId                 String                      @db.Uuid
+  patientId                String                      @db.Uuid
+  episodeId                String?                     @db.Uuid
+  encounterId              String                      @db.Uuid
+  sessionDate              DateTime                    @default(now()) @db.Timestamptz(3)
+  therapistMembershipId    String                      @db.Uuid
+  treatmentModalities      String[]                    @default([])
+  exerciseDetails          Json?
+  sessionDurationMinutes   Int
+  patientReportedTolerance String                      @default("WELL_TOLERATED") @db.VarChar(64)
+  preSessionPainVas        Int                         @default(0)
+  postSessionPainVas       Int                         @default(0)
+  functionalProgressNotes  String                      @db.Text
+  adverseEvents            String?                     @db.Text
+  status                   PhysiotherapyRecordStatus   @default(FINALIZED)
+  errorReason              String?                     @db.Text
+  version                  Int                         @default(1)
+  createdAt                DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                    @updatedAt @db.Timestamptz(3)
+
+  clinic                   Clinic                      @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  patient                  Patient                     @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  episode                  PhysiotherapyRehabilitationEpisode? @relation(fields: [clinicId, episodeId], references: [clinicId, id], onDelete: SetNull, onUpdate: Restrict)
+  encounter                ClinicalEncounter           @relation(fields: [clinicId, encounterId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+  therapist                ClinicMembership            @relation("PhysiotherapySessionTherapist", fields: [clinicId, therapistMembershipId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, patientId])
+  @@index([clinicId, encounterId])
+  @@index([clinicId, episodeId])
 }

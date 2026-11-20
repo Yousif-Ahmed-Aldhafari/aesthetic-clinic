@@ -61,7 +61,27 @@ export class SpecialtyPrivilegeGuard implements CanActivate {
     const branchId = request.auth?.session.selectedBranchId ?? null;
 
     // Evaluate trusted database state
-    const specialtyCode = requiredSpecialty ?? 'GENERAL_MEDICINE';
+    let specialtyCode = requiredSpecialty;
+    if (!specialtyCode) {
+      const url = request.originalUrl || request.url || '';
+      if (url.includes('/orthopedics/')) {
+        specialtyCode = 'ORTHOPEDICS';
+      } else if (url.includes('/physiotherapy/')) {
+        specialtyCode = 'PHYSIOTHERAPY';
+      } else if (url.includes('/dentistry/')) {
+        specialtyCode = 'DENTISTRY';
+      } else if (url.includes('/pediatrics/')) {
+        specialtyCode = 'PEDIATRICS';
+      } else if (url.includes('/obgyn/')) {
+        specialtyCode = 'OB_GYN';
+      } else if (url.includes('/ophthalmology/')) {
+        specialtyCode = 'OPHTHALMOLOGY';
+      } else if (url.includes('/ent/')) {
+        specialtyCode = 'ENT';
+      } else {
+        specialtyCode = 'GENERAL_MEDICINE';
+      }
+    }
     const privilegeCode = requiredPrivilege;
 
     const evaluation = await this.specialtyRepo.evaluatePrivilege(principal, clinicId, {

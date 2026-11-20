@@ -218,7 +218,7 @@ if (!enabled) {
     assert(meta.ciphertextSha256);
     assert(meta.plaintextSize > 0);
     assert(meta.ciphertextSize > 0);
-    assert.equal(meta.latestMigration, '20261118000400_ophthalmology_ent');
+    assert.equal(meta.latestMigration, '20261118000500_orthopedics_physiotherapy');
     assert(meta.migrationCount >= 44, 'Must record all applied migrations');
 
     // Completeness verification: all public tables tracked
