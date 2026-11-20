@@ -73,8 +73,8 @@ The threat modeling process identifies architectural attack surfaces, potential 
 - **Current Mitigations:**
   - The security function `lamssa_security.context_allows` does not rely purely on GUCs; it cross-references the session token against `public."Session"` and `public."ClinicMembership"` tables in the database.
   - Runtime role `lamssa_app` lacks permissions to modify `Session` or `ClinicMembership` roles directly.
-- **Residual Risk:** Complex transaction pooling edge cases if connection state is not reset between HTTP requests.
-- **Target Architecture Mitigation:** PgBouncer configured in `transaction` pool mode with mandatory connection reset (`DISCARD ALL`) on release.
+- **Residual Risk:** Complex transaction pooling edge cases if connection state leaks across multiplexed database sessions.
+- **Target Architecture Mitigation:** PgBouncer configured in `transaction` pool mode with `pgbouncer=true` parameter in Prisma connection strings. Tenant isolation is guaranteed because `TenantDatabaseService.withClinicContext` sets GUCs with `set_config('lamssa.clinic_id', ..., true)` (`is_local = true`), which the PostgreSQL engine automatically and atomically reverts upon `COMMIT` or `ROLLBACK`. Additionally, `lamssa_security.context_allows` validates the session context against active `Session` and `ClinicMembership` tables. This behavior is formally verified by the 7-test suite in `scripts/test-connection-pooling.mjs`. Network policies in Kubernetes (`05-network-policies.yaml`) restrict egress to PgBouncer only.
 
 ---
 

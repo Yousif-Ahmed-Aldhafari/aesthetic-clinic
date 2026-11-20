@@ -23,6 +23,7 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run check:boundaries
       - run: npm run check:deployment
+      - run: node scripts/check-infrastructure.mjs
       - run: npm run db:validate
       - run: npm run db:generate
       - run: npm test
@@ -72,6 +73,7 @@ jobs:
         run: RUNTIME_DATABASE_ROLE=lamssa_dev_app node scripts/grant-database-access.mjs
       - name: Apply test runtime grants
         run: RUNTIME_DATABASE_ROLE=lamssa_test_app MIGRATION_DATABASE_URL="$TEST_MIGRATION_DATABASE_URL" node scripts/grant-database-access.mjs
+      - run: npm run test:infra
       - run: npm run test:db
       - run: npm run test:browser
 

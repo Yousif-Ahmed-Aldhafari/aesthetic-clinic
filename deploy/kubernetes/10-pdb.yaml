@@ -1,0 +1,25 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: lamssa-api-pdb
+  namespace: lamssa-production
+  labels:
+    app.kubernetes.io/name: lamssa-api
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lamssa-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: lamssa-web-pdb
+  namespace: lamssa-production
+  labels:
+    app.kubernetes.io/name: lamssa-web
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lamssa-web

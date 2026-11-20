@@ -1949,3 +1949,22 @@ Run `npm run db:migrate`, `npm run db:migrate:test`, and `npm run db:grant` afte
 | `git diff --check` | Exit 0; clean whitespace across all tracked and modified files |
 | RLS Audit | 114 core tenant tables under FORCE RLS (143 total in public), 96 security functions in `lamssa_security` (28 locked `SECURITY DEFINER` functions with fixed `search_path=pg_catalog, pg_temp` and zero public execute grants) |
 | Final Acceptance Verdict | Code integration readiness: **READY FOR CODE MERGE**; Production clinical deployment: **NOT READY FOR PRODUCTION** (see [phase-6-final-acceptance.md](phase-6-final-acceptance.md)) |
+
+## Phase 9 Step 9.2 infrastructure & connection pooling verification record (2026-11-20)
+
+| Command / Check | Actual Result |
+| :--- | :--- |
+| `npm run check:boundaries` | Exit 0; strict database boundary validation passed |
+| `npm run check:deployment` | Exit 0; deployment configuration invariants verified |
+| `npm run test:infra` | Exit 0; 10 infrastructure policy checks passed, 7 PostgreSQL connection pooling & tenant isolation tests passed |
+| `npm run db:validate` | Exit 0; Prisma schema valid |
+| `npm run db:generate` | Exit 0; Prisma Client generated |
+| `npm run db:status` | Exit 0; 45 migrations found on `lamssa_dev`, schema up to date |
+| `npm run db:status:test` | Exit 0; 45 migrations found on `lamssa_test`, schema up to date |
+| `npm test` | Exit 0; 400 unit tests passed (374 API + 26 Web, 0 failed) |
+| `npm run test:db` | Exit 0; 486 database integration tests passed (1 intentional CREATEDB skip, 0 failed across 44 test suites) |
+| `npm run build` | Exit 0; `@lamssa/web` (Vite) and `@lamssa/api` (TypeScript) compiled cleanly |
+| `npm run test:browser` | Exit 0; 51 checks passed in real headless Chrome, 0 runtime errors |
+| `git diff --check` | Exit 0; clean whitespace across all tracked and modified files |
+| Infrastructure Verification | 8 OpenTofu modular IaC modules, 3 environment configurations, 12 Restricted Kubernetes manifests, and 7 connection pooling isolation tests passing |
+| Step 9.2 Verdict | Code and infrastructure implementation readiness: **READY FOR STEP 9.3**; Production clinical deployment: **NOT READY FOR PRODUCTION** (see [phase-9-step-9-2-acceptance.md](phase-9-step-9-2-acceptance.md)) |

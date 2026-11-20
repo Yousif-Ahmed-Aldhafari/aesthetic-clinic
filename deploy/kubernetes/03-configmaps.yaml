@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lamssa-api-config
+  namespace: lamssa-production
+  labels:
+    app.kubernetes.io/name: lamssa-api
+data:
+  NODE_ENV: "production"
+  API_HOST: "0.0.0.0"
+  API_PORT: "3000"
+  TRUST_PROXY_HOPS: "1"
+  PLATFORM_BASE_DOMAIN: "app.lamssa.sa"
+  CORS_ORIGINS: "https://app.lamssa.sa,https://portal.lamssa.sa"
+  API_ALLOWED_HOSTS: "app.lamssa.sa,portal.lamssa.sa,api"
+  AUTH_SESSION_HOURS: "8"
+  AUTH_IDLE_MINUTES: "30"
+  AUTH_LOGIN_ACCOUNT_LIMIT: "5"
+  AUTH_LOGIN_IP_LIMIT: "30"
+  KMS_PROVIDER: "external"
+  KMS_EXTERNAL_REGION: "me-central2"
+  KMS_PRIMARY_KEY_ID: "lamssa/kek/2026-v1"

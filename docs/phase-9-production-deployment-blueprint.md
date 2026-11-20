@@ -22,21 +22,23 @@ Key principles:
 
 ## 2. Infrastructure as Code (IaC) Architecture
 
-Lamssa standardizes on **OpenTofu / Terraform (v1.8+)** for infrastructure provisioning, paired with **Terragrunt** or modular workspaces for multi-environment orchestration.
+Lamssa standardizes on **OpenTofu / Terraform (v1.8+)** for infrastructure provisioning, implemented in `infra/`:
 
 ```text
 infra/
 ├── modules/
-│   ├── vpc_networking/         # Multi-AZ VPC, private/public subnets, NAT, VPC Endpoints
-│   ├── security_groups/        # Least-privilege ingress/egress rules between tiers
-│   ├── postgres_ha/            # Multi-AZ PostgreSQL primary/standby, parameter groups, SSL
-│   ├── pgbouncer/              # Connection pooling instances/containers in transaction mode
-│   ├── cloud_kms/              # Customer-managed KEKs, rotation policies, IAM policies
-│   ├── object_storage/         # S3/GCS buckets, SSE-KMS, Object Lock, lifecycle rules
-│   ├── redis_cache/            # Private Redis cluster for session cache and rate limits
-│   ├── kubernetes_cluster/     # Managed EKS / GKE cluster, node groups, OIDC provider
-│   └── observability_stack/    # OpenTelemetry collector, Prometheus, Loki, Alertmanager
+│   ├── networking/             # Multi-AZ VPC, private/public subnets, NAT, VPC Endpoints
+│   ├── kubernetes/             # Managed EKS / GKE cluster, node pools, OIDC provider
+│   ├── postgres/               # Multi-AZ PostgreSQL primary/standby, PgBouncer, parameter groups, SSL
+│   ├── object-storage/         # S3/GCS buckets, SSE-KMS, Object Lock (WORM), lifecycle rules
+│   ├── kms/                    # Customer-managed KEKs, rotation policies, IAM policies
+│   ├── secrets/                # Secrets Manager / Vault configuration for runtime and migration credentials
+│   ├── monitoring/             # Prometheus, Alertmanager, Grafana, OpenTelemetry Collector
+│   └── iam/                    # Least-privilege IAM roles and workload identity bindings
 ├── environments/
+│   ├── development/
+│   │   ├── main.tf
+│   │   └── variables.tf
 │   ├── staging/
 │   │   ├── main.tf
 │   │   ├── variables.tf
@@ -45,8 +47,22 @@ infra/
 │       ├── main.tf
 │       ├── variables.tf
 │       └── terraform.tfvars
-└── policies/                   # OPA / Conftest security and compliance rules
+└── README.md
 ```
+
+Additionally, production-grade Kubernetes manifests are located in `deploy/kubernetes/`:
+- `00-namespace.yaml`: Enforces `pod-security.kubernetes.io/enforce: restricted`.
+- `01-service-accounts.yaml`: Workload identity service accounts.
+- `02-rbac.yaml`: Least-privilege pod reader RBAC role.
+- `03-configmaps.yaml`: Non-sensitive configuration.
+- `04-secrets-template.yaml`: ExternalSecret integration template.
+- `05-network-policies.yaml`: Default-deny-all with strict egress whitelisting.
+- `06-api-deployment.yaml`: UID 1000, read-only root, probes, resource bounds.
+- `07-web-deployment.yaml`: UID 101, read-only root, `/healthz` probe.
+- `08-caddy-ingress.yaml`: TLS 1.3, CSP, HSTS, `/api/v1/metrics` blocked.
+- `09-hpa.yaml`: HorizontalPodAutoscalers for API and Web.
+- `10-pdb.yaml`: PodDisruptionBudgets (`minAvailable: 2`).
+- `11-migration-job.yaml`: Out-of-band schema migration batch Job with `lamssa_migrator`.
 
 ### 2.1 State Management & Locking
 - **Remote Backend:** Encrypted S3/GCS bucket with Object Versioning and server-side encryption.

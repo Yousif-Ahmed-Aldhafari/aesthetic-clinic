@@ -51,6 +51,7 @@
     "test:web": "npm run test --workspace @lamssa/web --",
     "test:browser": "npm run build && npm run test:compile --workspace @lamssa/api && node scripts/patients-browser-smoke.mjs",
     "check:deployment": "node scripts/check-deployment.mjs",
+    "test:infra": "node scripts/check-infrastructure.mjs && node scripts/test-connection-pooling.mjs",
     "test:production-smoke": "node scripts/production-smoke.mjs"
   },
   "allowScripts": {

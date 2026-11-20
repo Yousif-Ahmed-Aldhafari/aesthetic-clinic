@@ -305,6 +305,16 @@ In Phase 7 Step 7.5, realistic multi-tenant performance and operational resilien
   - Alerting Engine: Built-in 15-minute deduplicated alerting covering high 5xx error rate, DB pool saturation, failed login brute-force spikes, and financial hash mismatches.
 - See `docs/performance-and-scalability.md` and `docs/operational-observability.md` for complete specifications and runbooks.
 
+### Phase 9 Step 9.2: Enterprise Infrastructure as Code & Secure Kubernetes Deployment Foundation
+
+In Step 9.2, the infrastructure-as-code and container deployment foundation for staging and production was implemented and verified locally:
+- **Modular OpenTofu/Terraform IaC (`infra/`)**: Reusable modules for networking (VPC/subnets), managed Kubernetes, PostgreSQL HA with PgBouncer, encrypted S3/GCS object storage, KMS/HSM, secrets manager, Prometheus/Grafana monitoring, and least-privilege IAM roles. Isolated environment configurations for `development`, `staging`, and `production`. Zero hardcoded secrets, regional isolation enforcing Saudi residency (GCP `me-central2` in Dammam / local sovereign cloud), and policy validation via `scripts/check-infrastructure.mjs`.
+- **Hardened Kubernetes Manifests (`deploy/kubernetes/`)**: 12 complete production manifests enforcing the Kubernetes **Restricted Pod Security Standard** (`pod-security.kubernetes.io/enforce: restricted`). Pods run as non-root (UID 1000 for API, UID 101 for Web), with read-only root filesystems, dropped `ALL` Linux capabilities, explicit CPU/memory requests and limits, multi-replica HPA (min 2, max 10/6), PodDisruptionBudgets (`minAvailable: 2`), and default-deny Calico/Cilium network policies.
+- **Zero-Trust Caddy Ingress**: Terminating TLS 1.3 with strict HSTS, secure CSP (no unsafe-inline), and kernel/ingress route blocking that rejects external traffic to `/api/v1/metrics`.
+- **PostgreSQL Connection Pooling & Tenant Security**: Validated that PgBouncer transaction pooling preserves tenant isolation when combined with PostgreSQL `set_config('lamssa.clinic_id', ..., true)` (`is_local = true`), as verified by an automated 7-test suite (`scripts/test-connection-pooling.mjs`). Database schema migrations executed out-of-band via an isolated Kubernetes batch Job (`11-migration-job.yaml`) using DDL role `lamssa_migrator`.
+- **Infrastructure Test Command**: `npm run test:infra` executes both `scripts/check-infrastructure.mjs` and `scripts/test-connection-pooling.mjs`.
+- See `docs/infrastructure-as-code.md`, `docs/environment-isolation.md`, `docs/kubernetes-deployment.md`, `docs/postgresql-pooling-security.md`, and `docs/phase-9-step-9-2-acceptance.md`.
+
 ### Phase 9 Step 9.1: Enterprise Infrastructure Architecture & Production Deployment Blueprint
 
 In Step 9.1, the production infrastructure architecture and deployment blueprint for Phase 9 was formally established:

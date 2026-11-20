@@ -1,0 +1,59 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lamssa-ingress
+  namespace: lamssa-production
+  annotations:
+    kubernetes.io/ingress.class: caddy
+    ingress.kubernetes.io/ssl-redirect: "true"
+    ingress.kubernetes.io/hsts: "true"
+    ingress.kubernetes.io/hsts-max-age: "63072000"
+    ingress.kubernetes.io/hsts-include-subdomains: "true"
+    ingress.kubernetes.io/hsts-preload: "true"
+    # Block operational telemetry from public edge
+    caddy.ingress.kubernetes.io/route: |
+      @operational path /api/v1/metrics
+      respond @operational 404
+  labels:
+    app.kubernetes.io/name: lamssa-ingress
+spec:
+  tls:
+    - hosts:
+        - app.lamssa.sa
+        - portal.lamssa.sa
+      secretName: lamssa-tls-cert
+  rules:
+    - host: app.lamssa.sa
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: lamssa-api
+                port:
+                  number: 3000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lamssa-web
+                port:
+                  number: 8080
+    - host: portal.lamssa.sa
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: lamssa-api
+                port:
+                  number: 3000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lamssa-web
+                port:
+                  number: 8080

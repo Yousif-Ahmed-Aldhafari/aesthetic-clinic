@@ -361,6 +361,53 @@ production use remains gated on authentication, isolation and operational contro
     workspace with SVG anatomical chart, patient orientation, and WCAG 2.1 AA accessible table alternative.
     See [dentistry-and-oral-health.md](dentistry-and-oral-health.md) and [phase-8-step-8-2-acceptance.md](phase-8-step-8-2-acceptance.md).
 
+35. **8.3 — Pediatrics & Child Health — Neonatal Records, Caregiver Authorization, Growth Analytics & Medication Safety (implemented).**
+    Additive Migration 042 (`20261118000200_pediatrics_growth_caregiver`) adding `PediatricBirthHistory`, `PatientCaregiverRelationship`,
+    and `PediatricGrowthRecord` under `FORCE RLS` with `lamssa_security.pediatric_growth_immutability_guard()`; WHO 2006 LMS growth reference
+    analytics (0–60m), prematurity corrected age calculation, $\pm 0.7\text{ cm}$ recumbent/standing correction; pediatric medication safety preflight
+    checks; and Arabic-first RTL clinical workspace with SVG percentiles chart and WCAG 2.1 AA accessible table.
+    See [pediatrics-and-child-health.md](pediatrics-and-child-health.md) and [phase-8-step-8-3-acceptance.md](phase-8-step-8-3-acceptance.md).
+
+36. **8.4 — Obstetrics & Gynecology (OB_GYN) — Pregnancy Episodes, Antenatal Care, Sensitive Examinations & RTL Clinical Workspace (implemented).**
+    Additive Migration 043 (`20261118000300_obgyn_antenatal_care`) adding `PregnancyEpisode`, `AntenatalVisitRecord`, `ObstetricHistoryRecord`,
+    and `GynecologicalExamination` under `FORCE RLS`; clinician-controlled pregnancy dating engine (Naegele's rule, Robinson-Fleming CRL biometrics);
+    antenatal flowsheet with automated pre-eclampsia safety screening; chaperone documentation and intimate exam redaction; and native RTL workspace.
+    See [obstetrics-and-gynecology.md](obstetrics-and-gynecology.md) and [phase-8-step-8-4-acceptance.md](phase-8-step-8-4-acceptance.md).
+
+37. **8.5 — Ophthalmology & ENT — Refraction, Tonometry, Audiometry & Clinical Workspaces (implemented).**
+    Additive Migration 044 (`20261118000400_ophthalmology_ent`) adding `OphthalmicRefractionRecord`, `OphthalmicExaminationRecord`, `EntExaminationRecord`,
+    and `AudiometryAssessmentRecord` under `FORCE RLS`; optical refraction and spherical equivalent engine; tonometry and CDR glaucoma screening;
+    ISO 8253-1 pure-tone audiometry with PTA-4 derivation and Jerger tympanometry; and authentic Arabic-first RTL clinical workspaces.
+    See [ophthalmology-and-ent.md](ophthalmology-and-ent.md) and [phase-8-step-8-5-acceptance.md](phase-8-step-8-5-acceptance.md).
+
+38. **8.6 — Orthopedics & Physiotherapy — Musculoskeletal Exams, Goniometry, Rehab Episodes & Functional Instruments (implemented).**
+    Remediation of clinical safety gates; additive Migration 045 (`20261118000500_orthopedics_physiotherapy`) adding `MusculoskeletalExamination`,
+    `JointRangeOfMotionRecord`, `PhysiotherapyRehabilitationEpisode`, and `PhysiotherapySessionRecord` under `FORCE RLS`; AAOS normative range-of-motion
+    analytics; VAS pain trajectory tracking; client-side validated ODI 2.0, QuickDASH, and Lysholm functional outcome scoring; and RTL goniometer workspace.
+    See [orthopedics-and-physiotherapy.md](orthopedics-and-physiotherapy.md) and [phase-8-step-8-6-acceptance.md](phase-8-step-8-6-acceptance.md).
+
+39. **8.7 — Final Multi-Specialty Clinical Integrity, Security & Release Acceptance (implemented).**
+    Outcome questionnaire IP audit and verbatim text removal; catalog audit of all 45 migrations, 183 regular tables (173 FORCE RLS, 2 ENABLE RLS, 8 exempt),
+    860 RLS policies, 114 security functions; 400 unit tests, 486 database integration tests, 51 browser smoke tests passing; and dual verdict:
+    READY FOR CODE MERGE, NOT READY FOR PRODUCTION (pending cloud HSM, isolated DR restore, Medical Director policy ratification, and regulatory compliance).
+    See [phase-8-final-acceptance.md](phase-8-final-acceptance.md).
+
+40. **9.1 — Enterprise Infrastructure Architecture & Production Deployment Blueprint (implemented design milestone).**
+    Multi-tier zero-trust cloud topology spanning Zones 0–4; PostgreSQL HA streaming physical replication and PgBouncer connection pooling architecture;
+    Cloud KMS/HSM envelope encryption; S3/GCS object storage architecture with presigned URLs and reverse-proxy streaming; enterprise observability with
+    cardinality protection; and 11 documented production blockers.
+    See [phase-9-enterprise-infrastructure-architecture.md](phase-9-enterprise-infrastructure-architecture.md), [phase-9-production-deployment-blueprint.md](phase-9-production-deployment-blueprint.md),
+    [phase-9-threat-model.md](phase-9-threat-model.md), [phase-9-production-blocker-register.md](phase-9-production-blocker-register.md), and [phase-9-step-9-1-assessment.md](phase-9-step-9-1-assessment.md).
+
+41. **9.2 — Enterprise Infrastructure as Code, Environment Isolation & Secure Deployment Foundation (implemented).**
+    Modular OpenTofu/Terraform IaC (8 modules under `infra/modules/`, 3 environments under `infra/environments/`); 12 Kubernetes production manifests
+    under `deploy/kubernetes/` strictly enforcing Kubernetes Restricted Pod Security Standard (`pod-security.kubernetes.io/enforce: restricted`), non-root UIDs,
+    read-only root filesystems, dropped capabilities `ALL`, requests/limits, HPA, PDB, and default-deny-all network policies; Caddy TLS 1.3 ingress with metrics
+    endpoint route blocking; PostgreSQL PgBouncer transaction pooling tenant isolation verification (`scripts/test-connection-pooling.mjs`); out-of-band schema
+    migration Job (`11-migration-job.yaml`) with `lamssa_migrator`; and automated policy-as-code validator (`scripts/check-infrastructure.mjs`).
+    See [infrastructure-as-code.md](infrastructure-as-code.md), [environment-isolation.md](environment-isolation.md), [kubernetes-deployment.md](kubernetes-deployment.md),
+    [postgresql-pooling-security.md](postgresql-pooling-security.md), and [phase-9-step-9-2-acceptance.md](phase-9-step-9-2-acceptance.md).
+
 
 
 ## Migration discipline
