@@ -30,7 +30,7 @@ export class ExternalKmsProvider implements KmsProvider {
     this.region =
       this.config.get('KMS_EXTERNAL_REGION', { infer: true }) ||
       process.env.KMS_EXTERNAL_REGION ||
-      'me-central1';
+      'me-central2';
 
     if (!this.endpoint) {
       this.logger.warn('External KMS provider initialized without an explicit KMS_EXTERNAL_ENDPOINT; fail-closed behavior will reject cryptographic operations');

@@ -106,8 +106,8 @@ All disaster recovery artifacts are encrypted and authenticated using defense-in
 Under the National Data Management Office (NDMO), the Personal Data Protection Law (PDPL), and the Communications, Space and Technology Commission (CST) Cloud Computing Regulatory Framework:
 - **Zero Cross-Border Data Transfer**: All production patient identities, health records, clinical documentation, cryptographic keys, and database backups must remain within the Kingdom of Saudi Arabia (KSA).
 - **In-Kingdom Multi-Region Pairing**:
-  - **Primary Availability Zone / Region**: Riyadh Region (`me-central-1`)
-  - **Disaster Recovery Region**: Jeddah Region (`me-central-2`)
+  - **Primary In-Kingdom Region**: In-Country Primary Region (e.g., Dammam `me-central2` / Riyadh)
+  - **Disaster Recovery Region**: In-Country Secondary DR Region (e.g., Jeddah / Riyadh)
 - **Encrypted Secondary Replication**: Cross-region replication between Riyadh and Jeddah utilizes dedicated private interconnects (e.g., AWS Direct Connect or local cloud interconnects) with TLS 1.3 / IPsec encapsulation.
 
 ### Storage & Retention Architecture

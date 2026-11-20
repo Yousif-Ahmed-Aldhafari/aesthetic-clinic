@@ -43,16 +43,23 @@ An exhaustive inspection of repository source code, Dockerfiles, configuration s
 
 To ensure legal, privacy, and regulatory compliance, the deployment architecture accounts for the following standards without assuming universal applicability:
 
-### 3.1 Data Residency & Privacy Mandates
+### 3.1 Data Residency & Cloud Region Evaluation
 - **Saudi Personal Data Protection Law (PDPL):** Mandates that personal health data of Saudi citizens and residents be hosted exclusively within the Kingdom of Saudi Arabia, unless explicit exemption is granted by SDAIA.
-- **National Cybersecurity Authority (NCA) ECC-1:2018:** Mandates multi-tier network segmentation, cryptographic key custody in certified hardware, least privilege access control, and continuous audit retention.
+- **Provider-Region Mapping & In-Country Cloud Availability:**
+  - **AWS:** `me-central-1` is located in the **United Arab Emirates (Dubai)**, not Saudi Arabia. `me-south-1` is in **Bahrain**. An AWS Saudi region (Riyadh) has been announced but is not yet operational for production workloads.
+  - **Google Cloud:** `me-central1` is in **Doha, Qatar**, not Saudi Arabia. The certified in-country Saudi region is **`me-central2` (Dammam)**, which supports GKE, Cloud SQL for PostgreSQL, Cloud Storage, Cloud KMS, Secret Manager, and Private Service Connect.
+  - **Oracle Cloud (OCI):** Operates live Saudi government-accredited cloud regions in **Riyadh** and **Jeddah**.
+  - **National Sovereign Clouds:** STC Cloud, CNTXT, and Zain Cloud provide accredited in-kingdom healthcare hosting.
+  - **Cross-Border Transfer Policy:** Cross-border replication of clinical or patient data is disabled by default. Deployment configuration must explicitly enforce in-country regional placement (e.g., GCP `me-central2`).
+- **National Cybersecurity Authority (NCA) ECC-1:2018:** Mandates multi-tier network segmentation, cryptographic key custody in certified hardware (FIPS 140-2 Level 2 or Level 3 depending on classification), least-privilege access, and auditable operational logs.
 - **Saudi Ministry of Health (MOH) Cloud Computing Regulatory Framework:** Classifies electronic medical records as "Extremely Sensitive Data" (Level 3/4), requiring dedicated private tenant environments or certified sovereign public clouds.
 
-### 3.2 Clinical Data Retention Requirements
-- **Adult Medical Records:** Minimum 10 years from the date of the last medical encounter.
-- **Pediatric Records:** Retained until the patient reaches 18 years of age plus an additional 10 years (minimum retention age: 28 years).
-- **Obstetric & Neonatal Records:** Minimum 25 years due to statutory limitation periods for birth-related clinical claims.
-- **Financial & VAT Records (ZATCA):** Minimum 6 to 10 years with immutable cryptographic chaining.
+### 3.2 Clinical Data Retention & Legal Framework
+Retention obligations must distinguish statutory legal mandates from organizational security proposals:
+- **Mandatory Statutory Law (Saudi MoH):** Outpatient medical records must be retained for a minimum of 10 years from the date of the last medical encounter.
+- **Pediatric & Obstetric Records (Statutory Limitation Periods):** Pediatric records are retained until age of majority plus statutory limitation period; obstetric delivery and neonatal records retained for 25 years due to legal liability windows for birth injury claims.
+- **Financial & Tax Records (ZATCA):** Value Added Tax regulations mandate retention of tax invoices and credit/debit notes for a minimum of 6 years (10 years for capital assets).
+- **Design Proposals (Non-Statutory):** Universal lifetime retention, immediate WORM locking for all intermediate drafts, and arbitrary HSM Level 4 requirements are non-statutory design proposals that require institutional board approval rather than universal regulatory mandates.
 
 ---
 
@@ -66,8 +73,11 @@ To ensure legal, privacy, and regulatory compliance, the deployment architecture
 ### 4.2 Architectural Hotspots & Contention Mitigation
 1. **Live Waiting Board SSE Connections:** Long-lived HTTP streaming connections can saturate NestJS worker threads.
    - *Mitigation:* Offload SSE connection management to edge proxy or Redis Pub/Sub cluster.
-2. **PostgreSQL Connection Exhaustion:** 20 NestJS pods with default connection pools of 20 would demand 400 direct connections to PostgreSQL, exceeding default backend worker limits.
-   - *Mitigation:* Mandatory deployment of PgBouncer in `transaction` pool mode, capping PostgreSQL backend connections at 40 while multiplexing up to 2,000 client connections.
+2. **PostgreSQL Connection Exhaustion & PgBouncer Safety:**
+   - 20 NestJS pods with default connection pools of 20 would demand 400 direct connections to PostgreSQL, exceeding default backend worker limits.
+   - *Mitigation:* Deployment of PgBouncer in `transaction` pool mode, capping PostgreSQL backend connections at 40 while multiplexing up to 2,000 client connections.
+   - *Tenant Context Safety:* Lamssa does not rely on `DISCARD ALL` between transactions (which does not execute under transaction pooling). Instead, `TenantDatabaseService.withClinicContext` uses transaction-local `set_config('lamssa.clinic_id', ..., true)`, which PostgreSQL automatically clears upon transaction completion. Furthermore, `lamssa_security.context_allows` verifies the session against real database rows in `Session` and `ClinicMembership`.
+   - *Prisma Prepared Statements:* Requires `pgbouncer=true` parameter in Prisma connection strings to prevent prepared statement conflicts. If transaction pooling encounters prepared statement issues, `session` pooling is the verified fallback.
 3. **Optimistic Concurrency Collisions:** Simultaneous appointment booking or invoice payments for the same patient.
    - *Mitigation:* Existing `expectedVersion` optimistic locking pattern fails closed with HTTP 409 Conflict, requiring client refresh.
 
@@ -80,12 +90,12 @@ Five provisional deployment sizing scenarios were evaluated to balance performan
 | Resource Tier | Target Profile | Compute Specifications | Database & Cache | Storage & Backup | Estimated Monthly Cost (USD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Tier 1: Development** | Local / Team CI | 1 VM (2 vCPU, 4 GiB) | Containerized PostgreSQL 16 | Local Disk (50 GiB) | **$25 – $50** |
-| **Tier 2: Staging** | Pre-production testing | 2 VM / K8s nodes (4 vCPU, 8 GiB) | Managed PostgreSQL (2 vCPU, 4 GiB) + Redis | S3 Bucket (100 GiB) + Daily Backup | **$120 – $220** |
-| **Tier 3: Small Clinic** | 1–3 Doctors, 1 Branch | 2 VM / App Pods (4 vCPU, 8 GiB) | Managed PostgreSQL Multi-AZ (2 vCPU, 8 GiB) | S3 Bucket (250 GiB) + Cloud KMS | **$250 – $450** |
-| **Tier 4: Medium Polyclinic** | 5–15 Doctors, 3 Branches | 4–6 App Pods (8 vCPU, 16 GiB) | Managed PostgreSQL HA (4 vCPU, 16 GiB) + PgBouncer + Redis | S3 Bucket (1 TiB) + Object Lock + Cloud KMS | **$650 – $1,200** |
-| **Tier 5: Enterprise Organization** | 50+ Clinics, Multi-Region | 10–20 App Pods (Auto-scaling) | Managed PostgreSQL HA (8 vCPU, 32 GiB) + Read Replicas + Redis Cluster | S3 Multi-Region (5 TiB) + Dedicated Cloud HSM | **$2,500 – $4,800** |
+| **Tier 2: Staging** | Pre-production testing | 2 VM / K8s nodes (4 vCPU, 8 GiB) | Managed PostgreSQL (2 vCPU, 4 GiB) + Redis | S3/GCS Bucket (100 GiB) + Daily Backup | **$120 – $220** |
+| **Tier 3: Small Clinic** | 1–3 Doctors, 1 Branch | 2 VM / App Pods (4 vCPU, 8 GiB) | Managed PostgreSQL Multi-AZ (2 vCPU, 8 GiB) | S3/GCS Bucket (250 GiB) + Cloud KMS | **$250 – $450** |
+| **Tier 4: Medium Polyclinic** | 5–15 Doctors, 3 Branches | 4–6 App Pods (8 vCPU, 16 GiB) | Managed PostgreSQL HA (4 vCPU, 16 GiB) + PgBouncer + Redis | S3/GCS Bucket (1 TiB) + Object Lock + Cloud KMS | **$650 – $1,200** |
+| **Tier 5: Enterprise Organization** | 50+ Clinics, Multi-Region | 10–20 App Pods (Auto-scaling) | Managed PostgreSQL HA (8 vCPU, 32 GiB) + Read Replicas + Redis Cluster | S3/GCS Multi-Region (5 TiB) + Cloud HSM | **$2,500 – $4,800** |
 
-*Note: Sizing costs represent market averages for regional cloud providers in the Middle East (AWS me-central-1, GCP me-central1). Actual vendor quotes require procurement engagement.*
+*Note: Sizing costs represent market estimates for regional cloud deployments in the Middle East (e.g. Google Cloud me-central2 Dammam, OCI Riyadh/Jeddah). Actual quotes require procurement contracts.*
 
 ---
 

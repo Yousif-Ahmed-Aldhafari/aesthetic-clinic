@@ -13,7 +13,7 @@ Lamssa is a multi-tenant, Arabic-first healthcare platform providing clinical co
 
 Phase 9 establishes the production-grade enterprise infrastructure architecture. The objectives are:
 1. **Zero-Trust Network Topology:** Defense-in-depth network isolation where no component trusts another by default.
-2. **PostgreSQL High Availability & Data Resilience:** Automated zero-RPO/minimal-RTO primary/standby replication with connection pooling and continuous WAL archiving.
+2. **PostgreSQL High Availability & Data Resilience:** Automated primary/standby replication with connection pooling and continuous WAL archiving targeting measured RTO < 15m and RPO < 5m (RPO = 0 targeted for isolated AZ node failures under synchronous quorum).
 3. **Hardware-Protected Cryptographic Custody:** Cloud KMS / HSM-backed envelope encryption for tenant isolation, data-at-rest, and clinical media assets.
 4. **Stateless Scalable Compute:** Containerized API and Web workloads capable of horizontal auto-scaling without local state dependencies.
 5. **Durable Enterprise Observability:** PHI-safe centralized logging, metrics aggregation, and resilient multi-channel alerting with automated escalation.
@@ -184,18 +184,26 @@ The platform strictly decouples migration execution from runtime operations:
 | `lamssa_readonly`| **NO** | **NO** | **NO** | DML: SELECT only on replica. Bound by FORCE RLS. | Reporting and read-only analytical workloads. |
 | `postgres` (Admin) | **YES** | **YES** | **YES** | Initial cluster bootstrap, extension installation, physical backup. | Cold offline storage / vault. Never used by applications. |
 
-### 5.2 Connection Pooling Specifications (PgBouncer)
-- **Pool Mode:** `transaction` (ensures connections are returned to the pool immediately upon transaction completion, supporting thousands of concurrent client connections with minimal PostgreSQL backend worker processes).
-- **Session Reset:** `DISCARD ALL` or `RESET ALL` executed upon connection release to prevent cross-request session leakage or GUC contamination.
+### 5.2 Connection Pooling Specifications (PgBouncer & Tenant Isolation)
+- **Pool Mode & Tenant Context Safety:**
+  - `transaction` pooling assigns a server connection only for the lifespan of a single transaction (`BEGIN ... COMMIT`).
+  - **Critical Architectural Safeguard:** `DISCARD ALL` is a session-level command that does *not* execute between transactions in transaction pooling mode. Therefore, tenant isolation **must never rely on session-level GUCs or connection state resets**.
+  - Lamssa achieves tenant safety because `TenantDatabaseService.withClinicContext` executes `SELECT set_config('lamssa.clinic_id', ..., true)` with the third parameter set to `true` (`is_local = true`). This guarantees that PostgreSQL itself automatically clears the GUC when the transaction concludes (commit or rollback).
+  - Furthermore, `lamssa_security.context_allows` performs cryptographic and database-level verification: it checks that the GUC matches an active, unexpired, and unrevoked row in `public."Session"` and `public."ClinicMembership"`. An attacker setting GUCs without a valid session row is immediately denied access.
+  - **Prisma & Prepared Statements:** In `transaction` pooling mode, Prisma requires connection string parameter `pgbouncer=true` to disable client-side prepared statement caching that conflicts with connection multiplexing. If transaction pooling encounters prepared statement or isolation anomalies during testing, `session` pooling or direct application-level connection pooling must be used as the safe fallback.
 - **Max Client Connections:** 2,000 per PgBouncer instance.
 - **Default Pool Size:** 40 connections to PostgreSQL backend per database.
 - **Reserve Pool:** 10 connections for traffic spikes.
 
-### 5.3 High-Availability & Automated Failover
+### 5.3 High-Availability, Replication Durability & Measurable Recovery Targets
 - **Replication Protocol:** Streaming physical replication.
-- **Synchronous Replication:** At least one synchronous standby replica in a distinct Availability Zone (`synchronous_commit = on` or `remote_apply`), guaranteeing **zero committed transaction loss (RPO = 0)** upon primary node failure.
-- **Failover Coordination:** Orchestrated via Patroni with an external Distributed Consensus Store (etcd/Consul) or cloud-managed HA (AWS Aurora / Cloud SQL HA).
-- **Automatic Health Checks:** Node heartbeat checked every 2 seconds; failover triggered if primary is unreachable for 10 seconds.
+- **Synchronous vs Asynchronous Replication:**
+  - Single-Region Multi-AZ: At least one synchronous standby replica in a distinct Availability Zone (`synchronous_commit = on` or `remote_apply`), targeting **zero committed transaction loss (RPO = 0)** upon isolated primary node hardware failure under active quorum.
+  - Cross-Region DR: Asynchronous replication across distant regions (e.g. Dammam to secondary in-country site) to prevent write-latency penalties, operating with an **RPO < 5 minutes** governed by continuous WAL archiving.
+- **Failure Modes & Measurable Targets:**
+  - **Target RTO:** < 15 minutes for automated failover; measured disaster recovery restore target < 30 minutes.
+  - **Target RPO:** RPO = 0 for single-node failure within synchronous cluster; RPO < 5 minutes for catastrophic multi-AZ or regional disaster.
+- **Failover Coordination & Fencing:** Orchestrated via Patroni with an external Distributed Consensus Store (etcd/Consul) or cloud-managed HA (GCP Cloud SQL HA / AWS Aurora Multi-AZ). Strict fencing (watchdog / STONITH) is required to terminate unresponsive primaries and prevent split-brain dual-primary corruption.
 - **Split-Brain Prevention:** Strict quorum enforcement via odd-numbered consensus nodes (3 or 5 nodes).
 
 ---
@@ -248,7 +256,7 @@ sequenceDiagram
     API-->>Client: 201 Created (Photo Metadata)
 ```
 
-### 7.1 Asset Storage Safeguards
+### 7.1 Asset Storage Safeguards & Download Authorization Pathways
 - **Private S3/GCS Bucket:** Direct public access completely blocked (`BlockPublicAcls`, `BlockPublicPolicy`, `IgnorePublicAcls`, `RestrictPublicBuckets`).
 - **Storage Path Partitioning:** Multi-tenant path hierarchy:
   `/{clinicId}/photos/{sessionId}/{photoId}.enc`
@@ -257,6 +265,15 @@ sequenceDiagram
 - **Server-Side + Client-Side Dual Encryption:**
   - Layer 1: S3 Bucket default encryption using AWS-KMS / Cloud KMS customer-managed key.
   - Layer 2: Lamssa application-level AES-256-GCM envelope encryption before network transmission to S3.
+- **Presigned URLs as Bearer Capabilities vs Reverse-Proxy Delivery:**
+  - Presigned object storage URLs operate as bearer capabilities (anyone possessing the URL within its validity window can fetch the raw encrypted bytes). Therefore, they must never be treated as continuously bound to an authenticated session once issued.
+  - **Download Authorization Pathway:**
+    1. The client must authenticate with a valid clinical session and doctor privilege.
+    2. The API issues short-lived presigned URLs (60–120 seconds maximum expiration).
+    3. The access event is recorded in `AuditEvent`.
+  - **Reverse-Proxy Delivery for Maximum Sensitivity Records:**
+    - For highly confidential clinical media (e.g. intimate gynecological examinations or pediatric forensic photography), presigned URLs are bypassed entirely.
+    - Media bytes are streamed directly through the authenticated NestJS API container, decrypting in-flight, validating the active session on every chunk, enforcing strict `no-store` headers, and immediately terminating access if a session is revoked or idle.
 
 ---
 

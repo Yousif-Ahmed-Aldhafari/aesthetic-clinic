@@ -289,7 +289,7 @@ All automated verification gates for Step 2.3 passed cleanly:
 - **Remote TLS Mandate**: Production configuration validator mandates verified TLS (`sslmode=verify-full`) for remote production databases.
 
 ### 12.3 Disaster Recovery, Tamper Evidence & Saudi Data Sovereignty (Step 7.3)
-- **Saudi Data Sovereignty Compliance**: Under NDMO, PDPL, and Saudi Cloud Computing Regulatory Framework, zero production health records, patient identities, or backup artifacts are transferred across national borders. Secondary DR sites are strictly located in-kingdom (Riyadh `me-central-1` primary, Jeddah `me-central-2` DR).
+- **Saudi Data Sovereignty Compliance**: Under NDMO, PDPL, and Saudi Cloud Computing Regulatory Framework, zero production health records, patient identities, or backup artifacts are transferred across national borders. Secondary DR sites are strictly located in-kingdom (e.g., Dammam `me-central2` primary, Jeddah / Riyadh secondary DR).
 - **HMAC-SHA256 Signed DR Manifests**: Disaster recovery manifests link encrypted database dumps, clinic asset/document archives, and KMS metadata under a cryptographic signature, preventing manifest tampering or asset desynchronization.
 - **Dual-Mode Recovery Drills**: Regular non-destructive drills (`npm run dr:drill`) verify database TOC (157 tables, 735 RLS policies, 39 migrations) and asset archives without modifying live data.
 - **Asset-to-Database Consistency**: `scripts/verify-asset-consistency.mjs` verifies file existence, permissions (`0600`/`0640`), and SHA-256 digests against database metadata, eliminating orphaned or tampered clinical records. See [docs/disaster-recovery-and-resilience.md](disaster-recovery-and-resilience.md).
