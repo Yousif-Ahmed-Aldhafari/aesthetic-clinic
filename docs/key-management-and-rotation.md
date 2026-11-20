@@ -29,7 +29,8 @@ Lamssa implements a Defense-in-Depth cryptographic key management architecture u
 ### 1.1 Key Hierarchy
 1. **Key Encryption Key (KEK):**
    - 256-bit master key managed by the Key Management Service (KMS).
-   - Never stored in the database in plaintext.
+   - In production, protected by Google Cloud KMS / Cloud HSM (FIPS 140-3 Level 3) in `me-central2` (Dammam, Saudi Arabia) via `GoogleCloudKmsProvider` (`apps/api/src/kms/google-cloud-kms.provider.ts`). See [docs/production-kms-and-key-custody.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/production-kms-and-key-custody.md).
+   - Never stored in the database or application memory in plaintext.
    - Versioned in PostgreSQL catalog table `KmsKeyRegistry` with metadata only (`keyId`, `version`, `state`, `algorithm`, `description`, `createdAt`, `rotatedAt`, `revokedAt`).
    - Primary active key identifier: `lamssa/kek/2026-v1`.
 2. **Data Encryption Key (DEK):**

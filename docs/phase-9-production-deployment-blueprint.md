@@ -81,12 +81,13 @@ Additionally, production-grade Kubernetes manifests are located in `deploy/kuber
 | Configuration Attribute | Development (`dev`) | Staging (`staging`) | Production (`prod`) |
 | :--- | :--- | :--- | :--- |
 | **Cloud Account** | Shared Dev Account | Isolated Staging Account | Dedicated Production Account |
-| **Network Isolation** | Local Docker / Dev VPC | Dedicated Staging VPC | Multi-AZ Dedicated Production VPC |
+| **Network Isolation** | Local Docker / Dev VPC | Dedicated Staging VPC | Multi-AZ Dedicated Production VPC (me-central2 Dammam) |
 | **PostgreSQL Nodes** | Single instance (Docker) | 1 Primary + 1 Async Standby | 1 Primary + 1 Sync Standby + 1 Async Standby (Multi-AZ) |
-| **Connection Pooling** | Direct connection | PgBouncer (1 instance) | PgBouncer Cluster (2+ instances behind internal NLB) |
+| **Connection Pooling** | Direct connection | Direct connection / PgBouncer | Direct connection (pg.Pool / verified safe default) or PgBouncer |
 | **Compute Sizing** | 1 Container (local) | 2 API Pods, 2 Web Pods | 3–20 API Pods (HPA), 3–10 Web Pods (HPA) |
-| **KMS Provider** | `local` (dev fallback) | `external` (staging KMS key) | `external` / Cloud HSM (FIPS 140-2 Level 3) |
-| **Asset Storage** | Local filesystem (`var/`) | Private Staging S3/GCS | Private Production S3/GCS with Object Lock WORM |
+| **KMS Provider** | `local` (dev fallback) | `gcp` / `google-cloud-kms` (Cloud KMS) | `gcp` / `google-cloud-kms` (Cloud HSM FIPS 140-3 Level 3) |
+| **Secret Vault** | `.env` / mock vault | `google-secret-manager` (GSM) | `google-secret-manager` (GSM + Workload Identity) |
+| **Asset Storage** | Local filesystem (`var/`) | `gcs` (Staging GCS Bucket) | `gcs` (Production GCS Bucket with WORM & CMEK) |
 | **Backups** | Local script snapshot | Daily snapshot + 7-day retention | Hourly WAL + Daily Snapshot + 30-day WORM + Off-site replication |
 | **Alerting Delivery** | In-memory logger | Slack Webhook | PagerDuty On-Call + SMS + Slack #ops-critical |
 

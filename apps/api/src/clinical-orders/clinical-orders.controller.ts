@@ -295,6 +295,27 @@ export class ClinicalOrdersController {
     return new StreamableFile(doc.buffer);
   }
 
+  @Get('documents/:documentId/stream')
+  @ClinicPermissions('clinical.documents.read')
+  async streamDocument(
+    @Req() req: AuthRequest,
+    @Param() params: ClinicDocumentRouteParams,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const doc = await this.repository.downloadDocument(req.auth!.principal, params.clinicId, params.documentId);
+
+    res.set({
+      'Content-Type': doc.mimeType,
+      'Content-Disposition': `inline; filename="clinical-document"; filename*=UTF-8''${encodeURIComponent(doc.fileName)}`,
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'Cache-Control': 'no-store, private',
+      'X-Content-Type-Options': 'nosniff',
+      'ETag': `"${doc.contentSha256}"`,
+    });
+
+    return new StreamableFile(doc.buffer);
+  }
+
   @Get('documents')
   @ClinicPermissions('clinical.documents.read')
   listDocuments(

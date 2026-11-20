@@ -58,6 +58,9 @@ flowchart TD
 ### Component Inventory & Responsibilities
 
 1. **`scripts/dr-backup.mjs` (`npm run dr:backup`)**:
+   - Creates atomic, point-in-time disaster recovery snapshots.
+   - Encrypts database dumps and clinical asset archives with AES-256-GCM.
+   - Streams bundles to immutable Google Cloud Storage backup vault buckets with Bucket Lock WORM compliance retention in `me-central2` (Dammam). See [docs/cloud-clinical-asset-storage.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/cloud-clinical-asset-storage.md) and [docs/clinical-asset-migration.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/clinical-asset-migration.md).
    - Executes authorized owner `pg_dump -Fc --enable-row-security` via `backup-database.mjs`.
    - Creates encrypted archive of all clinic branding assets (`ClinicAsset`), clinical photos (`ClinicalPhoto`), and AES-256-GCM encrypted medical documents (`ClinicalDocument`) via `asset-backup.mjs`.
    - Exports sanitized KMS Key Registry metadata (`kms_registry_<target>_<timestamp>.meta.json`) recording registered KEK IDs, versions, states, and algorithms (excluding raw key material).

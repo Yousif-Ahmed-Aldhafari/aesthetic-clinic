@@ -22,12 +22,24 @@ export type Environment = {
   CLINICAL_MEDIA_ENCRYPTION_KEY?: string;
   CLINICAL_MEDIA_ENCRYPTION_KEY_PREVIOUS?: string;
   METRICS_SECRET_KEY?: string;
-  KMS_PROVIDER?: 'local' | 'external' | 'synthetic';
+  KMS_PROVIDER?: 'local' | 'external' | 'synthetic' | 'gcp' | 'google-cloud-kms';
   KMS_PRIMARY_KEY_ID?: string;
   KMS_LOCAL_MASTER_KEY?: string;
   KMS_EXTERNAL_ENDPOINT?: string;
   KMS_EXTERNAL_KEY_ID?: string;
   KMS_EXTERNAL_REGION?: string;
+  GCP_PROJECT_ID?: string;
+  GCP_KMS_LOCATION?: string;
+  GCP_KMS_KEY_RING?: string;
+  GCP_KMS_CRYPTO_KEY?: string;
+  GCP_KMS_ENDPOINT?: string;
+  GCP_SECRET_PREFIX?: string;
+  GCP_SECRET_MANAGER_ENDPOINT?: string;
+  GCP_STORAGE_BUCKET?: string;
+  GCP_KMS_ASSET_KEY?: string;
+  GCP_STORAGE_ENDPOINT?: string;
+  SECRET_VAULT_PROVIDER?: string;
+  ASSET_STORE_PROVIDER?: string;
 };
 
 export function validateEnvironment(input: Record<string, unknown>): Environment {
@@ -102,7 +114,7 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
   if (metricsKey && !/^[A-Za-z0-9_-]{43,128}$/.test(metricsKey)) errors.push('METRICS_SECRET_KEY');
 
   const kmsProvider = (input.KMS_PROVIDER as string | undefined) ?? 'local';
-  if (!['local', 'external', 'synthetic'].includes(kmsProvider)) errors.push('KMS_PROVIDER');
+  if (!['local', 'external', 'synthetic', 'gcp', 'google-cloud-kms'].includes(kmsProvider)) errors.push('KMS_PROVIDER');
   const kmsLocalKey = typeof input.KMS_LOCAL_MASTER_KEY === 'string' ? input.KMS_LOCAL_MASTER_KEY : '';
   if (kmsLocalKey && (kmsLocalKey.length < 16 || !/^[A-Za-z0-9_-]{16,128}$/.test(kmsLocalKey))) {
     errors.push('KMS_LOCAL_MASTER_KEY');
@@ -137,6 +149,18 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     KMS_EXTERNAL_ENDPOINT: typeof input.KMS_EXTERNAL_ENDPOINT === 'string' ? input.KMS_EXTERNAL_ENDPOINT : undefined,
     KMS_EXTERNAL_KEY_ID: typeof input.KMS_EXTERNAL_KEY_ID === 'string' ? input.KMS_EXTERNAL_KEY_ID : undefined,
     KMS_EXTERNAL_REGION: typeof input.KMS_EXTERNAL_REGION === 'string' ? input.KMS_EXTERNAL_REGION : undefined,
+    GCP_PROJECT_ID: typeof input.GCP_PROJECT_ID === 'string' ? input.GCP_PROJECT_ID : undefined,
+    GCP_KMS_LOCATION: typeof input.GCP_KMS_LOCATION === 'string' ? input.GCP_KMS_LOCATION : undefined,
+    GCP_KMS_KEY_RING: typeof input.GCP_KMS_KEY_RING === 'string' ? input.GCP_KMS_KEY_RING : undefined,
+    GCP_KMS_CRYPTO_KEY: typeof input.GCP_KMS_CRYPTO_KEY === 'string' ? input.GCP_KMS_CRYPTO_KEY : undefined,
+    GCP_KMS_ENDPOINT: typeof input.GCP_KMS_ENDPOINT === 'string' ? input.GCP_KMS_ENDPOINT : undefined,
+    GCP_SECRET_PREFIX: typeof input.GCP_SECRET_PREFIX === 'string' ? input.GCP_SECRET_PREFIX : undefined,
+    GCP_SECRET_MANAGER_ENDPOINT: typeof input.GCP_SECRET_MANAGER_ENDPOINT === 'string' ? input.GCP_SECRET_MANAGER_ENDPOINT : undefined,
+    GCP_STORAGE_BUCKET: typeof input.GCP_STORAGE_BUCKET === 'string' ? input.GCP_STORAGE_BUCKET : undefined,
+    GCP_KMS_ASSET_KEY: typeof input.GCP_KMS_ASSET_KEY === 'string' ? input.GCP_KMS_ASSET_KEY : undefined,
+    GCP_STORAGE_ENDPOINT: typeof input.GCP_STORAGE_ENDPOINT === 'string' ? input.GCP_STORAGE_ENDPOINT : undefined,
+    SECRET_VAULT_PROVIDER: typeof input.SECRET_VAULT_PROVIDER === 'string' ? input.SECRET_VAULT_PROVIDER : undefined,
+    ASSET_STORE_PROVIDER: typeof input.ASSET_STORE_PROVIDER === 'string' ? input.ASSET_STORE_PROVIDER : undefined,
   };
   validateProductionSecurity(envResult);
   return envResult;

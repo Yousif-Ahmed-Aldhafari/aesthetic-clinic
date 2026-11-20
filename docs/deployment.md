@@ -20,6 +20,8 @@ For a small launch, use one 2 vCPU/4 GiB application VM, a small managed Postgre
 must use separate accounts, database, secrets, volumes and DNS. Local development keeps
 native PostgreSQL and Vite; `compose.yaml` remains development-only.
 
+In Phase 9 (Enterprise Infrastructure), deployment is formalized via modular OpenTofu IaC (`infra/`) targeting Google Cloud in Saudi Arabia (`me-central2` in Dammam), Restricted Kubernetes manifests (`deploy/kubernetes/`), Google Cloud KMS (`GoogleCloudKmsProvider`), Google Secret Manager (`GoogleSecretManagerVaultProvider`), Google Cloud Storage (`GoogleCloudStorageAssetStore`), and direct application-side connection pooling (`pg.Pool`). See [docs/phase-9-step-9-3-acceptance.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/phase-9-step-9-3-acceptance.md).
+
 Entry costs vary by provider, region and support level. A practical initial planning
 range is roughly USD 80–300/month for the VM, managed database, modest object storage,
 DNS, backup copies and monitoring. This is a budget assumption rather than a quote:

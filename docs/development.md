@@ -1,5 +1,21 @@
 # Development setup
 
+## Phase 9.3 production cryptographic custody, secret vault integration & stateless clinical asset storage
+
+- Provider Implementations:
+  - `apps/api/src/kms/google-cloud-kms.provider.ts`: Google Cloud KMS provider anchoring envelope encryption in FIPS 140-3 Level 3 Cloud HSM (`me-central2` Dammam).
+  - `apps/api/src/config/google-secret-manager.provider.ts`: Google Cloud Secret Manager vault provider with 300s in-memory TTL caching and Workload Identity federation.
+  - `apps/api/src/identity/google-cloud-storage.asset-store.ts`: Google Cloud Storage asset store with CMEK, tenant prefix isolation, and path traversal defense.
+  - `apps/api/src/clinical-orders/clinical-orders.controller.ts`: Authorized reverse-proxy streaming endpoint `@Get('documents/:documentId/stream')`.
+  - `scripts/migrate-clinical-assets.mjs`: CLI migration engine supporting `--dry-run`, `--resume`, SHA-256 verification, and audit reports.
+- Verification Commands:
+  - `npm test`: 428 unit tests passing (402 API, 26 Web), including the 28 new security scenarios in `apps/api/test/phase-9-step-9-3-crypto-storage.test.ts`.
+  - `node scripts/check-infrastructure.mjs`: 10 infrastructure policy checks passing.
+  - `node scripts/test-connection-pooling.mjs`: 15 connection pooling security checks passing.
+  - `npm run test:db`: 486 database integration tests passing (1 intentional CREATEDB skip).
+  - `npm run test:browser`: 51 browser smoke journeys passing.
+- Documentation: `docs/phase-9-step-9-3-acceptance.md`, `docs/production-kms-and-key-custody.md`, `docs/cloud-secret-management.md`, `docs/cloud-clinical-asset-storage.md`, and `docs/clinical-asset-migration.md`.
+
 ## Phase 8.7 final multi-specialty clinical integrity, security & release acceptance
 
 All 45 migrations applied across `lamssa_dev` and `lamssa_test`. Total migrations: 45.

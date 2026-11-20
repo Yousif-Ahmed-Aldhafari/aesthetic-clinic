@@ -67,21 +67,24 @@ infra/
 - **Hardened Parameter Group**: Enforces `password_encryption = scram-sha-256`, `rds.force_ssl = 1`, and `statement_timeout = 30000`.
 
 ### 3.4 Object Storage (`infra/modules/object-storage`)
-- **Private Buckets**: Strict public access block (`block_public_acls`, `block_public_policy`, `ignore_public_acls`, `restrict_public_buckets`).
-- **Server-Side Encryption**: Default SSE-KMS using customer-managed KEK.
-- **Object Lock WORM**: Enabled in Compliance Mode for disaster recovery backups to guarantee non-erasable audit and backup integrity.
+- **Private Buckets**: Strict public access prevention (`google_storage_bucket.public_access_prevention = "enforced"`).
+- **Server-Side Encryption**: Default CMEK using Google Cloud KMS customer-managed key in `me-central2`.
+- **Object Lock WORM**: Retention policies with Bucket Lock enabled in Compliance Mode for clinical documents and backups to guarantee non-erasable audit and backup integrity.
+- **Stateless Runtime Integration**: Application layer consumes GCS via `GoogleCloudStorageAssetStore` and reverse-proxy streaming endpoint `/stream`. See [docs/cloud-clinical-asset-storage.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/cloud-clinical-asset-storage.md).
 
 ### 3.5 Cloud KMS (`infra/modules/kms`)
-- **Key Hierarchy**: Dedicated Key Encryption Keys (KEKs) for `database`, `clinical_media`, and `object_storage`.
-- **Rotation**: Annual automated key rotation enabled (`enable_key_rotation = true`).
-- **Deletion Window**: 30-day mandatory deletion window preventing immediate or accidental destruction.
+- **Key Hierarchy**: Dedicated Key Encryption Keys (KEKs) in Cloud HSM (FIPS 140-3 Level 3) for `database`, `clinical_media`, and `object_storage`.
+- **Rotation**: Annual automated key rotation enabled (`rotation_period = "31536000s"`).
+- **Deletion Window**: 30-day mandatory destruction schedule (`destroy_scheduled_duration = "2592000s"`) preventing immediate destruction.
+- **Runtime Provider**: Integrated with NestJS via `GoogleCloudKmsProvider`. See [docs/production-kms-and-key-custody.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/production-kms-and-key-custody.md).
 
 ### 3.6 Secrets Management (`infra/modules/secrets`)
-- Declarative secret containers in Secrets Manager encrypted with the database KMS key.
+- Declarative secret containers in Google Cloud Secret Manager (`google_secret_manager_secret`) replicated in `me-central2`.
 - Values are populated out-of-band or via secure CI pipelines; never committed in version control.
+- **Runtime Provider**: Integrated with NestJS via `GoogleSecretManagerVaultProvider` with 300s in-memory TTL caching. See [docs/cloud-secret-management.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/cloud-secret-management.md).
 
 ### 3.7 IAM & Workload Identity (`infra/modules/iam`)
-- **`lamssa-api-sa`**: Restricted to reading runtime secrets, putting/getting objects in the clinical assets bucket, and invoking KMS decrypt/generateDataKey on the media KEK.
+- **`lamssa-api-sa`**: Restricted to reading runtime secrets, putting/getting objects in the clinical assets bucket, and invoking KMS decrypt/encrypt on the media KEK via Google Service Account binding.
 - **`lamssa-migration-sa`**: Restricted to reading migrator credentials for DDL execution.
 
 ### 3.8 Monitoring (`infra/modules/monitoring`)

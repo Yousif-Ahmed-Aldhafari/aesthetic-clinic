@@ -230,6 +230,7 @@ Lamssa implements multi-tier envelope encryption:
 - **Retired Key Preservation:** Older KEK versions transition to `RETIRED` state. They remain available indefinitely for decryption of historical records but are rejected for new encryption requests.
 - **Key Revocation / Destruction:** Destructive key destruction enforces a mandatory 30-day scheduled destruction window with dual-custody authorization.
 - **Emergency Revocation:** If a KEK is suspected compromised, it is immediately disabled, blocking all read/write operations until audited and re-keyed.
+- **Production Provider Implementation (Step 9.3):** Google Cloud KMS provider (`GoogleCloudKmsProvider` in `apps/api/src/kms/google-cloud-kms.provider.ts`) targeting Cloud HSM in `me-central2` (Dammam), implementing typed fail-closed errors (`KmsKeyDisabledError`, `KmsKeyRevokedError`, `KmsPermissionDeniedError`), transport injection for offline testing, and 28 passing security tests. See [docs/production-kms-and-key-custody.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/production-kms-and-key-custody.md).
 
 ---
 
@@ -271,9 +272,10 @@ sequenceDiagram
     1. The client must authenticate with a valid clinical session and doctor privilege.
     2. The API issues short-lived presigned URLs (60–120 seconds maximum expiration).
     3. The access event is recorded in `AuditEvent`.
-  - **Reverse-Proxy Delivery for Maximum Sensitivity Records:**
-    - For highly confidential clinical media (e.g. intimate gynecological examinations or pediatric forensic photography), presigned URLs are bypassed entirely.
-    - Media bytes are streamed directly through the authenticated NestJS API container, decrypting in-flight, validating the active session on every chunk, enforcing strict `no-store` headers, and immediately terminating access if a session is revoked or idle.
+  - **Reverse-Proxy Delivery for Maximum Sensitivity Records (Step 9.3 Implementation):**
+    - For confidential clinical media and diagnostic orders, presigned URLs are bypassed in favor of authenticated reverse-proxy streaming: `GET /api/v1/clinical-orders/documents/:documentId/stream`.
+    - Media bytes are streamed directly through the authenticated NestJS API container using `GoogleCloudStorageAssetStore` (`apps/api/src/identity/google-cloud-storage.asset-store.ts`), validating active session on PostgreSQL, enforcing strict `no-store, private`, `nosniff`, and `CSP` headers.
+    - Cloud asset migration tooling delivered in `scripts/migrate-clinical-assets.mjs` supporting `--dry-run`, `--resume`, SHA-256 verification, and audit reports. See [docs/cloud-clinical-asset-storage.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/cloud-clinical-asset-storage.md) and [docs/clinical-asset-migration.md](file:///mnt/samsungSSD/Downloads/aesthetic-clinic/docs/clinical-asset-migration.md).
 
 ---
 

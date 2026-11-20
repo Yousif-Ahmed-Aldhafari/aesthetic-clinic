@@ -4,6 +4,9 @@ import { AuditModule } from './audit/audit.module.js';
 import { ClinicAdministrationController, PublicAssetController } from './identity/clinic-administration.controller.js';
 import { PlatformFoundationController } from './identity/platform-foundation.controller.js';
 import { AssetStore, LocalAssetStore } from './identity/asset-store.js';
+import { GoogleCloudStorageAssetStore } from './identity/google-cloud-storage.asset-store.js';
+import { ConfigService } from '@nestjs/config';
+import type { Environment } from './config/environment.js';
 import { AssetService } from './identity/asset.service.js';
 import { DomainVerifier } from './identity/domain-verifier.js';
 import { BillingController } from './billing/billing.controller.js';
@@ -80,7 +83,24 @@ import { OrthopedicsPhysiotherapyModule } from './orthopedics-physiotherapy/orth
     OrthopedicsPhysiotherapyModule,
   ],
   controllers: [ConsentController,TreatmentController,ClinicalController,ClinicAdministrationController,PublicAssetController,PlatformFoundationController,BillingController,QueueController,PublicQueueController,AppointmentController,SchedulingController,PatientController, PublicBrandingController, ClinicContextController],
-  providers: [LocalAssetStore,{provide:AssetStore,useExisting:LocalAssetStore},AssetService,DomainVerifier,QueueStreams,PublicBrandingService,SecretVaultService],
+  providers: [
+    LocalAssetStore,
+    GoogleCloudStorageAssetStore,
+    {
+      provide: AssetStore,
+      useFactory: (config: ConfigService<Environment, true>, local: LocalAssetStore, gcs: GoogleCloudStorageAssetStore) => {
+        const choice = config.get('ASSET_STORE_PROVIDER' as any, { infer: true }) || process.env.ASSET_STORE_PROVIDER;
+        if (choice === 'gcs' || choice === 'google-cloud-storage') return gcs;
+        return local;
+      },
+      inject: [ConfigService, LocalAssetStore, GoogleCloudStorageAssetStore],
+    },
+    AssetService,
+    DomainVerifier,
+    QueueStreams,
+    PublicBrandingService,
+    SecretVaultService,
+  ],
   exports: [SecretVaultService],
 })
 export class AppModule {}

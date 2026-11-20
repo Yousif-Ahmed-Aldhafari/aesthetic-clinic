@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import type { Environment } from './environment.js';
+import { GoogleSecretManagerVaultProvider } from './google-secret-manager.provider.js';
 
 export class SecretVaultError extends Error {
   constructor(message: string) {
@@ -35,7 +36,12 @@ export class SecretVaultService {
   private provider: SecretVaultProvider;
 
   constructor(config?: ConfigService<Environment, true>) {
-    this.provider = new EnvironmentVaultProvider(config);
+    const providerChoice = config?.get('SECRET_VAULT_PROVIDER' as any, { infer: true }) || process.env.SECRET_VAULT_PROVIDER;
+    if (providerChoice === 'google-secret-manager' || providerChoice === 'gcp') {
+      this.provider = new GoogleSecretManagerVaultProvider(config);
+    } else {
+      this.provider = new EnvironmentVaultProvider(config);
+    }
   }
 
   setProvider(provider: SecretVaultProvider): void {

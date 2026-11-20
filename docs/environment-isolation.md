@@ -50,8 +50,9 @@ flowchart TD
 | **Cloud Account / Project** | Local host / Ephemeral CI runner | Dedicated Staging Project (`lamssa-staging-project`) | Dedicated Production Account (`lamssa-prod-account`) |
 | **Network CIDR Block** | `127.0.0.1` / Docker Bridge | `10.100.0.0/16` (Isolated VPC) | `10.200.0.0/16` (Dedicated Multi-AZ VPC) |
 | **Database Instance** | Containerized PostgreSQL 16 | Managed DB (Single AZ / Multi-AZ test) | Multi-AZ Primary + Synchronous Standby + Async DR |
-| **Database Credentials** | Local test passwords (`ci-runtime`) | Dedicated Staging Secrets Manager | Dedicated Production Secrets Manager |
-| **KMS Provider** | `local` (dev fallback) | `external` (Dedicated Staging Cloud KMS Key) | `external` / Cloud HSM (FIPS 140-2 Level 3) |
+| **Database Credentials** | Local test passwords (`ci-runtime`) | Dedicated Staging Secret Manager (`google-secret-manager`) | Dedicated Production Secret Manager (`google-secret-manager`) |
+| **KMS Provider** | `local` (dev simulation) | `gcp` / `google-cloud-kms` (Staging KMS Key in me-central2) | `gcp` / `google-cloud-kms` (Cloud HSM FIPS 140-3 Level 3) |
+| **Asset Storage** | Local filesystem (`LocalAssetStore`) | `gcs` (Dedicated Staging GCS Bucket) | `gcs` (Dedicated Production GCS Bucket with WORM & CMEK) |
 | **Master Key Material** | In-memory synthetic derivation | Cloud-managed staging KEK | Hardware-backed non-exportable production KEK |
 | **Data Policy** | Synthetic fictional patients only | Synthetically generated load fixtures | Live real-world clinical records & invoices |
 | **Ingress Access** | Local port binding (`127.0.0.1:3000`) | Restricted VPN / Allowlisted Staging DNS | Sovereign Public Edge with Cloud WAF & DDoS Shield |

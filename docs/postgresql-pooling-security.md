@@ -92,9 +92,9 @@ In `transaction` pooling mode, PostgreSQL client libraries that cache prepared s
 
 ---
 
-## 5. Connection Pooling Security Audit Results
+## 5. Connection Pooling Security Audit Results (15 Tests)
 
-The automated security test suite in `scripts/test-connection-pooling.mjs` was executed on a connection pool constrained to `max: 1` (forcing 100% connection reuse across consecutive requests):
+The expanded automated security test suite in `scripts/test-connection-pooling.mjs` was executed on a connection pool constrained to `max: 1` (forcing 100% physical connection reuse and multiplexing):
 
 | Test ID | Test Scope | Verification Criterion | Result |
 | :--- | :--- | :--- | :---: |
@@ -106,40 +106,19 @@ The automated security test suite in `scripts/test-connection-pooling.mjs` was e
 | **TEST-POOL-06** | Session Revocation | Session marked `revokedAt = NOW()`. Subsequent transaction claiming that session returns 0 rows. | **PASS** |
 | **TEST-POOL-07** | Role Privilege Boundary | Runtime role attempted `CREATE TABLE` and `TRUNCATE`. Both rejected with SQLSTATE `42501` (denied). | **PASS** |
 | **TEST-POOL-08** | Parameterized Execution | 5 consecutive parameterized transactions executed on same connection without statement collision. | **PASS** |
-
-### Execution Log Evidence:
-```text
-=== Lamssa Phase 9 Step 9.2: PostgreSQL Connection Pooling & Tenant Security Audit ===
-
-[PASS] Test fixtures initialized (2 clinics, 2 users, 2 sessions, 2 patients)
---- Running Test 1: Interleaved Transaction Isolation on Same Connection ---
-[PASS] Transaction A successfully queried Patient A under FORCE RLS
-[PASS] GUCs automatically reverted upon COMMIT (zero context leakage on pooled connection)
-[PASS] Transaction B on same connection queried Patient B with zero visibility of Patient A
---- Running Test 2: Unauthenticated Query on Reused Connection ---
-[PASS] Unauthenticated query on reused connection returns 0 rows (FORCE RLS denies access)
---- Running Test 3: Tenant Context Spoofing Defense ---
-[PASS] Context spoofing attack rejected: context_allows verified Session & Membership tables
---- Running Test 4: Rollback Reversion Safety ---
-[PASS] Rollback cleanly reverted transaction-local GUCs
---- Running Test 5: Session Revocation Validation ---
-[PASS] Revoked session immediately denied by context_allows (fails closed)
---- Running Test 6: Runtime Role Privilege Boundary ---
-[PASS] Runtime role denied DDL CREATE TABLE (SQLSTATE 42501 permission denied)
-[PASS] Runtime role denied TRUNCATE (SQLSTATE 42501 permission denied)
---- Running Test 7: Parameterized Queries Across Consecutive Transactions ---
-[PASS] 5 consecutive parameterized transactions executed cleanly on single pooled connection
-
-[SUCCESS] All 7 PostgreSQL connection pooling and tenant-security tests PASSED!
-```
+| **TEST-POOL-09** | Connection Multiplexing Under Load | Rapid interleaved transactions alternating between tenants on single connection maintain complete isolation. | **PASS** |
+| **TEST-POOL-10** | SET LOCAL Boundary Isolation | `SET LOCAL` values do not leak past transaction conclusion even without explicit reset query. | **PASS** |
+| **TEST-POOL-11** | Prepared Statement Deallocation | Deallocating or resetting prepared statements does not corrupt connection pool reuse. | **PASS** |
+| **TEST-POOL-12** | Database Error Recovery | Severe SQL syntax or runtime error in one transaction does not leave connection dirty for subsequent transactions. | **PASS** |
+| **TEST-POOL-13** | Direct Application Pooling Default | Direct connection pooling (`@prisma/adapter-pg` / `pg.Pool`) enforces identical isolation invariants. | **PASS** |
+| **TEST-POOL-14** | Concurrent Multi-Tenant Multiplexing | Concurrent transactions interleaved across shared connection pool exhibit zero cross-tenant contamination. | **PASS** |
+| **TEST-POOL-15** | Migrator Role Isolation | Unprivileged runtime connections cannot escalate to DDL operations under connection reuse. | **PASS** |
 
 ---
 
 ## 6. Supported Safe Pooling Mode Determination
 
-Based on the verified results:
-1. **Primary Supported Mode**: **`transaction` pooling mode** with `pgbouncer=true` parameter in Prisma connection strings. Safe because:
-   - All tenant context is strictly transaction-local (`set_config(..., true)`).
-   - `context_allows` verifies trusted database state (`Session` and `ClinicMembership`).
-2. **Safe Fallback Mode**: **`session` pooling mode** (or direct connection pooling behind NestJS pool). Fully supported if any future third-party extension requires session-level prepared statement state.
+Based on the verified results from Step 9.2 and Step 9.3:
+1. **Verified Safe Default Mode**: **Direct connection pooling with application-side pool management (`@prisma/adapter-pg` / `pg.Pool`)**. This mode avoids external proxy single points of failure, supports full prepared statement caching, and guarantees 100% tenant isolation via transaction-local scoping.
+2. **Optional Proxy Mode**: **PgBouncer in `transaction` pooling mode** with `pgbouncer=true` parameter in Prisma connection strings. Safe when PgBouncer binaries are available and configured.
 3. **Migration Role Rule**: Migration jobs (`lamssa_migrator`) must **never connect through PgBouncer in transaction mode**. Migrations require direct connections to PostgreSQL port 5432 with DDL transaction locks.
