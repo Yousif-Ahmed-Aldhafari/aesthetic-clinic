@@ -305,6 +305,16 @@ In Phase 7 Step 7.5, realistic multi-tenant performance and operational resilien
   - Alerting Engine: Built-in 15-minute deduplicated alerting covering high 5xx error rate, DB pool saturation, failed login brute-force spikes, and financial hash mismatches.
 - See `docs/performance-and-scalability.md` and `docs/operational-observability.md` for complete specifications and runbooks.
 
+### Phase 9 Step 9.1: Enterprise Infrastructure Architecture & Production Deployment Blueprint
+
+In Step 9.1, the production infrastructure architecture and deployment blueprint for Phase 9 was formally established:
+- **Target Enterprise Cloud Topology**: Defined zero-trust network segmentation across Public Edge (WAF/DDoS Shield), Ingress LB, Stateless Compute (NestJS API & Web React Pods with HPA), Isolated Data Subnets (PostgreSQL 16 HA + PgBouncer in transaction mode), and Managed Cloud Services (Cloud KMS/HSM, S3/GCS Object Storage, Centralized Log Sink).
+- **Infrastructure as Code (IaC) Framework**: Standardized on OpenTofu/Terraform with modular architecture (`infra/modules/`), remote state locking (S3/DynamoDB), and automated daily drift detection.
+- **Stateless Asset Lifecycle**: Designed S3/GCS object storage adapter replacing local filesystem storage (`LocalAssetStore`), enforcing client-side AES-256-GCM envelope encryption, S3 Object Lock (WORM), and short-lived pre-signed URLs.
+- **Production Secrets & KMS**: Outlined integration with AWS Secrets Manager / Vault and External Secrets Operator (in-memory secret injection, zero disk writes). Root KEK custody in FIPS 140-2 Level 3 HSM.
+- **Clearance Register**: 11 explicit production blockers documented in `docs/phase-9-production-blocker-register.md`.
+- See `docs/phase-9-enterprise-infrastructure-architecture.md`, `docs/phase-9-production-deployment-blueprint.md`, and `docs/phase-9-step-9-1-assessment.md`.
+
 ### Phase 8 Final Acceptance & Multi-Specialty Release Verdicts (Step 8.7)
 
 In Step 8.7, an independent multi-specialty clinical safety, PostgreSQL security, and release audit concluded Phase 8:

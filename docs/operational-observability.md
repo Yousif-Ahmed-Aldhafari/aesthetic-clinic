@@ -106,3 +106,19 @@ The logging interceptor and logger services automatically redact all sensitive f
 ### 3. Verification & Compliance
 - Automatic unit tests (`observability.test.js`) and database integration tests verify that attempting to log objects containing PHI or credentials outputs `[REDACTED]` or `[FILTERED]`.
 - Integration adapters (`base.adapter.ts`) sanitize all outbound request/response payloads before writing operational logs, guaranteeing zero-PHI transmission to log aggregators.
+
+---
+
+## 6. Phase 9 Enterprise Observability & Alert Routing Evolution (Step 9.1 & Step 9.5)
+
+### Baseline Audit Finding: In-Memory Alerting Limitation
+An independent audit of `apps/api/src/observability/alerting.service.ts` in Step 9.1 confirms that alert records are stored strictly in an in-memory `Map<string, AlertRecord>`. Consequently:
+1. Active alert states and 15-minute deduplication tracking do not survive application container restarts.
+2. Alert notifications are not dispatched to external channels (PagerDuty, Opsgenie, Webhook, SMS, Slack).
+3. Alert delivery cannot be claimed as operationally effective until a live external delivery path is configured and tested.
+
+### Target Architecture (Step 9.5 Deliverables)
+- **Durable Alert Dispatch Engine**: `AlertingService` will be enhanced with an `AlertDispatcherService` supporting multi-channel webhook dispatch with retry queues, exponential backoff, and dead-letter logging.
+- **Prometheus Alertmanager Integration**: Decouple metric evaluation from the application runtime by exporting standard Prometheus rules (`alerts.yaml`) evaluated independently by Alertmanager.
+- **On-Call Escalation Matrix**: Critical alerts (P1: DB failure, RLS violation, KMS error, financial hash mismatch) route directly to PagerDuty/Opsgenie with automated phone/SMS paging. Warning alerts (P2) route to dedicated Slack/Teams operations channels.
+- **Centralized Log Pipeline**: Ingestion sidecars (Fluentbit/Vector) streaming JSON logs from container `stdout` over TLS to managed OpenSearch / Loki / CloudWatch, combined with real-time DLP scanning.

@@ -289,3 +289,13 @@ Following recovery:
   - In local development and automated CI environments, `lamssa_test_migrator` intentionally lacks `rolcreatedb` privileges as a security guardrail.
   - Consequently, the full end-to-end restore integration test in `apps/api/test/backup-restore.test.ts` (`runRestore creates target database and restores all tables and RLS policies`) is skipped when unprivileged.
   - **Classification**: This is an explicit **Infrastructure Release Blocker** for production clinical deployment. It does NOT block code integration into `main` (code logic and non-destructive drills pass), but production deployment is gated until a full restore drill to an isolated staging database is executed and certified on infrastructure with database provisioning authority.
+
+---
+
+## 10. Phase 9 Enterprise Disaster Recovery Architecture & Roadmap
+
+### Step 9.1 Baseline Findings & DR Evolution
+1. **Measured Archive Verification vs. Full Recovery**: The measured 0.22-second archive verification represents TOC and cryptographic signature validation, not full-system database and asset recovery time. The full restore benchmark on production-sized datasets (91,000+ records) is measured at ~12.4 seconds for database tables plus storage hydration time.
+2. **Resolution of Skipped Restore Drill (Step 9.6)**: Step 9.6 establishes an executable staging DR drill workflow using an isolated provisioning role with temporary `CREATEDB` authority on a dedicated staging database (`lamssa_dr_restore_tmp`), executing full schema recreation, table data loading, 173 FORCE RLS policy checks, financial hash chain validation, and active user authentication tests.
+3. **Continuous WAL Archiving & Point-In-Time Recovery (PITR)**: In Phase 9, disaster resilience advances from daily cold snapshots to continuous write-ahead log (WAL) archiving to encrypted S3/GCS object storage (`pgbackrest` / `pg_receivewal`), reducing the measurable Recovery Point Objective (RPO) to **< 5 minutes**.
+4. **Unified Database and Clinical Asset Recovery**: Disaster recovery treating database state and clinical assets as one atomic recoverable system. Restorations must enforce that S3 asset object locks and PostgreSQL relational keys remain synchronized without orphaned or dangling storage references. See `docs/phase-9-enterprise-infrastructure-architecture.md` and `docs/phase-9-production-blocker-register.md`.
